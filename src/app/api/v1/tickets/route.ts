@@ -1,0 +1,124 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { checkRateLimit, sanitizeHtml, generateTicketKey } from '@/lib/utils';
+import { fireWebhook } from '@/lib/webhooks';
+import logger from '@/lib/logger';
+
+// External API protected by API_KEY
+function validateApiKey(req: NextRequest): boolean {
+    const apiKey = req.headers.get('x-api-key') ?? req.headers.get('authorization')?.replace('Bearer ', '');
+    return apiKey === process.env.API_KEY;
+}
+
+async function reserveNextTicketCount(year: number): Promise<number> {
+    return prisma.$transaction(async (tx) => {
+        const current = await tx.ticketCounter.findUnique({ where: { id: 'singleton' } });
+
+        if (!current) {
+            await tx.ticketCounter.create({
+                data: { id: 'singleton', year, count: 1 },
+            });
+            return 1;
+        }
+
+        if (current.year !== year) {
+            const reset = await tx.ticketCounter.update({
+                where: { id: 'singleton' },
+                data: { year, count: 1 },
+            });
+            return reset.count;
+        }
+
+        const updated = await tx.ticketCounter.update({
+            where: { id: 'singleton' },
+            data: { count: { increment: 1 } },
+        });
+        return updated.count;
+    });
+}
+
+// GET /api/v1/tickets
+export async function GET(req: NextRequest) {
+    if (!validateApiKey(req)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '20'), 50);
+
+    const tickets = await prisma.ticket.findMany({
+        include: {
+            queue: { select: { name: true } },
+            requester: { select: { name: true, email: true } },
+            assignee: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+    });
+
+    return NextResponse.json({ tickets });
+}
+
+// POST /api/v1/tickets - Create ticket on behalf of user
+export async function POST(req: NextRequest) {
+    if (!validateApiKey(req)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!checkRateLimit('api:v1:tickets', 50, 60000)) {
+        return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+    }
+
+    try {
+        const body = await req.json();
+        const { title, description, queueId, userEmail, priority, categoryId } = body;
+
+        if (!title || !queueId || !userEmail) {
+            return NextResponse.json({ error: 'title, queueId, and userEmail are required' }, { status: 400 });
+        }
+
+        // Find or create user
+        let user = await prisma.user.findUnique({ where: { email: userEmail } });
+        if (!user) {
+            user = await prisma.user.create({
+                data: { email: userEmail, name: userEmail.split('@')[0], role: 'USER' },
+            });
+        }
+
+        // Generate key
+        const year = new Date().getFullYear();
+        const nextCount = await reserveNextTicketCount(year);
+        const ticketKey = generateTicketKey(year, nextCount);
+
+        const ticket = await prisma.ticket.create({
+            data: {
+                key: ticketKey,
+                title,
+                description: description ? sanitizeHtml(description) : null,
+                queueId,
+                requesterId: user.id,
+                priority: priority || 'NORMAL',
+                categoryId,
+                status: 'NEW',
+            },
+        });
+
+        await prisma.timelineEvent.create({
+            data: {
+                ticketId: ticket.id,
+                userId: user.id,
+                type: 'CREATED',
+                content: `Ticket created via API: ${title}`,
+            },
+        });
+
+        fireWebhook('ticket.created', { ticketId: ticket.id, key: ticketKey, title });
+
+        return NextResponse.json(ticket, { status: 201 });
+    } catch (error) {
+        logger.error('API v1 ticket creation failed', { error });
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
