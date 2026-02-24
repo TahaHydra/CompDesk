@@ -1,0 +1,449 @@
+// ── Prisma Schema for ExcoDesk ──────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  AGENT
+  USER
+}
+
+enum TicketStatus {
+  NEW
+  OPEN
+  PENDING_USER
+  PENDING_AGENT
+  RESOLVED
+  CLOSED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum Severity {
+  S1
+  S2
+  S3
+  S4
+}
+
+enum TimelineEventType {
+  COMMENT
+  INTERNAL_NOTE
+  STATUS_CHANGE
+  ASSIGNMENT_CHANGE
+  PRIORITY_CHANGE
+  CREATED
+  ESCALATED
+}
+
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  DROPDOWN
+  MULTISELECT
+  CHECKBOX
+  DATE
+  FILE
+}
+
+// ── Users ──────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  entraObjectId String?   @unique @map("entra_object_id")
+  email         String    @unique
+  name          String
+  image         String?
+  passwordHash  String?   @map("password_hash")
+  role          Role      @default(USER)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  requestedTickets    Ticket[]        @relation("TicketRequester")
+  assignedTickets     Ticket[]        @relation("TicketAssignee")
+  escalatedByTickets  Ticket[]        @relation("TicketEscalatedBy")
+  escalatedToTickets  Ticket[]        @relation("TicketEscalatedTo")
+  watchedTickets      TicketWatcher[]
+  timelineEvents      TimelineEvent[]
+  groupMemberships    GroupMember[]
+  queueMemberships    QueueMember[]
+  auditLogs           AuditLog[]
+  sessions            Session[]
+  accounts            Account[]
+
+  @@map("users")
+}
+
+// ── Auth.js required models ────────────────────────────────────
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ── Groups (Entra Synced) ──────────────────────────────────────
+
+model Group {
+  id            String   @id @default(uuid())
+  entraObjectId String?  @unique @map("entra_object_id")
+  name          String
+  description   String?
+  syncedAt      DateTime? @map("synced_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  members          GroupMember[]
+  queueAssignments QueueGroup[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id      String @id @default(uuid())
+  userId  String @map("user_id")
+  groupId String @map("group_id")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+// ── Queues ─────────────────────────────────────────────────────
+
+model Queue {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  description     String?
+  isPublic        Boolean  @default(false) @map("is_public")
+  autoAssign      Boolean  @default(false) @map("auto_assign")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tickets    Ticket[]
+  groups     QueueGroup[]
+  members    QueueMember[]
+  slaPolices SlaPolicy[]
+  formFields FormField[]
+
+  @@map("queues")
+}
+
+model QueueGroup {
+  id      String @id @default(uuid())
+  queueId String @map("queue_id")
+  groupId String @map("group_id")
+  role    String @default("agent") // "agent" | "requester"
+
+  queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([queueId, groupId, role])
+  @@map("queue_groups")
+}
+
+model QueueMember {
+  id      String @id @default(uuid())
+  queueId String @map("queue_id")
+  userId  String @map("user_id")
+  role    String @default("agent") // "agent" | "requester"
+
+  queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([queueId, userId, role])
+  @@map("queue_members")
+}
+
+// ── Categories & Tags ──────────────────────────────────────────
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tickets Ticket[]
+
+  @@map("categories")
+}
+
+model Tag {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  color     String      @default("#6366f1")
+  createdAt DateTime    @default(now()) @map("created_at")
+  tickets   TicketTag[]
+
+  @@map("tags")
+}
+
+model TicketTag {
+  id       String @id @default(uuid())
+  ticketId String @map("ticket_id")
+  tagId    String @map("tag_id")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, tagId])
+  @@map("ticket_tags")
+}
+
+// ── Tickets ────────────────────────────────────────────────────
+
+model Ticket {
+  id              String       @id @default(uuid())
+  key             String       @unique
+  title           String
+  description     String?      @db.Text
+  status          TicketStatus @default(NEW)
+  priority        Priority     @default(NORMAL)
+  severity        Severity?
+  queueId         String       @map("queue_id")
+  categoryId      String?      @map("category_id")
+  requesterId     String       @map("requester_id")
+  assigneeId      String?      @map("assignee_id")
+  formData        Json?        @map("form_data")
+  dueAt           DateTime?    @map("due_at")
+  firstResponseAt DateTime?    @map("first_response_at")
+  resolvedAt      DateTime?    @map("resolved_at")
+  closedAt        DateTime?    @map("closed_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  lockedBy        String?      @map("locked_by")
+  lockedAt        DateTime?    @map("locked_at")
+
+  // Escalation
+  escalationLevel Int          @default(0) @map("escalation_level")
+  escalatedAt     DateTime?    @map("escalated_at")
+  escalatedById   String?      @map("escalated_by_id")
+  escalatedToId   String?      @map("escalated_to_id")
+
+  queue       Queue          @relation(fields: [queueId], references: [id])
+  category    Category?      @relation(fields: [categoryId], references: [id])
+  requester   User           @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee    User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  escalatedBy User?          @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
+  escalatedTo User?          @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
+  tags        TicketTag[]
+  watchers    TicketWatcher[]
+  timeline    TimelineEvent[]
+  attachments Attachment[]
+
+  @@index([status])
+  @@index([queueId])
+  @@index([requesterId])
+  @@index([assigneeId])
+  @@index([createdAt])
+  @@index([escalationLevel])
+  @@map("tickets")
+}
+
+model TicketWatcher {
+  id       String @id @default(uuid())
+  ticketId String @map("ticket_id")
+  userId   String @map("user_id")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@map("ticket_watchers")
+}
+
+// ── Timeline Events ────────────────────────────────────────────
+
+model TimelineEvent {
+  id        String            @id @default(uuid())
+  ticketId  String            @map("ticket_id")
+  userId    String            @map("user_id")
+  type      TimelineEventType
+  content   String?           @db.Text
+  metadata  Json?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("timeline_events")
+}
+
+// ── Attachments ────────────────────────────────────────────────
+
+model Attachment {
+  id        String   @id @default(uuid())
+  ticketId  String   @map("ticket_id")
+  filename  String
+  mimetype  String
+  size      Int
+  path      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+// ── SLA Policies ───────────────────────────────────────────────
+
+model SlaPolicy {
+  id                   String   @id @default(uuid())
+  queueId              String   @map("queue_id")
+  priority             Priority
+  firstResponseMinutes Int      @map("first_response_minutes")
+  resolutionMinutes    Int      @map("resolution_minutes")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  @@unique([queueId, priority])
+  @@map("sla_policies")
+}
+
+// ── Form Fields ────────────────────────────────────────────────
+
+model FormField {
+  id               String        @id @default(uuid())
+  queueId          String        @map("queue_id")
+  label            String
+  fieldKey         String        @map("field_key")
+  type             FormFieldType
+  required         Boolean       @default(false)
+  options          Json?         // for dropdown/multiselect
+  validationRules  Json?         @map("validation_rules") // {minLength, maxLength, regex, fileTypes}
+  conditionalRules Json?         @map("conditional_rules") // {dependsOn, showWhen}
+  visibleTo        String[]      @default(["USER", "AGENT", "ADMIN", "SUPER_ADMIN"]) @map("visible_to") // roles that can see this field
+  sortOrder        Int           @default(0) @map("sort_order")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  @@unique([queueId, fieldKey])
+  @@map("form_fields")
+}
+
+// ── Canned Responses ───────────────────────────────────────────
+
+model CannedResponse {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @db.Text
+  category  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("canned_responses")
+}
+
+// ── Webhooks ───────────────────────────────────────────────────
+
+model WebhookConfig {
+  id        String   @id @default(uuid())
+  url       String
+  secret    String?
+  events    String[] // ["ticket.created", "ticket.resolved"]
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("webhook_configs")
+}
+
+// ── Audit Log ──────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  metadata  Json?
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── App Settings ───────────────────────────────────────────────
+
+model AppSetting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+// ── Ticket Counter ─────────────────────────────────────────────
+
+model TicketCounter {
+  id    String @id @default("singleton")
+  year  Int
+  count Int    @default(0)
+
+  @@map("ticket_counter")
+}

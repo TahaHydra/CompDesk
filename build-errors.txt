@@ -1,0 +1,455 @@
+﻿
+> excodesk@1.0.0 build
+> next build
+
+   Ôû▓ Next.js 15.5.12
+   - Environments: .env
+
+   Creating an optimized production build ...
+ Ô£ô Compiled successfully in 15.4s
+   Linting and checking validity of types ...
+node.exe : 
+Au caractère Ligne:1 : 
+1
++ & "C:\Program 
+Files\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (:String) [],    
+ RemoteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+Failed to compile.
+
+./src/app/(dashboard)/a
+dmin/queues/page.tsx
+65:41  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+126:45  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+159:11  Warning: 
+'roleColor' is 
+assigned a value but 
+never used.  @typescrip
+t-eslint/no-unused-vars
+168:40  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+271:49  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+331:131  Error: `"` 
+can be escaped with 
+`&quot;`, `&ldquo;`, 
+`&#34;`, `&rdquo;`.  re
+act/no-unescaped-entiti
+es
+331:141  Error: `"` 
+can be escaped with 
+`&quot;`, `&ldquo;`, 
+`&#34;`, `&rdquo;`.  re
+act/no-unescaped-entiti
+es
+333:48  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/(dashboard)/a
+dmin/settings/page.tsx
+8:10  Warning: 'Badge' 
+is defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+
+./src/app/(dashboard)/d
+ashboard/page.tsx
+152:57  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/(dashboard)/q
+ueue/page.tsx
+5:29  Warning: 
+'CardHeader' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+5:41  Warning: 
+'CardTitle' is defined 
+but never used.  @types
+cript-eslint/no-unused-
+vars
+49:49  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+74:51  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/(dashboard)/t
+ickets/new/page.tsx
+28:79  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+127:61  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+165:61  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+189:63  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/(dashboard)/t
+ickets/page.tsx
+6:29  Warning: 
+'CardHeader' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+6:41  Warning: 
+'CardTitle' is defined 
+but never used.  @types
+cript-eslint/no-unused-
+vars
+12:32  Warning: 
+'Filter' is defined 
+but never used.  @types
+cript-eslint/no-unused-
+vars
+17:11  Warning: 
+'router' is assigned a 
+value but never used.  
+@typescript-eslint/no-u
+nused-vars
+132:51  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+177:64  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/(dashboard)/t
+ickets/[id]/page.tsx
+9:10  Warning: 'Input' 
+is defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+18:37  Warning: 
+'Clock' is defined but 
+never used.  @typescrip
+t-eslint/no-unused-vars
+19:24  Warning: 
+'CheckCircle2' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+197:59  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+312:71  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+312:106  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+351:87  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+351:122  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+437:59  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+462:59  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/api/categorie
+s/route.ts
+5:32  Warning: 
+'createTagSchema' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+
+./src/app/api/dashboard
+/stats/route.ts
+4:10  Warning: 
+'isAgentOrAbove' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+47:39  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+62:22  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/api/form-fiel
+ds/route.ts
+60:38  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/api/settings/
+route.ts
+19:14  Warning: 
+'error' is defined but 
+never used.  @typescrip
+t-eslint/no-unused-vars
+54:14  Warning: 
+'error' is defined but 
+never used.  @typescrip
+t-eslint/no-unused-vars
+
+./src/app/api/settings/
+test-email/route.ts
+47:21  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/api/tickets/r
+oute.ts
+61:33  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+74:51  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+221:40  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/api/tickets/[
+id]/escalate/route.ts
+36:37  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+49:18  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+67:22  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+72:41  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+74:30  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/app/api/tickets/[
+id]/route.ts
+4:30  Warning: 
+'createCommentSchema' 
+is defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+5:25  Warning: 
+'sanitizeHtml' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+5:55  Warning: 
+'isAdmin' is defined 
+but never used.  @types
+cript-eslint/no-unused-
+vars
+148:26  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+151:26  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+168:26  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+191:17  Warning: 
+'tagIds' is assigned a 
+value but never used.  
+@typescript-eslint/no-u
+nused-vars
+194:33  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+208:41  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+210:50  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/components/ui/dro
+pdown-menu.tsx
+5:10  Warning: 'Check' 
+is defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+5:17  Warning: 
+'ChevronRight' is 
+defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+5:31  Warning: 
+'Circle' is defined 
+but never used.  @types
+cript-eslint/no-unused-
+vars
+
+./src/components/ui/inp
+ut.tsx
+4:18  Error: An 
+interface declaring no 
+members is equivalent 
+to its supertype.  @typ
+escript-eslint/no-empty
+-object-type
+
+./src/components/ui/sel
+ect.tsx
+5:30  Warning: 
+'ChevronUp' is defined 
+but never used.  @types
+cript-eslint/no-unused-
+vars
+
+./src/components/ui/tex
+tarea.tsx
+4:18  Error: An 
+interface declaring no 
+members is equivalent 
+to its supertype.  @typ
+escript-eslint/no-empty
+-object-type
+
+./src/components/ui/use
+-toast.tsx
+16:7  Warning: 
+'actionTypes' is 
+assigned a value but 
+only used as a type.  @
+typescript-eslint/no-un
+used-vars
+
+./src/lib/audit.ts
+19:47  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/lib/auth.ts
+79:23  Error: 
+Unexpected any. 
+Specify a different 
+type.  @typescript-esli
+nt/no-explicit-any
+
+./src/__tests__/validat
+ions.test.ts
+1:30  Warning: 
+'updateTicketSchema' 
+is defined but never 
+used.  @typescript-esli
+nt/no-unused-vars
+
+info  - Need to 
+disable some ESLint 
+rules? Learn more 
+here: https://nextjs.or
+g/docs/app/api-referenc
+e/config/eslint#disabli
+ng-rules
