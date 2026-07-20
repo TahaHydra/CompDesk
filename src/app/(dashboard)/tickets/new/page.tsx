@@ -10,9 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { ArrowLeft, Send, Sparkles, Tag, Upload, X, FileIcon, ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatTicketValue, getPriorityBadgeClass, getTicketValueBadgeClass } from '@/lib/ticket-display';
 import Link from 'next/link';
 
 interface CustomField {
@@ -53,6 +55,20 @@ function formatFileSize(bytes: number) {
 
 function isImageType(mimetype: string) {
     return mimetype.startsWith('image/');
+}
+
+const PRIORITY_OPTIONS = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
+
+function TicketValueBadge({ value }: { value: string }) {
+    const badgeClass = getTicketValueBadgeClass(value);
+
+    if (!badgeClass) return <span>{value}</span>;
+
+    return (
+        <Badge variant="outline" className={cn('text-xs', badgeClass)}>
+            {formatTicketValue(value)}
+        </Badge>
+    );
 }
 
 export default function NewTicketPage() {
@@ -378,13 +394,16 @@ export default function NewTicketPage() {
                                 onValueChange={(value) => setFormData({ ...formData, priority: value })}
                             >
                                 <SelectTrigger>
-                                    <SelectValue />
+                                    <Badge variant="outline" className={cn('text-xs', getPriorityBadgeClass(formData.priority))}>
+                                        {formatTicketValue(formData.priority)}
+                                    </Badge>
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="LOW">Low</SelectItem>
-                                    <SelectItem value="NORMAL">Normal</SelectItem>
-                                    <SelectItem value="HIGH">High</SelectItem>
-                                    <SelectItem value="URGENT">Urgent</SelectItem>
+                                    {PRIORITY_OPTIONS.map((priority) => (
+                                        <SelectItem key={priority} value={priority}>
+                                            <TicketValueBadge value={priority} />
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -571,12 +590,16 @@ export default function NewTicketPage() {
                                                 }
                                             >
                                                 <SelectTrigger>
-                                                    <SelectValue placeholder={`Select ${field.label}`} />
+                                                    {typeof value === 'string' && value ? (
+                                                        <TicketValueBadge value={value} />
+                                                    ) : (
+                                                        <SelectValue placeholder={`Select ${field.label}`} />
+                                                    )}
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     {(field.options ?? []).map((option: string) => (
                                                         <SelectItem key={option} value={option}>
-                                                            {option}
+                                                            <TicketValueBadge value={option} />
                                                         </SelectItem>
                                                     ))}
                                                 </SelectContent>
@@ -594,13 +617,17 @@ export default function NewTicketPage() {
                                                             key={option}
                                                             type="button"
                                                             size="sm"
-                                                            variant={selected ? 'default' : 'outline'}
-                                                            className="h-7 text-xs"
+                                                            variant="outline"
+                                                            className={cn(
+                                                                'h-7 text-xs',
+                                                                getTicketValueBadgeClass(option),
+                                                                selected && 'ring-2 ring-primary ring-offset-2'
+                                                            )}
                                                             onClick={() =>
                                                                 toggleMultiSelectOption(field.fieldKey, option)
                                                             }
                                                         >
-                                                            {option}
+                                                            {formatTicketValue(option)}
                                                         </Button>
                                                     );
                                                 })}
