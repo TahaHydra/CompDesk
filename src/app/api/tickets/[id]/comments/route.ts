@@ -82,7 +82,7 @@ export async function POST(
     }
 }
 
-// PATCH /api/tickets/[id]/comments — edit a comment
+// PATCH /api/tickets/[id]/comments — edit a timeline entry
 export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -103,23 +103,30 @@ export async function PATCH(
 
         const event = await prisma.timelineEvent.findUnique({ where: { id: eventId } });
         if (!event || event.ticketId !== id) {
-            return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Timeline entry not found' }, { status: 404 });
         }
 
-        // Only the author can edit their own comment
-        if (event.userId !== session.user.id) {
+        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        if (!ticket) {
+            return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+        }
+
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
+        if (!hasAccess) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        const isAgent = isAgentOrAbove(session.user.role);
+        const isOwnerComment = event.userId === session.user.id && (event.type === 'COMMENT' || event.type === 'INTERNAL_NOTE');
+        if (!isAgent && !isOwnerComment) {
             return NextResponse.json({ error: 'You can only edit your own comments' }, { status: 403 });
         }
 
-        // Only COMMENT and INTERNAL_NOTE can be edited
-        if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
-            return NextResponse.json({ error: 'This event type cannot be edited' }, { status: 400 });
-        }
-
-        // 24h edit window
-        const hoursSinceCreation = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
-        if (hoursSinceCreation > 24) {
-            return NextResponse.json({ error: 'Comments can only be edited within 24 hours' }, { status: 400 });
+        if (!isAgent) {
+            const hoursSinceCreation = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
+            if (hoursSinceCreation > 24) {
+                return NextResponse.json({ error: 'Comments can only be edited within 24 hours' }, { status: 400 });
+            }
         }
 
         const oldContent = event.content;
@@ -141,10 +148,10 @@ export async function PATCH(
 
         auditLog({
             userId: session.user.id,
-            action: 'comment.edited',
+            action: 'timeline_event.edited',
             entity: 'timelineEvent',
             entityId: eventId,
-            metadata: { ticketId: id, oldContent: oldContent?.substring(0, 200) },
+            metadata: { ticketId: id, type: event.type, oldContent: oldContent?.substring(0, 200) },
         });
 
         return NextResponse.json(updated);
@@ -154,7 +161,7 @@ export async function PATCH(
     }
 }
 
-// DELETE /api/tickets/[id]/comments — delete a comment
+// DELETE /api/tickets/[id]/comments — delete a timeline entry
 export async function DELETE(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -175,29 +182,33 @@ export async function DELETE(
 
         const event = await prisma.timelineEvent.findUnique({ where: { id: eventId } });
         if (!event || event.ticketId !== id) {
-            return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Timeline entry not found' }, { status: 404 });
         }
 
-        // Only the author or admins can delete
-        const isOwner = event.userId === session.user.id;
-        const isAdmin = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN';
-        if (!isOwner && !isAdmin) {
+        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        if (!ticket) {
+            return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+        }
+
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
+        if (!hasAccess) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        const isAgent = isAgentOrAbove(session.user.role);
+        const isOwnerComment = event.userId === session.user.id && (event.type === 'COMMENT' || event.type === 'INTERNAL_NOTE');
+        if (!isAgent && !isOwnerComment) {
             return NextResponse.json({ error: 'You can only delete your own comments' }, { status: 403 });
-        }
-
-        // Only COMMENT and INTERNAL_NOTE can be deleted
-        if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
-            return NextResponse.json({ error: 'This event type cannot be deleted' }, { status: 400 });
         }
 
         await prisma.timelineEvent.delete({ where: { id: eventId } });
 
         auditLog({
             userId: session.user.id,
-            action: 'comment.deleted',
+            action: 'timeline_event.deleted',
             entity: 'timelineEvent',
             entityId: eventId,
-            metadata: { ticketId: id, deletedContent: event.content?.substring(0, 200) },
+            metadata: { ticketId: id, type: event.type, deletedContent: event.content?.substring(0, 200) },
         });
 
         return NextResponse.json({ success: true });
