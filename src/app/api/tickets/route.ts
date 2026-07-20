@@ -11,33 +11,11 @@ import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { rename, mkdir } from 'fs/promises';
 import path from 'path';
+import { canAccessQueue, getAgentAccessibleQueueIds } from '@/lib/permissions';
 
 const VALID_VIEWS = new Set(['my', 'queue', 'all']);
 const VALID_STATUSES = new Set(Object.values(TicketStatus));
 const VALID_PRIORITIES = new Set(Object.values(Priority));
-
-async function getAccessibleQueueIds(userId: string): Promise<string[]> {
-    const [groupQueues, directQueues] = await Promise.all([
-        prisma.queueGroup.findMany({
-            where: {
-                group: { members: { some: { userId } } },
-                role: 'agent',
-            },
-            select: { queueId: true },
-        }),
-        prisma.queueMember.findMany({
-            where: { userId, role: 'agent' },
-            select: { queueId: true },
-        }),
-    ]);
-
-    return [
-        ...new Set([
-            ...groupQueues.map((queue) => queue.queueId),
-            ...directQueues.map((queue) => queue.queueId),
-        ]),
-    ];
-}
 
 async function reserveNextTicketCount(year: number): Promise<number> {
     return prisma.$transaction(async (tx) => {
@@ -315,7 +293,7 @@ export async function GET(req: NextRequest) {
                     ],
                 });
             } else {
-                roleBasedQueueIds = await getAccessibleQueueIds(userId);
+                roleBasedQueueIds = await getAgentAccessibleQueueIds(userId);
                 where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
             }
         } else if (view === 'my') {
@@ -326,7 +304,7 @@ export async function GET(req: NextRequest) {
                 ],
             });
         } else if (view === 'queue') {
-            roleBasedQueueIds = await getAccessibleQueueIds(userId);
+            roleBasedQueueIds = await getAgentAccessibleQueueIds(userId);
             where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
         }
 
@@ -443,6 +421,13 @@ export async function POST(req: NextRequest) {
         });
         if (!queue) {
             return NextResponse.json({ error: 'Queue not found' }, { status: 404 });
+        }
+
+        if (session.user.role === 'AGENT') {
+            const hasQueueAccess = await canAccessQueue(session.user.id, session.user.role, queueId);
+            if (!hasQueueAccess) {
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
         }
 
         const customFormValidation = await validateCustomFormData(queueId, session.user.role, formData);

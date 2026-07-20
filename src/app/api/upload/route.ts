@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import { canAccessTicket } from '@/lib/permissions';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
@@ -49,9 +50,16 @@ export async function POST(req: NextRequest) {
         let attachment = null;
         if (ticketId) {
             // Verify ticket exists
-            const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+            const ticket = await prisma.ticket.findUnique({
+                where: { id: ticketId },
+                select: { id: true, requesterId: true, queueId: true },
+            });
             if (!ticket) {
                 return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+            }
+            const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
+            if (!hasAccess) {
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
 
             attachment = await prisma.attachment.create({

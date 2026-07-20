@@ -7,6 +7,7 @@ import { sendTicketUpdatedEmail, sendTicketAssignedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
+import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -42,8 +43,8 @@ export async function GET(
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        // RBAC: Users can only see their own tickets
-        if (session.user.role === 'USER' && ticket.requesterId !== session.user.id) {
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -121,12 +122,21 @@ export async function PATCH(
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        // RBAC
-        if (session.user.role === 'USER' && existingTicket.requesterId !== session.user.id) {
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, existingTicket);
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         const data = parsed.data;
+        if (
+            session.user.role === 'AGENT' &&
+            data.queueId &&
+            data.queueId !== existingTicket.queueId &&
+            !(await canAccessQueue(session.user.id, session.user.role, data.queueId))
+        ) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
         const timelineEvents: Array<{ type: string; content: string; metadata?: Record<string, unknown> }> = [];
 
         // Status transition validation
