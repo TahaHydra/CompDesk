@@ -11,6 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { Plus, Tag } from 'lucide-react';
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { formatTicketValue, getTicketValueBadgeClass } from '@/lib/ticket-display';
+
+function TemplateOptionBadge({ value }: { value: string }) {
+    const badgeClass = getTicketValueBadgeClass(value);
+
+    return (
+        <Badge variant="outline" className={cn('text-xs', badgeClass)}>
+            {formatTicketValue(value)}
+        </Badge>
+    );
+}
 
 export default function AdminTemplatesPage() {
     const { toast } = useToast();
@@ -171,6 +183,13 @@ export default function AdminTemplatesPage() {
                                                     {f.required && <Badge variant="outline" className="text-xs text-red-600">Required</Badge>}
                                                 </div>
                                                 <p className="text-xs text-muted-foreground mt-0.5">Key: {f.fieldKey} · Visible to: {f.visibleTo?.join(', ') || 'All'}</p>
+                                                {Array.isArray(f.options) && f.options.length > 0 ? (
+                                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                                        {f.options.map((option: string) => (
+                                                            <TemplateOptionBadge key={option} value={option} />
+                                                        ))}
+                                                    </div>
+                                                ) : null}
                                             </div>
                                             <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                                                 onClick={() => deleteField.mutate(f.id)}>Delete</Button>
