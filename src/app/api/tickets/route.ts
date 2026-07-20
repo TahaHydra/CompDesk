@@ -1,40 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Priority, TicketStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
+import { sendNewTicketForDepartmentEmail } from '@/lib/email';
 import { prisma } from '@/lib/prisma';
 import { createTicketSchema } from '@/lib/validations';
 import { generateTicketKey, checkRateLimit, sanitizeHtml } from '@/lib/utils';
-import { sendTicketCreatedEmail, sendTicketAssignedEmail } from '@/lib/email';
+import { sendTicketCreatedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
+import { rename, mkdir } from 'fs/promises';
+import path from 'path';
+import { canAccessQueue, getAgentAccessibleQueueIds } from '@/lib/permissions';
 
 const VALID_VIEWS = new Set(['my', 'queue', 'all']);
 const VALID_STATUSES = new Set(Object.values(TicketStatus));
 const VALID_PRIORITIES = new Set(Object.values(Priority));
-
-async function getAccessibleQueueIds(userId: string): Promise<string[]> {
-    const [groupQueues, directQueues] = await Promise.all([
-        prisma.queueGroup.findMany({
-            where: {
-                group: { members: { some: { userId } } },
-                role: 'agent',
-            },
-            select: { queueId: true },
-        }),
-        prisma.queueMember.findMany({
-            where: { userId, role: 'agent' },
-            select: { queueId: true },
-        }),
-    ]);
-
-    return [
-        ...new Set([
-            ...groupQueues.map((queue) => queue.queueId),
-            ...directQueues.map((queue) => queue.queueId),
-        ]),
-    ];
-}
 
 async function reserveNextTicketCount(year: number): Promise<number> {
     return prisma.$transaction(async (tx) => {
@@ -295,6 +276,7 @@ export async function GET(req: NextRequest) {
         const queueId = queueIdParam && queueIdParam !== 'all' ? queueIdParam : null;
 
         const where: Record<string, unknown> = {};
+        const andConditions: Record<string, unknown>[] = [];
         const userId = session.user.id;
         const role = session.user.role;
 
@@ -304,15 +286,25 @@ export async function GET(req: NextRequest) {
             where.requesterId = userId;
         } else if (role === 'AGENT') {
             if (view === 'my') {
-                where.assigneeId = userId;
+                andConditions.push({
+                    OR: [
+                        { assigneeId: userId },
+                        { requesterId: userId },
+                    ],
+                });
             } else {
-                roleBasedQueueIds = await getAccessibleQueueIds(userId);
+                roleBasedQueueIds = await getAgentAccessibleQueueIds(userId);
                 where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
             }
         } else if (view === 'my') {
-            where.assigneeId = userId;
+            andConditions.push({
+                OR: [
+                    { assigneeId: userId },
+                    { requesterId: userId },
+                ],
+            });
         } else if (view === 'queue') {
-            roleBasedQueueIds = await getAccessibleQueueIds(userId);
+            roleBasedQueueIds = await getAgentAccessibleQueueIds(userId);
             where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
         }
 
@@ -332,11 +324,17 @@ export async function GET(req: NextRequest) {
         }
         if (priority) where.priority = priority;
         if (searchParam) {
-            where.OR = [
-                { title: { contains: searchParam, mode: 'insensitive' } },
-                { key: { contains: searchParam, mode: 'insensitive' } },
-                { description: { contains: searchParam, mode: 'insensitive' } },
-            ];
+            andConditions.push({
+                OR: [
+                    { title: { contains: searchParam, mode: 'insensitive' } },
+                    { key: { contains: searchParam, mode: 'insensitive' } },
+                    { description: { contains: searchParam, mode: 'insensitive' } },
+                ],
+            });
+        }
+
+        if (andConditions.length > 0) {
+            where.AND = andConditions;
         }
 
         const [tickets, total] = await Promise.all([
@@ -360,9 +358,9 @@ export async function GET(req: NextRequest) {
         const queueIds = [...new Set(tickets.map((ticket) => ticket.queueId))];
         const slaPolicies = queueIds.length > 0
             ? await prisma.slaPolicy.findMany({
-                  where: { queueId: { in: queueIds } },
-                  select: { queueId: true, priority: true, resolutionMinutes: true },
-              })
+                where: { queueId: { in: queueIds } },
+                select: { queueId: true, priority: true, resolutionMinutes: true },
+            })
             : [];
 
         const slaMap = new Map(
@@ -400,11 +398,15 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+    let requestUserId: string | null = null;
+    let requestIdempotencyKey: string | null = null;
+
     try {
         const session = await auth();
         if (!session?.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+        requestUserId = session.user.id;
 
         if (!checkRateLimit(`ticket:create:${session.user.id}`, 10, 60000)) {
             return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
@@ -416,13 +418,35 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });
         }
 
-        const { title, description, queueId, categoryId, priority, severity, tagIds, formData } = parsed.data;
+        const { idempotencyKey, title, description, queueId, categoryId, priority, severity, tagIds, formData } = parsed.data;
+        requestIdempotencyKey = idempotencyKey ?? null;
+
+        if (idempotencyKey) {
+            const existingTicket = await prisma.ticket.findFirst({
+                where: { requesterId: session.user.id, idempotencyKey },
+                include: {
+                    queue: true,
+                    requester: true,
+                    assignee: true,
+                },
+            });
+            if (existingTicket) {
+                return NextResponse.json(existingTicket, { status: 200 });
+            }
+        }
 
         const queue = await prisma.queue.findUnique({
             where: { id: queueId },
         });
         if (!queue) {
             return NextResponse.json({ error: 'Queue not found' }, { status: 404 });
+        }
+
+        if (session.user.role === 'AGENT') {
+            const hasQueueAccess = await canAccessQueue(session.user.id, session.user.role, queueId);
+            if (!hasQueueAccess) {
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
         }
 
         const customFormValidation = await validateCustomFormData(queueId, session.user.role, formData);
@@ -458,73 +482,11 @@ export async function POST(req: NextRequest) {
             dueAt = new Date(Date.now() + sla.resolutionMinutes * 60000);
         }
 
-        let assigneeId: string | null = null;
-        if (queue.autoAssign) {
-            const [groupAgents, directAgents] = await Promise.all([
-                prisma.groupMember.findMany({
-                    where: {
-                        group: { queueAssignments: { some: { queueId, role: 'agent' } } },
-                    },
-                    include: {
-                        user: {
-                            include: {
-                                _count: {
-                                    select: {
-                                        assignedTickets: {
-                                            where: {
-                                                queueId,
-                                                status: { notIn: ['CLOSED', 'RESOLVED'] },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                }),
-                prisma.queueMember.findMany({
-                    where: { queueId, role: 'agent' },
-                    include: {
-                        user: {
-                            include: {
-                                _count: {
-                                    select: {
-                                        assignedTickets: {
-                                            where: {
-                                                queueId,
-                                                status: { notIn: ['CLOSED', 'RESOLVED'] },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                }),
-            ]);
-
-            const usersMap = new Map<string, any>();
-            for (const member of groupAgents) {
-                if (!usersMap.has(member.user.id)) usersMap.set(member.user.id, member.user);
-            }
-            for (const member of directAgents) {
-                if (!usersMap.has(member.user.id)) usersMap.set(member.user.id, member.user);
-            }
-
-            const allAgents = Array.from(usersMap.values());
-
-            if (allAgents.length > 0) {
-                const sorted = allAgents.sort(
-                    (a: any, b: any) =>
-                        (a._count?.assignedTickets ?? 0) - (b._count?.assignedTickets ?? 0)
-                );
-                assigneeId = sorted[0].id;
-            }
-        }
-
+        // Tickets start UNASSIGNED — agents claim them
         const ticket = await prisma.ticket.create({
             data: {
                 key: ticketKey,
+                idempotencyKey,
                 title,
                 description: description ? sanitizeHtml(description) : null,
                 status: 'NEW',
@@ -533,7 +495,7 @@ export async function POST(req: NextRequest) {
                 queueId,
                 categoryId,
                 requesterId: session.user.id,
-                assigneeId,
+                assigneeId: null,
                 dueAt,
                 formData: (customFormValidation.sanitized as any) ?? undefined,
             },
@@ -554,9 +516,67 @@ export async function POST(req: NextRequest) {
             });
         }
 
+        // Process temp attachments (uploaded before ticket was created)
+        const rawAttachments = body.attachments;
+        if (Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+            const ticketUploadDir = path.join(process.cwd(), 'public', 'uploads', ticket.id);
+            await mkdir(ticketUploadDir, { recursive: true });
+
+            for (const att of rawAttachments.slice(0, 5)) {
+                if (!att.url || !att.filename) continue;
+                try {
+                    const oldPath = path.join(process.cwd(), 'public', att.url);
+                    const filename = path.basename(att.url);
+                    const newPath = path.join(ticketUploadDir, filename);
+                    const newUrl = `/uploads/${ticket.id}/${filename}`;
+                    try { await rename(oldPath, newPath); } catch { /* file may already be moved */ }
+                    await prisma.attachment.create({
+                        data: {
+                            ticketId: ticket.id,
+                            filename: att.filename,
+                            mimetype: att.mimetype || 'application/octet-stream',
+                            size: att.size || 0,
+                            path: newUrl,
+                        },
+                    });
+                } catch (err) {
+                    logger.error('Failed to process attachment', { error: err, filename: att.filename });
+                }
+            }
+        }
+
+        // Add requester as watcher
         await prisma.ticketWatcher.create({
             data: { ticketId: ticket.id, userId: session.user.id },
         });
+
+        // Notify all department agents (add as watchers + email)
+        const [groupAgents, directAgents] = await Promise.all([
+            prisma.groupMember.findMany({
+                where: { group: { queueAssignments: { some: { queueId, role: 'agent' } } } },
+                include: { user: { select: { id: true, email: true } } },
+            }),
+            prisma.queueMember.findMany({
+                where: { queueId, role: 'agent' },
+                include: { user: { select: { id: true, email: true } } },
+            }),
+        ]);
+
+        const agentMap = new Map<string, string>();
+        for (const m of groupAgents) agentMap.set(m.user.id, m.user.email);
+        for (const m of directAgents) agentMap.set(m.user.id, m.user.email);
+        agentMap.delete(session.user.id); // Don't notify the requester if they're also an agent
+
+        // Add agents as watchers
+        if (agentMap.size > 0) {
+            await prisma.ticketWatcher.createMany({
+                data: Array.from(agentMap.keys()).map(agentId => ({
+                    ticketId: ticket.id,
+                    userId: agentId,
+                })),
+                skipDuplicates: true,
+            });
+        }
 
         await prisma.timelineEvent.create({
             data: {
@@ -567,9 +587,13 @@ export async function POST(req: NextRequest) {
             },
         });
 
+        // Email the requester
         sendTicketCreatedEmail(session.user.email!, ticketKey, title);
-        if (assigneeId && ticket.assignee) {
-            sendTicketAssignedEmail(ticket.assignee.email, ticketKey, title);
+
+        // Email all department agents about the new ticket
+        const agentEmails = Array.from(agentMap.values()).filter(Boolean);
+        if (agentEmails.length > 0) {
+            sendNewTicketForDepartmentEmail(agentEmails, ticketKey, title, queue.name);
         }
 
         fireWebhook('ticket.created', {
@@ -589,7 +613,24 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json(ticket, { status: 201 });
-    } catch (error) {
+    } catch (error: any) {
+        if (error?.code === 'P2002' && requestUserId && requestIdempotencyKey) {
+            try {
+                const existingTicket = await prisma.ticket.findFirst({
+                    where: { requesterId: requestUserId, idempotencyKey: requestIdempotencyKey },
+                    include: {
+                        queue: true,
+                        requester: true,
+                        assignee: true,
+                    },
+                });
+                if (existingTicket) {
+                    return NextResponse.json(existingTicket, { status: 200 });
+                }
+            } catch {
+                // Fall through to the generic error response.
+            }
+        }
         logger.error('Failed to create ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

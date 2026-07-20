@@ -17,25 +17,11 @@ const DEFAULT_LIMIT = 20;
 const PAGE_LIMITS = [10, 20, 50] as const;
 const TICKET_PAGE_SIZE_KEY = 'compdesk-ticket-page-size';
 
-const STATUS_VALUES = [
-    'all',
-    'NEW',
-    'OPEN',
-    'PENDING_USER',
-    'PENDING_AGENT',
-    'RESOLVED',
-    'CLOSED',
-] as const;
-
+const STATUS_VALUES = ['all', 'NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'] as const;
 const PRIORITY_VALUES = ['all', 'LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
-
 const VIEW_VALUES = ['my', 'queue', 'all'] as const;
 
-function readParamValue(
-    value: string | null,
-    allowedValues: readonly string[],
-    fallback: string
-) {
+function readParamValue(value: string | null, allowedValues: readonly string[], fallback: string) {
     if (!value) return fallback;
     return allowedValues.includes(value) ? value : fallback;
 }
@@ -69,10 +55,10 @@ export default function TicketsPage() {
     const initialLimit = PAGE_LIMITS.includes(initialLimitFromQuery as any)
         ? initialLimitFromQuery
         : (() => {
-              if (typeof window === 'undefined') return DEFAULT_LIMIT;
-              const stored = Number.parseInt(localStorage.getItem(TICKET_PAGE_SIZE_KEY) ?? '', 10);
-              return PAGE_LIMITS.includes(stored as any) ? stored : DEFAULT_LIMIT;
-          })();
+            if (typeof window === 'undefined') return DEFAULT_LIMIT;
+            const stored = Number.parseInt(localStorage.getItem(TICKET_PAGE_SIZE_KEY) ?? '', 10);
+            return PAGE_LIMITS.includes(stored as any) ? stored : DEFAULT_LIMIT;
+        })();
 
     const [searchInput, setSearchInput] = useState(initialUrlSearch);
     const [search, setSearch] = useState(initialUrlSearch.trim());
@@ -83,33 +69,23 @@ export default function TicketsPage() {
     const [limit, setLimit] = useState(initialLimit);
 
     useEffect(() => {
+        if (session === undefined) return; // wait for session
+
         const nextSearch = searchParams.get('search') ?? '';
         const nextStatus = readParamValue(searchParams.get('status'), STATUS_VALUES, 'all');
         const nextPriority = readParamValue(searchParams.get('priority'), PRIORITY_VALUES, 'all');
         const nextView = readParamValue(searchParams.get('view'), allowedViews, 'my');
         const nextPage = readPositiveInt(searchParams.get('page'), 1);
-        const nextLimitCandidate = readPositiveInt(searchParams.get('limit'), limit);
-        const nextLimit = PAGE_LIMITS.includes(nextLimitCandidate as any) ? nextLimitCandidate : limit;
 
-        if (nextSearch !== searchInput) setSearchInput(nextSearch);
-        if (nextStatus !== status) setStatus(nextStatus);
-        if (nextPriority !== priority) setPriority(nextPriority);
-        if (nextView !== view) setView(nextView);
-        if (nextPage !== page) setPage(nextPage);
-        if (nextLimit !== limit) setLimit(nextLimit);
-    }, [searchParams, allowedViews, limit, page, priority, searchInput, status, view]);
+        setSearchInput((prev) => (prev !== nextSearch ? nextSearch : prev));
+        setSearch((prev) => (prev !== nextSearch.trim() ? nextSearch.trim() : prev));
+        setStatus((prev) => (prev !== nextStatus ? nextStatus : prev));
+        setPriority((prev) => (prev !== nextPriority ? nextPriority : prev));
+        setView((prev) => (prev !== nextView ? nextView : prev));
+        setPage((prev) => (prev !== nextPage ? nextPage : prev));
+    }, [searchParams, allowedViews, session]);
 
-    useEffect(() => {
-        const timeout = window.setTimeout(() => {
-            setSearch(searchInput.trim());
-        }, 250);
-        return () => window.clearTimeout(timeout);
-    }, [searchInput]);
-
-    useEffect(() => {
-        localStorage.setItem(TICKET_PAGE_SIZE_KEY, String(limit));
-    }, [limit]);
-
+    // Handle initial limit from local storage
     useEffect(() => {
         if (searchParams.get('limit')) return;
         const stored = Number.parseInt(localStorage.getItem(TICKET_PAGE_SIZE_KEY) ?? '', 10);
@@ -119,28 +95,32 @@ export default function TicketsPage() {
     }, [limit, searchParams]);
 
     useEffect(() => {
-        if (!allowedViews.includes(view as any)) {
-            setView('my');
+        const timeout = window.setTimeout(() => {
+            setSearch(searchInput.trim());
             setPage(1);
-        }
-    }, [allowedViews, view]);
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [searchInput]);
 
     useEffect(() => {
-        setPage(1);
-    }, [view, status, priority, search, limit]);
+        localStorage.setItem(TICKET_PAGE_SIZE_KEY, String(limit));
+    }, [limit]);
 
+    // Push local state to URL
     useEffect(() => {
+        if (session === undefined) return; // don't push until loaded
+
         const params = new URLSearchParams();
         if (view !== 'my') params.set('view', view);
         if (status !== 'all') params.set('status', status);
         if (priority !== 'all') params.set('priority', priority);
-        if (searchInput.trim()) params.set('search', searchInput.trim());
+        if (search.trim()) params.set('search', search.trim());
         if (page > 1) params.set('page', String(page));
         if (limit !== DEFAULT_LIMIT) params.set('limit', String(limit));
 
         const query = params.toString();
         router.replace(query ? `/tickets?${query}` : '/tickets', { scroll: false });
-    }, [router, view, status, priority, searchInput, page, limit]);
+    }, [router, view, status, priority, search, page, limit, session]);
 
     const { data, isLoading } = useQuery({
         queryKey: ['tickets', view, status, priority, search, page, limit],
@@ -179,14 +159,15 @@ export default function TicketsPage() {
                 </Link>
             </div>
 
+            {/* Filters */}
             <Card className="border-0 shadow-sm">
                 <CardContent className="p-4 space-y-3">
                     <div className="flex flex-wrap items-center gap-3">
-                        <Tabs value={view} onValueChange={setView} className="mr-auto">
+                        <Tabs value={view} onValueChange={(v) => { setView(v); setPage(1); }} className="mr-auto">
                             <TabsList>
                                 <TabsTrigger value="my">My Tickets</TabsTrigger>
                                 {allowedViews.includes('queue') ? (
-                                    <TabsTrigger value="queue">Queue</TabsTrigger>
+                                    <TabsTrigger value="queue">Department</TabsTrigger>
                                 ) : null}
                                 {allowedViews.includes('all') ? (
                                     <TabsTrigger value="all">All</TabsTrigger>
@@ -204,10 +185,8 @@ export default function TicketsPage() {
                             />
                         </div>
 
-                        <Select value={status} onValueChange={setStatus}>
-                            <SelectTrigger className="w-40 h-9">
-                                <SelectValue placeholder="Status" />
-                            </SelectTrigger>
+                        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+                            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Status</SelectItem>
                                 <SelectItem value="NEW">New</SelectItem>
@@ -219,10 +198,8 @@ export default function TicketsPage() {
                             </SelectContent>
                         </Select>
 
-                        <Select value={priority} onValueChange={setPriority}>
-                            <SelectTrigger className="w-36 h-9">
-                                <SelectValue placeholder="Priority" />
-                            </SelectTrigger>
+                        <Select value={priority} onValueChange={(v) => { setPriority(v); setPage(1); }}>
+                            <SelectTrigger className="w-36 h-9"><SelectValue placeholder="Priority" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Priority</SelectItem>
                                 <SelectItem value="LOW">Low</SelectItem>
@@ -233,31 +210,18 @@ export default function TicketsPage() {
                         </Select>
 
                         <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
-                            <SelectTrigger className="w-28 h-9">
-                                <SelectValue />
-                            </SelectTrigger>
+                            <SelectTrigger className="w-28 h-9"><SelectValue /></SelectTrigger>
                             <SelectContent>
                                 {PAGE_LIMITS.map((size) => (
-                                    <SelectItem key={size} value={String(size)}>
-                                        {size}/page
-                                    </SelectItem>
+                                    <SelectItem key={size} value={String(size)}>{size}/page</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
 
                         {hasFilters ? (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="gap-1.5"
-                                onClick={() => {
-                                    setView('my');
-                                    setStatus('all');
-                                    setPriority('all');
-                                    setSearchInput('');
-                                    setPage(1);
-                                }}
-                            >
+                            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => {
+                                setView('my'); setStatus('all'); setPriority('all'); setSearchInput(''); setPage(1);
+                            }}>
                                 <X className="h-3.5 w-3.5" /> Clear
                             </Button>
                         ) : (
@@ -269,6 +233,7 @@ export default function TicketsPage() {
                 </CardContent>
             </Card>
 
+            {/* Ticket Table */}
             <Card className="border-0 shadow-sm">
                 <CardContent className="p-0">
                     {isLoading ? (
@@ -286,65 +251,64 @@ export default function TicketsPage() {
                             </p>
                         </div>
                     ) : (
-                        <div className="divide-y">
-                            {tickets.map((ticket: any) => (
-                                <Link
-                                    key={ticket.id}
-                                    href={`/tickets/${ticket.id}`}
-                                    className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
-                                >
-                                    <div className="flex items-start gap-4 min-w-0 flex-1">
-                                        <div className="flex flex-col gap-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-mono text-muted-foreground">
-                                                    {ticket.key}
-                                                </span>
-                                                {ticket.slaBreached ? (
-                                                    <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                                                ) : null}
-                                            </div>
-                                            <h3 className="text-sm font-medium truncate">{ticket.title}</h3>
-                                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                <span>{ticket.queue?.name}</span>
-                                                <span>·</span>
-                                                <span>{ticket.requester?.name}</span>
-                                                <span>·</span>
-                                                <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 shrink-0 ml-4">
-                                        {ticket.assignee ? (
-                                            <span className="text-xs text-muted-foreground hidden sm:block">
-                                                → {ticket.assignee.name}
-                                            </span>
-                                        ) : null}
-                                        <Badge
-                                            variant="secondary"
-                                            className={`status-${ticket.status.toLowerCase()} text-xs`}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b bg-muted/40">
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Title</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Department</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Requester</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Assignee</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Priority</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden xl:table-cell">Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {tickets.map((ticket: any) => (
+                                        <tr
+                                            key={ticket.id}
+                                            className="hover:bg-muted/30 transition-colors cursor-pointer"
+                                            onClick={() => router.push(`/tickets/${ticket.id}`)}
                                         >
-                                            {ticket.status.replace(/_/g, ' ')}
-                                        </Badge>
-                                        <Badge
-                                            variant="outline"
-                                            className={`priority-${ticket.priority.toLowerCase()} text-xs`}
-                                        >
-                                            {ticket.priority}
-                                        </Badge>
-                                        {ticket.tags?.map((tt: any) => (
-                                            <Badge
-                                                key={tt.tag.id}
-                                                variant="outline"
-                                                className="text-xs"
-                                                style={{ borderColor: tt.tag.color, color: tt.tag.color }}
-                                            >
-                                                {tt.tag.name}
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                </Link>
-                            ))}
+                                            <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                                {ticket.key}
+                                                {ticket.slaBreached && <AlertTriangle className="inline h-3 w-3 text-destructive ml-1" />}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium max-w-[280px]">
+                                                <span className="truncate block">{ticket.title}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
+                                                {ticket.queue?.name ?? '—'}
+                                            </td>
+                                            <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
+                                                {ticket.requester?.name ?? '—'}
+                                            </td>
+                                            <td className="px-4 py-3 hidden lg:table-cell">
+                                                {ticket.assignee ? (
+                                                    <span className="text-sm">{ticket.assignee.name}</span>
+                                                ) : (
+                                                    <span className="text-xs text-amber-600 font-medium">Unassigned</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>
+                                                    {ticket.status.replace(/_/g, ' ')}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3 hidden sm:table-cell">
+                                                <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>
+                                                    {ticket.priority}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap hidden xl:table-cell">
+                                                {new Date(ticket.createdAt).toLocaleDateString()}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     )}
 
@@ -354,20 +318,14 @@ export default function TicketsPage() {
                                 Page {pagination.page} of {pagination.pages}
                             </p>
                             <div className="flex gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
+                                <Button variant="outline" size="sm"
                                     onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                                    disabled={page === 1}
-                                >
+                                    disabled={page === 1}>
                                     Previous
                                 </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
+                                <Button variant="outline" size="sm"
                                     onClick={() => setPage((prev) => Math.min(pagination.pages, prev + 1))}
-                                    disabled={page >= pagination.pages}
-                                >
+                                    disabled={page >= pagination.pages}>
                                     Next
                                 </Button>
                             </div>

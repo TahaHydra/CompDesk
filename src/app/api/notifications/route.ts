@@ -24,7 +24,7 @@ export async function GET() {
             // End users see notifications for tickets they submitted
             ticketFilter = { requesterId: userId };
         } else if (role === 'AGENT') {
-            // Agents see notifications for tickets assigned to them or in their departments
+            // Agents see notifications for tickets they're watching (includes department tickets)
             ticketFilter = {
                 OR: [
                     { assigneeId: userId },
@@ -48,7 +48,7 @@ export async function GET() {
                 ticket: { select: { id: true, key: true, title: true } },
             },
             orderBy: { createdAt: 'desc' },
-            take: 15,
+            take: 20,
         });
 
         // Count unread

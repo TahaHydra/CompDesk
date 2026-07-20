@@ -7,6 +7,7 @@ import { sendTicketUpdatedEmail, sendTicketAssignedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
+import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -42,8 +43,8 @@ export async function GET(
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        // RBAC: Users can only see their own tickets
-        if (session.user.role === 'USER' && ticket.requesterId !== session.user.id) {
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -121,12 +122,21 @@ export async function PATCH(
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        // RBAC
-        if (session.user.role === 'USER' && existingTicket.requesterId !== session.user.id) {
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, existingTicket);
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         const data = parsed.data;
+        if (
+            session.user.role === 'AGENT' &&
+            data.queueId &&
+            data.queueId !== existingTicket.queueId &&
+            !(await canAccessQueue(session.user.id, session.user.role, data.queueId))
+        ) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
         const timelineEvents: Array<{ type: string; content: string; metadata?: Record<string, unknown> }> = [];
 
         // Status transition validation
@@ -251,6 +261,58 @@ export async function PATCH(
         return NextResponse.json(updatedTicket);
     } catch (error) {
         logger.error('Failed to update ticket', { error });
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
+
+// DELETE /api/tickets/[id] — user can delete own ticket only if unassigned
+export async function DELETE(
+    req: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const session = await auth();
+        if (!session?.user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const { id } = await params;
+
+        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        if (!ticket) {
+            return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+        }
+
+        // Only the requester can delete
+        if (ticket.requesterId !== session.user.id) {
+            return NextResponse.json({ error: 'Only the ticket requester can delete this ticket' }, { status: 403 });
+        }
+
+        // Only unassigned tickets can be deleted
+        if (ticket.assigneeId) {
+            return NextResponse.json({ error: 'Cannot delete a ticket that has been assigned. Contact an agent.' }, { status: 400 });
+        }
+
+        // Delete all associated records
+        await prisma.$transaction([
+            prisma.timelineEvent.deleteMany({ where: { ticketId: id } }),
+            prisma.ticketWatcher.deleteMany({ where: { ticketId: id } }),
+            prisma.ticketTag.deleteMany({ where: { ticketId: id } }),
+            prisma.attachment.deleteMany({ where: { ticketId: id } }),
+            prisma.ticket.delete({ where: { id } }),
+        ]);
+
+        auditLog({
+            userId: session.user.id,
+            action: 'ticket.deleted',
+            entity: 'ticket',
+            entityId: id,
+            metadata: { key: ticket.key, title: ticket.title },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        logger.error('Failed to delete ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }

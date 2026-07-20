@@ -30,12 +30,27 @@ export interface ButtonProps
     extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
     asChild?: boolean
+    disableClickGuard?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-    ({ className, variant, size, asChild = false, ...props }, ref) => {
+    ({ className, variant, size, asChild = false, disableClickGuard = false, onClick, ...props }, ref) => {
         const Comp = asChild ? Slot : "button"
-        return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+        const lastClickRef = React.useRef(0)
+        const guardedOnClick = React.useCallback<React.MouseEventHandler<HTMLButtonElement>>((event) => {
+            if (!disableClickGuard && !asChild) {
+                const now = Date.now()
+                if (now - lastClickRef.current < 800) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    return
+                }
+                lastClickRef.current = now
+            }
+            onClick?.(event)
+        }, [asChild, disableClickGuard, onClick])
+
+        return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} onClick={guardedOnClick} {...props} />
     }
 )
 Button.displayName = "Button"

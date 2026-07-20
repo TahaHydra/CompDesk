@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 interface WebhookPayload {
     event: string;
@@ -9,6 +10,10 @@ interface WebhookPayload {
 
 export async function fireWebhook(event: string, data: Record<string, unknown>) {
     try {
+        if (!(await getFeatureFlag('feature_webhooks_enabled'))) {
+            return;
+        }
+
         const webhooks = await prisma.webhookConfig.findMany({
             where: {
                 isActive: true,
