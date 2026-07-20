@@ -19,9 +19,11 @@ import {
     ArrowLeft, MessageSquare, Lock, User, AlertTriangle,
     Send, Eye, Shield, XCircle, ArrowUpCircle,
     Paperclip, Download, FileIcon, Trash2, Upload,
-    Hand, Pencil, X, Check, Trash,
+    Hand, Pencil, X, Check, Trash, ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
+import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
 
 function formatFileSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
@@ -31,6 +33,26 @@ function formatFileSize(bytes: number) {
 
 function isImageType(mimetype: string) {
     return mimetype.startsWith('image/');
+}
+
+const CONVERSATION_EVENT_TYPES = ['COMMENT', 'INTERNAL_NOTE'];
+const STATUS_OPTIONS = ['NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'];
+const PRIORITY_OPTIONS = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
+
+function StatusBadge({ value }: { value: string }) {
+    return (
+        <Badge className={cn('text-xs', getStatusBadgeClass(value))}>
+            {formatTicketValue(value)}
+        </Badge>
+    );
+}
+
+function PriorityBadge({ value }: { value: string }) {
+    return (
+        <Badge variant="outline" className={cn('text-xs', getPriorityBadgeClass(value))}>
+            {formatTicketValue(value)}
+        </Badge>
+    );
 }
 
 // Render description with inline images (markdown ![alt](url) syntax)
@@ -75,10 +97,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [editingEventId, setEditingEventId] = useState<string | null>(null);
     const [editContent, setEditContent] = useState('');
     const [deleteTicketOpen, setDeleteTicketOpen] = useState(false);
+    const [timelineOpen, setTimelineOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const isAgent = session?.user?.role !== 'USER';
-    const isAdminUser = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
+    const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
     const { data: ticket, isLoading } = useQuery({
         queryKey: ['ticket', id],
@@ -174,7 +196,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             setEditingEventId(null);
             setEditContent('');
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Comment updated' });
+            toast({ title: 'Timeline entry updated' });
         },
         onError: (e: Error) => {
             toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -194,7 +216,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Comment deleted' });
+            toast({ title: 'Timeline entry deleted' });
         },
         onError: (e: Error) => {
             toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -286,18 +308,20 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         }
     }, [uploadToTicket]);
 
-    // Check if a comment is editable (own comment, within 24h)
-    const canEditComment = (event: any) => {
-        if (event.userId !== session?.user?.id) return false;
-        if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') return false;
+    const isConversationEvent = (event: any) => CONVERSATION_EVENT_TYPES.includes(event.type);
+
+    // Agents/admins can clean up timeline history; users can still edit their own recent comments.
+    const canEditTimelineEvent = (event: any) => {
+        if (!event.content) return false;
+        if (isAgent) return true;
+        if (event.userId !== session?.user?.id || !isConversationEvent(event)) return false;
         const hours = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
         return hours <= 24;
     };
 
-    // Check if a comment is deletable (own comment or admin)
-    const canDeleteComment = (event: any) => {
-        if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') return false;
-        return event.userId === session?.user?.id || isAdminUser;
+    const canDeleteTimelineEvent = (event: any) => {
+        if (isAgent) return true;
+        return isConversationEvent(event) && event.userId === session?.user?.id;
     };
 
     if (isLoading) {
@@ -318,15 +342,101 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         );
     }
 
-    const statusColor: Record<string, string> = {
-        NEW: 'status-new', OPEN: 'status-open', PENDING_USER: 'status-pending_user',
-        PENDING_AGENT: 'status-pending_agent', RESOLVED: 'status-resolved', CLOSED: 'status-closed',
-    };
-
     const imageAttachments = (ticket.attachments ?? []).filter((a: any) => isImageType(a.mimetype));
     const fileAttachments = (ticket.attachments ?? []).filter((a: any) => !isImageType(a.mimetype));
     const isRequester = ticket.requesterId === session?.user?.id;
     const canDeleteTicket = isRequester && !ticket.assigneeId;
+    const conversationEvents = (ticket.timeline ?? []).filter((event: any) => isConversationEvent(event));
+    const timelineEvents = (ticket.timeline ?? []).filter((event: any) => !isConversationEvent(event));
+
+    const renderTimelineEntry = (event: any, compact = false) => {
+        const isEditing = editingEventId === event.id;
+        const showEditBtn = canEditTimelineEvent(event);
+        const showDeleteBtn = canDeleteTimelineEvent(event);
+        const isEdited = event.metadata?.edited;
+
+        return (
+            <div
+                key={event.id}
+                className={cn(
+                    'flex gap-3 animate-fade-in',
+                    event.type === 'INTERNAL_NOTE' && 'bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800',
+                    compact && event.type !== 'INTERNAL_NOTE' && 'rounded-lg border bg-muted/20 p-3'
+                )}
+            >
+                <Avatar className={cn('shrink-0 mt-0.5', compact ? 'h-7 w-7' : 'h-8 w-8')}>
+                    <AvatarFallback className="text-xs bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                        {event.user?.name?.split(' ').map((n: string) => n[0]).join('') ?? '?'}
+                    </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium">{event.user?.name}</span>
+                        {event.type === 'INTERNAL_NOTE' && (
+                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                                <Eye className="h-3 w-3 mr-1" /> Internal
+                            </Badge>
+                        )}
+                        {event.type === 'ESCALATED' && (
+                            <Badge variant="destructive" className="text-xs gap-1">
+                                <ArrowUpCircle className="h-3 w-3" /> Escalated
+                            </Badge>
+                        )}
+                        {event.type === 'STATUS_CHANGE' && (
+                            <Badge variant="secondary" className="text-xs">Status Change</Badge>
+                        )}
+                        {event.type === 'ASSIGNMENT_CHANGE' && (
+                            <Badge variant="secondary" className="text-xs">Assignment</Badge>
+                        )}
+                        {event.type === 'PRIORITY_CHANGE' && (
+                            <Badge variant="secondary" className="text-xs">Priority</Badge>
+                        )}
+                        {isEdited && (
+                            <span className="text-xs text-muted-foreground italic">(edited)</span>
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                            {new Date(event.createdAt).toLocaleString()}
+                        </span>
+
+                        {(showEditBtn || showDeleteBtn) && !isEditing && (
+                            <div className="ml-auto flex gap-1">
+                                {showEditBtn && (
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary"
+                                        onClick={() => { setEditingEventId(event.id); setEditContent(event.content || ''); }}>
+                                        <Pencil className="h-3 w-3" />
+                                    </Button>
+                                )}
+                                {showDeleteBtn && (
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                        onClick={() => deleteComment.mutate(event.id)}>
+                                        <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {isEditing ? (
+                        <div className="mt-2 space-y-2">
+                            <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={3} autoFocus />
+                            <div className="flex gap-2">
+                                <Button size="sm" className="gap-1" disabled={editComment.isPending}
+                                    onClick={() => editComment.mutate({ eventId: event.id, content: editContent })}>
+                                    <Check className="h-3 w-3" /> Save
+                                </Button>
+                                <Button size="sm" variant="ghost" className="gap-1"
+                                    onClick={() => { setEditingEventId(null); setEditContent(''); }}>
+                                    <X className="h-3 w-3" /> Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        event.content && <RenderDescription text={event.content} />
+                    )}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-6">
@@ -339,8 +449,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     <div>
                         <div className="flex items-center gap-3">
                             <span className="text-sm font-mono text-muted-foreground">{ticket.key}</span>
-                            <Badge className={statusColor[ticket.status]}>{ticket.status.replace(/_/g, ' ')}</Badge>
-                            <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()}`}>{ticket.priority}</Badge>
+                            <StatusBadge value={ticket.status} />
+                            <PriorityBadge value={ticket.priority} />
                             {ticket.escalationLevel > 0 && (
                                 <Badge variant="destructive" className="gap-1"><ArrowUpCircle className="h-3 w-3" /> Escalated L{ticket.escalationLevel}</Badge>
                             )}
@@ -458,97 +568,21 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         </Card>
                     )}
 
-                    {/* Timeline */}
+                    {/* Conversation */}
                     <Card className="border-0 shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-base flex items-center gap-2">
-                                <MessageSquare className="h-4 w-4 text-primary" /> Timeline
+                                <MessageSquare className="h-4 w-4 text-primary" /> Conversation
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {ticket.timeline?.map((event: any) => {
-                                const isEditing = editingEventId === event.id;
-                                const showEditBtn = canEditComment(event);
-                                const showDeleteBtn = canDeleteComment(event);
-                                const isEdited = event.metadata?.edited;
-
-                                return (
-                                    <div
-                                        key={event.id}
-                                        className={`flex gap-3 animate-fade-in ${event.type === 'INTERNAL_NOTE' ? 'bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800' : ''}`}
-                                    >
-                                        <Avatar className="h-8 w-8 shrink-0 mt-0.5">
-                                            <AvatarFallback className="text-xs bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
-                                                {event.user?.name?.split(' ').map((n: string) => n[0]).join('') ?? '?'}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="text-sm font-medium">{event.user?.name}</span>
-                                                {event.type === 'INTERNAL_NOTE' && (
-                                                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                                                        <Eye className="h-3 w-3 mr-1" /> Internal
-                                                    </Badge>
-                                                )}
-                                                {event.type === 'ESCALATED' && (
-                                                    <Badge variant="destructive" className="text-xs gap-1">
-                                                        <ArrowUpCircle className="h-3 w-3" /> Escalated
-                                                    </Badge>
-                                                )}
-                                                {event.type === 'STATUS_CHANGE' && (
-                                                    <Badge variant="secondary" className="text-xs">Status Change</Badge>
-                                                )}
-                                                {event.type === 'ASSIGNMENT_CHANGE' && (
-                                                    <Badge variant="secondary" className="text-xs">Assignment</Badge>
-                                                )}
-                                                {isEdited && (
-                                                    <span className="text-xs text-muted-foreground italic">(edited)</span>
-                                                )}
-                                                <span className="text-xs text-muted-foreground">
-                                                    {new Date(event.createdAt).toLocaleString()}
-                                                </span>
-
-                                                {/* Edit / Delete icons */}
-                                                {(showEditBtn || showDeleteBtn) && !isEditing && (
-                                                    <div className="ml-auto flex gap-1">
-                                                        {showEditBtn && (
-                                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary"
-                                                                onClick={() => { setEditingEventId(event.id); setEditContent(event.content || ''); }}>
-                                                                <Pencil className="h-3 w-3" />
-                                                            </Button>
-                                                        )}
-                                                        {showDeleteBtn && (
-                                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                                                onClick={() => deleteComment.mutate(event.id)}>
-                                                                <Trash2 className="h-3 w-3" />
-                                                            </Button>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Content — editable inline */}
-                                            {isEditing ? (
-                                                <div className="mt-2 space-y-2">
-                                                    <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={3} autoFocus />
-                                                    <div className="flex gap-2">
-                                                        <Button size="sm" className="gap-1" disabled={editComment.isPending}
-                                                            onClick={() => editComment.mutate({ eventId: event.id, content: editContent })}>
-                                                            <Check className="h-3 w-3" /> Save
-                                                        </Button>
-                                                        <Button size="sm" variant="ghost" className="gap-1"
-                                                            onClick={() => { setEditingEventId(null); setEditContent(''); }}>
-                                                            <X className="h-3 w-3" /> Cancel
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                event.content && <RenderDescription text={event.content} />
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                            {conversationEvents.length > 0 ? (
+                                conversationEvents.map((event: any) => renderTimelineEntry(event))
+                            ) : (
+                                <div className="rounded-lg border border-dashed py-8 text-center">
+                                    <p className="text-sm text-muted-foreground">No conversation yet.</p>
+                                </div>
+                            )}
 
                             {/* Comment input */}
                             <Separator className="my-4" />
@@ -625,10 +659,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         value={ticket.status}
                                         onValueChange={(v) => updateTicket.mutate({ status: v })}
                                     >
-                                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                        <SelectTrigger className="h-9">
+                                            <StatusBadge value={ticket.status} />
+                                        </SelectTrigger>
                                         <SelectContent>
-                                            {['NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'].map((s) => (
-                                                <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
+                                            {STATUS_OPTIONS.map((s) => (
+                                                <SelectItem key={s} value={s}>
+                                                    <StatusBadge value={s} />
+                                                </SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
@@ -656,10 +694,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         value={ticket.priority}
                                         onValueChange={(v) => updateTicket.mutate({ priority: v })}
                                     >
-                                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                        <SelectTrigger className="h-9">
+                                            <PriorityBadge value={ticket.priority} />
+                                        </SelectTrigger>
                                         <SelectContent>
-                                            {['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((p) => (
-                                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                                            {PRIORITY_OPTIONS.map((p) => (
+                                                <SelectItem key={p} value={p}>
+                                                    <PriorityBadge value={p} />
+                                                </SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
@@ -735,6 +777,36 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             </CardContent>
                         </Card>
                     )}
+
+                    {/* Collapsible audit timeline */}
+                    <Card className="border-0 shadow-sm">
+                        <CardHeader className="pb-3">
+                            <button
+                                type="button"
+                                className="flex w-full items-center justify-between gap-3 text-left"
+                                onClick={() => setTimelineOpen((open) => !open)}
+                                aria-expanded={timelineOpen}
+                            >
+                                <CardTitle className="text-base flex items-center gap-2">
+                                    <MessageSquare className="h-4 w-4 text-primary" />
+                                    Timeline
+                                    <Badge variant="secondary" className="text-xs">{timelineEvents.length}</Badge>
+                                </CardTitle>
+                                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', timelineOpen && 'rotate-180')} />
+                            </button>
+                        </CardHeader>
+                        {timelineOpen && (
+                            <CardContent className="space-y-3">
+                                {timelineEvents.length > 0 ? (
+                                    timelineEvents.map((event: any) => renderTimelineEntry(event, true))
+                                ) : (
+                                    <p className="rounded-lg border border-dashed py-6 text-center text-xs text-muted-foreground">
+                                        No status, priority, assignment, or escalation events yet.
+                                    </p>
+                                )}
+                            </CardContent>
+                        )}
+                    </Card>
 
                     {/* Details */}
                     <Card className="border-0 shadow-sm">
