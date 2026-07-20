@@ -5,6 +5,7 @@ import { isAdmin } from '@/lib/utils';
 import { unlink } from 'fs/promises';
 import path from 'path';
 import { canAccessTicket } from '@/lib/permissions';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 // DELETE /api/upload/:id — delete an attachment
 export async function DELETE(
@@ -14,6 +15,9 @@ export async function DELETE(
     try {
         const session = await auth();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!(await getFeatureFlag('feature_attachments_enabled'))) {
+            return NextResponse.json({ error: 'Attachments are disabled' }, { status: 403 });
+        }
 
         const { id } = await params;
 
