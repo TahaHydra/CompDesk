@@ -67,6 +67,7 @@ model User {
   id            String    @id @default(uuid())
   entraObjectId String?   @unique @map("entra_object_id")
   email         String    @unique
+  emailVerified DateTime? @map("email_verified")
   name          String
   image         String?
   passwordHash  String?   @map("password_hash")
@@ -249,6 +250,7 @@ model TicketTag {
 model Ticket {
   id              String       @id @default(uuid())
   key             String       @unique
+  idempotencyKey  String?      @map("idempotency_key")
   title           String
   description     String?      @db.Text
   status          TicketStatus @default(NEW)
@@ -291,6 +293,7 @@ model Ticket {
   @@index([assigneeId])
   @@index([createdAt])
   @@index([escalationLevel])
+  @@unique([requesterId, idempotencyKey])
   @@map("tickets")
 }
 

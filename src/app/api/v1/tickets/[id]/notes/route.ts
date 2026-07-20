@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sanitizeHtml } from '@/lib/utils';
 import logger from '@/lib/logger';
-
-function validateApiKey(req: NextRequest): boolean {
-    const apiKey = req.headers.get('x-api-key') ?? req.headers.get('authorization')?.replace('Bearer ', '');
-    return apiKey === process.env.API_KEY;
-}
+import { authenticateApiRequest } from '@/lib/api-clients';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 // POST /api/v1/tickets/[id]/notes - Append internal note
 export async function POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    if (!validateApiKey(req)) {
+    if (!(await getFeatureFlag('feature_external_api_enabled'))) {
+        return NextResponse.json({ error: 'External API is disabled' }, { status: 403 });
+    }
+
+    const authResult = await authenticateApiRequest(req, 'tickets:write');
+    if (!authResult.ok) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -28,6 +30,13 @@ export async function POST(
         const ticket = await prisma.ticket.findUnique({ where: { id } });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+        }
+        if (
+            authResult.source === 'client' &&
+            authResult.client.allowedQueueIds.length > 0 &&
+            !authResult.client.allowedQueueIds.includes(ticket.queueId)
+        ) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         // Find author or use system

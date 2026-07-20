@@ -115,7 +115,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 )}
             >
                 {/* Logo */}
-                <Link href="/dashboard" className="flex h-16 items-center gap-3 border-b px-4 hover:bg-accent/50 transition-colors">
+                <Link href="/" className="flex h-16 items-center gap-3 border-b px-4 hover:bg-accent/50 transition-colors">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
                         <Shield className="h-5 w-5 text-white" />
                     </div>

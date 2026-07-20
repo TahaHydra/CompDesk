@@ -6,12 +6,35 @@ import { createQueueSchema } from '@/lib/validations';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
     try {
         const session = await auth();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+        const { searchParams } = new URL(req.url);
+        const accessibleOnly = searchParams.get('accessible') === 'true';
+
+        let where: any = {};
+        if (accessibleOnly && session.user.role !== 'SUPER_ADMIN' && session.user.role !== 'ADMIN') {
+            const [groupQueues, directQueues] = await Promise.all([
+                prisma.queueGroup.findMany({
+                    where: { group: { members: { some: { userId: session.user.id } } }, role: 'agent' },
+                    select: { queueId: true },
+                }),
+                prisma.queueMember.findMany({
+                    where: { userId: session.user.id, role: 'agent' },
+                    select: { queueId: true },
+                }),
+            ]);
+            const queueIds = [...new Set([...groupQueues, ...directQueues].map((q) => q.queueId))];
+            if (queueIds.length === 0) {
+                return NextResponse.json([]); // No access to any queues
+            }
+            where = { id: { in: queueIds } };
+        }
+
         const queues = await prisma.queue.findMany({
+            where,
             include: {
                 _count: { select: { tickets: true } },
                 groups: { include: { group: { select: { id: true, name: true } } } },

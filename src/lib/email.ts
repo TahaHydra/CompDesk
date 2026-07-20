@@ -174,3 +174,33 @@ export async function sendTicketUpdatedEmail(
     `,
   });
 }
+
+export async function sendNewTicketForDepartmentEmail(
+  agentEmails: string[],
+  ticketKey: string,
+  ticketTitle: string,
+  departmentName: string
+) {
+  if (!(await isEmailEventEnabled('email_on_ticket_created'))) return false;
+
+  return sendEmail({
+    to: agentEmails,
+    subject: `[${ticketKey}] New Ticket in ${departmentName}: ${ticketTitle}`,
+    html: `
+      <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 24px; border-radius: 12px 12px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 20px;">CompDesk</h1>
+        </div>
+        <div style="padding: 24px; background: #f8fafc; border-radius: 0 0 12px 12px;">
+          <h2 style="color: #1e293b; margin-top: 0;">New Ticket in ${departmentName}</h2>
+          <p style="color: #475569;">A new ticket <strong>${ticketKey}</strong> has been submitted and needs attention.</p>
+          <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <p style="margin: 0; color: #1e293b;"><strong>Title:</strong> ${ticketTitle}</p>
+            <p style="margin: 8px 0 0; color: #475569;"><strong>Department:</strong> ${departmentName}</p>
+          </div>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 16px;">Log in to CompDesk to claim this ticket.</p>
+        </div>
+      </div>
+    `,
+  });
+}

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Priority, Severity, TicketStatus, FormFieldType } from '@prisma/client';
 
 export const createTicketSchema = z.object({
+    idempotencyKey: z.string().uuid().optional(),
     title: z.string().min(3, 'Title must be at least 3 characters').max(200),
     description: z.string().max(10000).optional(),
     queueId: z.string().uuid(),
