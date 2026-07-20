@@ -2,6 +2,44 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { isAdmin } from '@/lib/utils';
+import { promises as fs } from 'fs';
+import path from 'path';
+
+async function updateEnvFile(updates: Record<string, unknown>) {
+    try {
+        const envPath = path.join(process.cwd(), '.env');
+        let envContent = await fs.readFile(envPath, 'utf8').catch(() => '');
+
+        let changed = false;
+
+        const envMapping: Record<string, string> = {
+            'azure_ad_client_id': 'AZURE_AD_CLIENT_ID',
+            'azure_ad_client_secret': 'AZURE_AD_CLIENT_SECRET',
+            'azure_ad_tenant_id': 'AZURE_AD_TENANT_ID',
+        };
+
+        for (const [key, value] of Object.entries(updates)) {
+            const envKey = envMapping[key];
+            if (!envKey) continue;
+
+            changed = true;
+            const regex = new RegExp(`^#?\\s*${envKey}=.*$`, 'm');
+            const newLine = `${envKey}="${value}"`;
+
+            if (regex.test(envContent)) {
+                envContent = envContent.replace(regex, newLine);
+            } else {
+                envContent += `\n${newLine}`;
+            }
+        }
+
+        if (changed) {
+            await fs.writeFile(envPath, envContent.trim() + '\n', 'utf8');
+        }
+    } catch (e) {
+        console.error('Failed to update .env', e);
+    }
+}
 
 // GET /api/settings — load all settings
 export async function GET() {
@@ -51,6 +89,9 @@ export async function PATCH(request: Request) {
                 create: { key, value: String(value) },
             });
         }
+
+        // Also update .env file for environment variables that NextAuth needs at load-time
+        await updateEnvFile(Object.fromEntries(updates));
 
         return NextResponse.json({ success: true });
     } catch {

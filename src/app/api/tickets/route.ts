@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Priority, TicketStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
+import { sendNewTicketForDepartmentEmail } from '@/lib/email';
 import { prisma } from '@/lib/prisma';
 import { createTicketSchema } from '@/lib/validations';
 import { generateTicketKey, checkRateLimit, sanitizeHtml } from '@/lib/utils';
-import { sendTicketCreatedEmail, sendTicketAssignedEmail } from '@/lib/email';
+import { sendTicketCreatedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
+import { rename, mkdir } from 'fs/promises';
+import path from 'path';
 
 const VALID_VIEWS = new Set(['my', 'queue', 'all']);
 const VALID_STATUSES = new Set(Object.values(TicketStatus));
@@ -295,6 +298,7 @@ export async function GET(req: NextRequest) {
         const queueId = queueIdParam && queueIdParam !== 'all' ? queueIdParam : null;
 
         const where: Record<string, unknown> = {};
+        const andConditions: Record<string, unknown>[] = [];
         const userId = session.user.id;
         const role = session.user.role;
 
@@ -304,13 +308,23 @@ export async function GET(req: NextRequest) {
             where.requesterId = userId;
         } else if (role === 'AGENT') {
             if (view === 'my') {
-                where.assigneeId = userId;
+                andConditions.push({
+                    OR: [
+                        { assigneeId: userId },
+                        { requesterId: userId },
+                    ],
+                });
             } else {
                 roleBasedQueueIds = await getAccessibleQueueIds(userId);
                 where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
             }
         } else if (view === 'my') {
-            where.assigneeId = userId;
+            andConditions.push({
+                OR: [
+                    { assigneeId: userId },
+                    { requesterId: userId },
+                ],
+            });
         } else if (view === 'queue') {
             roleBasedQueueIds = await getAccessibleQueueIds(userId);
             where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
@@ -332,11 +346,17 @@ export async function GET(req: NextRequest) {
         }
         if (priority) where.priority = priority;
         if (searchParam) {
-            where.OR = [
-                { title: { contains: searchParam, mode: 'insensitive' } },
-                { key: { contains: searchParam, mode: 'insensitive' } },
-                { description: { contains: searchParam, mode: 'insensitive' } },
-            ];
+            andConditions.push({
+                OR: [
+                    { title: { contains: searchParam, mode: 'insensitive' } },
+                    { key: { contains: searchParam, mode: 'insensitive' } },
+                    { description: { contains: searchParam, mode: 'insensitive' } },
+                ],
+            });
+        }
+
+        if (andConditions.length > 0) {
+            where.AND = andConditions;
         }
 
         const [tickets, total] = await Promise.all([
@@ -360,9 +380,9 @@ export async function GET(req: NextRequest) {
         const queueIds = [...new Set(tickets.map((ticket) => ticket.queueId))];
         const slaPolicies = queueIds.length > 0
             ? await prisma.slaPolicy.findMany({
-                  where: { queueId: { in: queueIds } },
-                  select: { queueId: true, priority: true, resolutionMinutes: true },
-              })
+                where: { queueId: { in: queueIds } },
+                select: { queueId: true, priority: true, resolutionMinutes: true },
+            })
             : [];
 
         const slaMap = new Map(
@@ -458,70 +478,7 @@ export async function POST(req: NextRequest) {
             dueAt = new Date(Date.now() + sla.resolutionMinutes * 60000);
         }
 
-        let assigneeId: string | null = null;
-        if (queue.autoAssign) {
-            const [groupAgents, directAgents] = await Promise.all([
-                prisma.groupMember.findMany({
-                    where: {
-                        group: { queueAssignments: { some: { queueId, role: 'agent' } } },
-                    },
-                    include: {
-                        user: {
-                            include: {
-                                _count: {
-                                    select: {
-                                        assignedTickets: {
-                                            where: {
-                                                queueId,
-                                                status: { notIn: ['CLOSED', 'RESOLVED'] },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                }),
-                prisma.queueMember.findMany({
-                    where: { queueId, role: 'agent' },
-                    include: {
-                        user: {
-                            include: {
-                                _count: {
-                                    select: {
-                                        assignedTickets: {
-                                            where: {
-                                                queueId,
-                                                status: { notIn: ['CLOSED', 'RESOLVED'] },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                }),
-            ]);
-
-            const usersMap = new Map<string, any>();
-            for (const member of groupAgents) {
-                if (!usersMap.has(member.user.id)) usersMap.set(member.user.id, member.user);
-            }
-            for (const member of directAgents) {
-                if (!usersMap.has(member.user.id)) usersMap.set(member.user.id, member.user);
-            }
-
-            const allAgents = Array.from(usersMap.values());
-
-            if (allAgents.length > 0) {
-                const sorted = allAgents.sort(
-                    (a: any, b: any) =>
-                        (a._count?.assignedTickets ?? 0) - (b._count?.assignedTickets ?? 0)
-                );
-                assigneeId = sorted[0].id;
-            }
-        }
-
+        // Tickets start UNASSIGNED — agents claim them
         const ticket = await prisma.ticket.create({
             data: {
                 key: ticketKey,
@@ -533,7 +490,7 @@ export async function POST(req: NextRequest) {
                 queueId,
                 categoryId,
                 requesterId: session.user.id,
-                assigneeId,
+                assigneeId: null,
                 dueAt,
                 formData: (customFormValidation.sanitized as any) ?? undefined,
             },
@@ -554,9 +511,67 @@ export async function POST(req: NextRequest) {
             });
         }
 
+        // Process temp attachments (uploaded before ticket was created)
+        const rawAttachments = body.attachments;
+        if (Array.isArray(rawAttachments) && rawAttachments.length > 0) {
+            const ticketUploadDir = path.join(process.cwd(), 'public', 'uploads', ticket.id);
+            await mkdir(ticketUploadDir, { recursive: true });
+
+            for (const att of rawAttachments.slice(0, 5)) {
+                if (!att.url || !att.filename) continue;
+                try {
+                    const oldPath = path.join(process.cwd(), 'public', att.url);
+                    const filename = path.basename(att.url);
+                    const newPath = path.join(ticketUploadDir, filename);
+                    const newUrl = `/uploads/${ticket.id}/${filename}`;
+                    try { await rename(oldPath, newPath); } catch { /* file may already be moved */ }
+                    await prisma.attachment.create({
+                        data: {
+                            ticketId: ticket.id,
+                            filename: att.filename,
+                            mimetype: att.mimetype || 'application/octet-stream',
+                            size: att.size || 0,
+                            path: newUrl,
+                        },
+                    });
+                } catch (err) {
+                    logger.error('Failed to process attachment', { error: err, filename: att.filename });
+                }
+            }
+        }
+
+        // Add requester as watcher
         await prisma.ticketWatcher.create({
             data: { ticketId: ticket.id, userId: session.user.id },
         });
+
+        // Notify all department agents (add as watchers + email)
+        const [groupAgents, directAgents] = await Promise.all([
+            prisma.groupMember.findMany({
+                where: { group: { queueAssignments: { some: { queueId, role: 'agent' } } } },
+                include: { user: { select: { id: true, email: true } } },
+            }),
+            prisma.queueMember.findMany({
+                where: { queueId, role: 'agent' },
+                include: { user: { select: { id: true, email: true } } },
+            }),
+        ]);
+
+        const agentMap = new Map<string, string>();
+        for (const m of groupAgents) agentMap.set(m.user.id, m.user.email);
+        for (const m of directAgents) agentMap.set(m.user.id, m.user.email);
+        agentMap.delete(session.user.id); // Don't notify the requester if they're also an agent
+
+        // Add agents as watchers
+        if (agentMap.size > 0) {
+            await prisma.ticketWatcher.createMany({
+                data: Array.from(agentMap.keys()).map(agentId => ({
+                    ticketId: ticket.id,
+                    userId: agentId,
+                })),
+                skipDuplicates: true,
+            });
+        }
 
         await prisma.timelineEvent.create({
             data: {
@@ -567,9 +582,13 @@ export async function POST(req: NextRequest) {
             },
         });
 
+        // Email the requester
         sendTicketCreatedEmail(session.user.email!, ticketKey, title);
-        if (assigneeId && ticket.assignee) {
-            sendTicketAssignedEmail(ticket.assignee.email, ticketKey, title);
+
+        // Email all department agents about the new ticket
+        const agentEmails = Array.from(agentMap.values()).filter(Boolean);
+        if (agentEmails.length > 0) {
+            sendNewTicketForDepartmentEmail(agentEmails, ticketKey, title, queue.name);
         }
 
         fireWebhook('ticket.created', {

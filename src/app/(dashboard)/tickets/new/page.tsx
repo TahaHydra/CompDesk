@@ -1,6 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
-import { ArrowLeft, Send, Sparkles, Tag } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, Tag, Upload, X, FileIcon, ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -27,6 +28,15 @@ interface ApiError extends Error {
     details?: Record<string, string>;
 }
 
+interface UploadedFile {
+    file?: File;
+    filename: string;
+    url: string;
+    mimetype: string;
+    size: number;
+    uploading?: boolean;
+}
+
 function isEmptyCustomValue(field: CustomField, value: unknown) {
     if (value === undefined || value === null) return true;
     if (field.type === 'CHECKBOX') return value !== true;
@@ -35,10 +45,23 @@ function isEmptyCustomValue(field: CustomField, value: unknown) {
     return false;
 }
 
+function formatFileSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageType(mimetype: string) {
+    return mimetype.startsWith('image/');
+}
+
 export default function NewTicketPage() {
     const router = useRouter();
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const descRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     const [formData, setFormData] = useState({
         title: '',
@@ -51,6 +74,7 @@ export default function NewTicketPage() {
     const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
     const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
     const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
+    const [attachments, setAttachments] = useState<UploadedFile[]>([]);
 
     const { data: queues } = useQuery({
         queryKey: ['queues'],
@@ -118,6 +142,98 @@ export default function NewTicketPage() {
         return Object.keys(errors).length === 0;
     };
 
+    // Upload a file to the server (temp — no ticketId yet)
+    const uploadFile = useCallback(async (file: File) => {
+        if (attachments.length >= 5) {
+            toast({ title: 'Maximum 5 files', variant: 'destructive' });
+            return;
+        }
+
+        const tempEntry: UploadedFile = {
+            file,
+            filename: file.name,
+            url: '',
+            mimetype: file.type,
+            size: file.size,
+            uploading: true,
+        };
+        setAttachments(prev => [...prev, tempEntry]);
+
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetch('/api/upload', { method: 'POST', body: fd });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || 'Upload failed');
+            }
+            const data = await res.json();
+
+            setAttachments(prev =>
+                prev.map(a => a.filename === file.name && a.uploading
+                    ? { ...a, url: data.url, uploading: false }
+                    : a
+                )
+            );
+
+            // If image, insert markdown reference into description
+            if (isImageType(file.type)) {
+                setFormData(prev => ({
+                    ...prev,
+                    description: prev.description + (prev.description ? '\n' : '') + `![${file.name}](${data.url})`,
+                }));
+            }
+        } catch (err: any) {
+            toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
+            setAttachments(prev => prev.filter(a => !(a.filename === file.name && a.uploading)));
+        }
+    }, [attachments.length, toast]);
+
+    const removeAttachment = (index: number) => {
+        setAttachments(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Handle paste in description (for screenshots)
+    const handlePaste = useCallback((e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of Array.from(items)) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    const named = new File([file], `screenshot-${Date.now()}.png`, { type: file.type });
+                    uploadFile(named);
+                }
+                break;
+            }
+        }
+    }, [uploadFile]);
+
+    // Drag and drop handlers
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    }, []);
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const files = Array.from(e.dataTransfer.files);
+        files.forEach(file => uploadFile(file));
+    }, [uploadFile]);
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files ?? []);
+        files.forEach(file => uploadFile(file));
+        e.target.value = '';
+    };
+
     const createTicket = useMutation({
         mutationFn: async () => {
             const res = await fetch('/api/tickets', {
@@ -131,6 +247,9 @@ export default function NewTicketPage() {
                         Object.keys(normalizedCustomFieldData).length > 0
                             ? normalizedCustomFieldData
                             : undefined,
+                    attachments: attachments
+                        .filter(a => !a.uploading && a.url)
+                        .map(a => ({ filename: a.filename, url: a.url, mimetype: a.mimetype, size: a.size })),
                 }),
             });
 
@@ -292,12 +411,82 @@ export default function NewTicketPage() {
                     <div className="space-y-2">
                         <Label htmlFor="description">Description</Label>
                         <Textarea
+                            ref={descRef}
                             id="description"
-                            placeholder="Provide as much detail as possible..."
+                            placeholder="Provide as much detail as possible... (Paste screenshots with Ctrl+V)"
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            onPaste={handlePaste}
                             rows={6}
                         />
+                    </div>
+
+                    {/* File upload zone */}
+                    <div className="space-y-3">
+                        <Label className="flex items-center gap-1.5">
+                            <Upload className="h-3.5 w-3.5" /> Attachments
+                        </Label>
+                        <div
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            onClick={() => fileInputRef.current?.click()}
+                            className={cn(
+                                'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all',
+                                isDragging
+                                    ? 'border-primary bg-primary/5 scale-[1.02]'
+                                    : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
+                            )}
+                        >
+                            <Upload className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                                <span className="font-medium text-primary">Click to upload</span> or drag and drop
+                            </p>
+                            <p className="text-xs text-muted-foreground/60 mt-1">
+                                Images, PDFs, documents, spreadsheets · Max 10MB · Up to 5 files
+                            </p>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                multiple
+                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.txt,.csv"
+                                onChange={handleFileSelect}
+                                className="hidden"
+                            />
+                        </div>
+
+                        {/* Attached files list */}
+                        {attachments.length > 0 && (
+                            <div className="space-y-2">
+                                {attachments.map((att, i) => (
+                                    <div key={i} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
+                                        {isImageType(att.mimetype) ? (
+                                            att.url ? (
+                                                <img src={att.url} alt={att.filename} className="h-10 w-10 object-cover rounded" />
+                                            ) : (
+                                                <ImageIcon className="h-10 w-10 text-muted-foreground p-2" />
+                                            )
+                                        ) : (
+                                            <FileIcon className="h-10 w-10 text-muted-foreground p-2" />
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{att.filename}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {formatFileSize(att.size)}
+                                                {att.uploading && ' · Uploading...'}
+                                            </p>
+                                        </div>
+                                        {att.uploading ? (
+                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
+                                        ) : (
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); removeAttachment(i); }}>
+                                                <X className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {(tags ?? []).length > 0 ? (
@@ -319,9 +508,9 @@ export default function NewTicketPage() {
                                                 selected
                                                     ? {}
                                                     : {
-                                                          borderColor: tag.color,
-                                                          color: tag.color,
-                                                      }
+                                                        borderColor: tag.color,
+                                                        color: tag.color,
+                                                    }
                                             }
                                             onClick={() => toggleTag(tag.id)}
                                         >

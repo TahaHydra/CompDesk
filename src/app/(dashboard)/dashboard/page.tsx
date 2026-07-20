@@ -15,6 +15,7 @@ import {
     ArrowRight,
     TrendingUp,
     Link as LinkIcon,
+    AlertTriangle,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -36,49 +37,41 @@ export default function DashboardPage() {
             label: 'Total Tickets',
             value: stats.total,
             icon: Ticket,
-            color: 'from-indigo-500 to-indigo-600',
             textColor: 'text-indigo-600',
             bgColor: 'bg-indigo-50 dark:bg-indigo-950/30',
+            href: '/tickets?view=all',
         },
         {
             label: 'Open',
             value: stats.open,
             icon: AlertCircle,
-            color: 'from-emerald-500 to-emerald-600',
-            textColor: 'text-emerald-600',
-            bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
+            textColor: 'text-blue-600',
+            bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+            href: '/tickets?view=all&status=OPEN',
         },
         {
             label: 'Pending',
             value: stats.pending,
             icon: Clock,
-            color: 'from-amber-500 to-amber-600',
             textColor: 'text-amber-600',
             bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+            href: '/tickets?view=all&status=PENDING_USER',
         },
         {
             label: 'Resolved',
             value: stats.resolved,
             icon: CheckCircle2,
-            color: 'from-purple-500 to-purple-600',
             textColor: 'text-purple-600',
             bgColor: 'bg-purple-50 dark:bg-purple-950/30',
+            href: '/tickets?view=all&status=RESOLVED',
         },
         {
             label: 'Urgent',
             value: stats.urgent,
             icon: Flame,
-            color: 'from-red-500 to-red-600',
             textColor: 'text-red-600',
             bgColor: 'bg-red-50 dark:bg-red-950/30',
-        },
-        {
-            label: 'Escalated',
-            value: stats.escalated,
-            icon: AlertCircle,
-            color: 'from-rose-500 to-rose-600',
-            textColor: 'text-rose-600',
-            bgColor: 'bg-rose-50 dark:bg-rose-950/30',
+            href: '/tickets?view=all&priority=URGENT',
         },
     ];
 
@@ -98,24 +91,26 @@ export default function DashboardPage() {
                 </Link>
             </div>
 
-            {/* Stats Grid */}
+            {/* Stats Grid — each card links to filtered ticket list */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {statCards.map((stat) => (
-                    <Card key={stat.label} className="overflow-hidden border-0 shadow-sm">
-                        <CardContent className="p-5">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
-                                    <p className={`text-3xl font-bold mt-1 ${stat.textColor}`}>
-                                        {isLoading ? '—' : stat.value}
-                                    </p>
+                    <Link key={stat.label} href={stat.href}>
+                        <Card className="overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
+                            <CardContent className="p-5">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">{stat.label}</p>
+                                        <p className={`text-3xl font-bold mt-1 ${stat.textColor}`}>
+                                            {isLoading ? '—' : stat.value}
+                                        </p>
+                                    </div>
+                                    <div className={`${stat.bgColor} p-3 rounded-xl`}>
+                                        <stat.icon className={`h-5 w-5 ${stat.textColor}`} />
+                                    </div>
                                 </div>
-                                <div className={`${stat.bgColor} p-3 rounded-xl`}>
-                                    <stat.icon className={`h-5 w-5 ${stat.textColor}`} />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
+                    </Link>
                 ))}
             </div>
 
@@ -141,7 +136,7 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* Recent Tickets */}
+            {/* Recent Tickets — table format */}
             <Card className="border-0 shadow-sm">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div className="flex items-center gap-2">
@@ -154,7 +149,7 @@ export default function DashboardPage() {
                         </Button>
                     </Link>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="px-0 pb-0">
                     {recentTickets.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 text-center">
                             <div className="rounded-full bg-muted p-4 mb-4">
@@ -172,36 +167,53 @@ export default function DashboardPage() {
                             </Link>
                         </div>
                     ) : (
-                        <div className="space-y-2">
-                            {recentTickets.map((ticket: any) => (
-                                <Link
-                                    key={ticket.id}
-                                    href={`/tickets/${ticket.id}`}
-                                    className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors group"
-                                >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <span className="text-xs font-mono text-muted-foreground shrink-0">
-                                            {ticket.key}
-                                        </span>
-                                        <span className="text-sm font-medium truncate">{ticket.title}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <Badge
-                                            variant="secondary"
-                                            className={`status-${ticket.status.toLowerCase()} text-xs`}
-                                        >
-                                            {ticket.status.replace('_', ' ')}
-                                        </Badge>
-                                        <Badge
-                                            variant="outline"
-                                            className={`priority-${ticket.priority.toLowerCase()} text-xs`}
-                                        >
-                                            {ticket.priority}
-                                        </Badge>
-                                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    </div>
-                                </Link>
-                            ))}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b bg-muted/40">
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID</th>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Title</th>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Requester</th>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Assignee</th>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Priority</th>
+                                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {recentTickets.map((ticket: any) => (
+                                        <tr key={ticket.id} className="hover:bg-muted/30 transition-colors cursor-pointer group"
+                                            onClick={() => window.location.href = `/tickets/${ticket.id}`}>
+                                            <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                                {ticket.key}
+                                                {ticket.slaBreached && <AlertTriangle className="inline h-3 w-3 text-destructive ml-1" />}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium max-w-[200px] truncate">{ticket.title}</td>
+                                            <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{ticket.requester?.name ?? '—'}</td>
+                                            <td className="px-4 py-3 hidden lg:table-cell">
+                                                {ticket.assignee ? (
+                                                    <span className="text-sm">{ticket.assignee.name}</span>
+                                                ) : (
+                                                    <span className="text-xs text-amber-600 font-medium">Unassigned</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>
+                                                    {ticket.status.replace(/_/g, ' ')}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3 hidden sm:table-cell">
+                                                <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>
+                                                    {ticket.priority}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap hidden lg:table-cell">
+                                                {new Date(ticket.createdAt).toLocaleDateString()}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </CardContent>
