@@ -94,6 +94,10 @@ export async function PATCH(request: Request) {
                 'azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id',
                 'dashboard_links',
                 'login_local_enabled',
+                'feature_attachments_enabled',
+                'feature_dashboard_links_enabled',
+                'feature_external_api_enabled',
+                'feature_webhooks_enabled',
             ];
             return allowed.includes(key);
         });

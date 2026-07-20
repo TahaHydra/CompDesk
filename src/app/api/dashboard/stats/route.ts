@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -46,6 +47,8 @@ export async function GET() {
         }
         // ADMIN / SUPER_ADMIN: no filter, see all tickets
 
+        const dashboardLinksEnabled = await getFeatureFlag('feature_dashboard_links_enabled');
+
         const [total, open, pending, resolved, urgent, recentTickets, escalated, dashboardLinksSetting] = await Promise.all([
             prisma.ticket.count({ where: whereClause }),
             prisma.ticket.count({ where: { ...whereClause, status: { in: ['NEW', 'OPEN'] } } }),
@@ -70,12 +73,14 @@ export async function GET() {
                     status: { notIn: ['CLOSED', 'RESOLVED'] },
                 } as any,
             }).catch(() => 0), // Field doesn't exist yet — graceful fallback
-            prisma.appSetting.findUnique({ where: { key: 'dashboard_links' } })
+            dashboardLinksEnabled
+                ? prisma.appSetting.findUnique({ where: { key: 'dashboard_links' } })
+                : Promise.resolve(null)
         ]);
 
         let customLinks = [];
         try {
-            if (dashboardLinksSetting?.value) {
+            if (dashboardLinksEnabled && dashboardLinksSetting?.value) {
                 customLinks = JSON.parse(dashboardLinksSetting.value);
             }
         } catch {

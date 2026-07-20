@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -451,6 +452,285 @@ function SecuritySettingsTab() {
     );
 }
 
+function FeatureFlagsTab() {
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const { data: settings } = useQuery<SettingsMap>({
+        queryKey: ['settings'],
+        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+    });
+
+    const flags = [
+        {
+            key: 'feature_attachments_enabled',
+            label: 'Attachments',
+            desc: 'Allow users and agents to upload ticket attachments.',
+        },
+        {
+            key: 'feature_dashboard_links_enabled',
+            label: 'Dashboard Quick Links',
+            desc: 'Show custom quick-link cards on the dashboard.',
+        },
+        {
+            key: 'feature_external_api_enabled',
+            label: 'External API',
+            desc: 'Allow API-key clients to read and create tickets.',
+        },
+        {
+            key: 'feature_webhooks_enabled',
+            label: 'Webhooks',
+            desc: 'Send outbound event webhooks to configured endpoints.',
+        },
+    ];
+
+    const toggleMutation = useMutation({
+        mutationFn: async (payload: Record<string, string>) => {
+            const res = await fetch('/api/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error('Failed');
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['settings'] });
+            toast({ title: 'Feature flag updated' });
+        },
+        onError: () => toast({ title: 'Failed to update feature flag', variant: 'destructive' }),
+    });
+
+    return (
+        <Card className="mt-4">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Feature Flags</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {flags.map((flag) => {
+                    const enabled = settings?.[flag.key] !== 'false';
+                    return (
+                        <div key={flag.key} className="flex items-center justify-between p-4 rounded-lg border">
+                            <div className="space-y-1 pr-4">
+                                <p className="font-medium">{flag.label}</p>
+                                <p className="text-sm text-muted-foreground">{flag.desc}</p>
+                            </div>
+                            <Switch
+                                checked={enabled}
+                                onCheckedChange={(checked) => toggleMutation.mutate({ [flag.key]: String(checked) })}
+                            />
+                        </div>
+                    );
+                })}
+            </CardContent>
+        </Card>
+    );
+}
+
+function ApiClientsTab() {
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const [name, setName] = useState('');
+    const [selectedScopes, setSelectedScopes] = useState<string[]>(['tickets:read']);
+    const [selectedQueueIds, setSelectedQueueIds] = useState<string[]>([]);
+    const [latestApiKey, setLatestApiKey] = useState('');
+
+    const { data: clients } = useQuery({
+        queryKey: ['api-clients'],
+        queryFn: async () => {
+            const res = await fetch('/api/api-clients');
+            if (!res.ok) throw new Error('Failed to load API clients');
+            return res.json();
+        },
+    });
+
+    const { data: queues } = useQuery({
+        queryKey: ['queues'],
+        queryFn: async () => {
+            const res = await fetch('/api/queues');
+            if (!res.ok) throw new Error('Failed to load departments');
+            return res.json();
+        },
+    });
+
+    const createClient = useMutation({
+        mutationFn: async () => {
+            const res = await fetch('/api/api-clients', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    scopes: selectedScopes,
+                    allowedQueueIds: selectedQueueIds,
+                    isActive: true,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['api-clients'] });
+            setLatestApiKey(data.apiKey);
+            setName('');
+            setSelectedScopes(['tickets:read']);
+            setSelectedQueueIds([]);
+            toast({ title: 'API client created' });
+        },
+        onError: (err: Error) => toast({ title: 'Failed to create API client', description: err.message, variant: 'destructive' }),
+    });
+
+    const updateClient = useMutation({
+        mutationFn: async (payload: Record<string, unknown>) => {
+            const res = await fetch('/api/api-clients', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['api-clients'] });
+            if (data.apiKey) {
+                setLatestApiKey(data.apiKey);
+                toast({ title: 'API key rotated' });
+            } else {
+                toast({ title: 'API client updated' });
+            }
+        },
+        onError: (err: Error) => toast({ title: 'Failed to update API client', description: err.message, variant: 'destructive' }),
+    });
+
+    const deleteClient = useMutation({
+        mutationFn: async (id: string) => {
+            const res = await fetch(`/api/api-clients?id=${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed');
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['api-clients'] });
+            toast({ title: 'API client deleted' });
+        },
+        onError: (err: Error) => toast({ title: 'Failed to delete API client', description: err.message, variant: 'destructive' }),
+    });
+
+    const toggleScope = (scope: string) => {
+        setSelectedScopes((current) =>
+            current.includes(scope) ? current.filter((item) => item !== scope) : [...current, scope]
+        );
+    };
+
+    const toggleQueue = (queueId: string) => {
+        setSelectedQueueIds((current) =>
+            current.includes(queueId) ? current.filter((item) => item !== queueId) : [...current, queueId]
+        );
+    };
+
+    return (
+        <div className="space-y-6">
+            <Card className="border-0 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <Shield className="h-4 w-4" /> API Clients
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Client Name</Label>
+                        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ERP bridge" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Scopes</Label>
+                        <div className="flex gap-2 flex-wrap">
+                            {['tickets:read', 'tickets:write'].map((scope) => {
+                                const selected = selectedScopes.includes(scope);
+                                return (
+                                    <Button key={scope} type="button" variant={selected ? 'default' : 'outline'} size="sm" onClick={() => toggleScope(scope)}>
+                                        {scope}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Department Restriction</Label>
+                        <p className="text-xs text-muted-foreground">Leave empty to allow all departments.</p>
+                        <div className="flex gap-2 flex-wrap">
+                            {(queues ?? []).map((queue: any) => {
+                                const selected = selectedQueueIds.includes(queue.id);
+                                return (
+                                    <Button key={queue.id} type="button" variant={selected ? 'default' : 'outline'} size="sm" onClick={() => toggleQueue(queue.id)}>
+                                        {queue.name}
+                                    </Button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <Button onClick={() => createClient.mutate()} disabled={!name.trim() || selectedScopes.length === 0}>
+                        Create API Client
+                    </Button>
+                    {latestApiKey ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3">
+                            <p className="text-sm font-medium">Copy this API key now. It is only shown once.</p>
+                            <code className="block mt-2 text-xs break-all">{latestApiKey}</code>
+                        </div>
+                    ) : null}
+                </CardContent>
+            </Card>
+
+            <Card className="border-0 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="text-base">Existing Clients</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {(clients ?? []).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No API clients created yet.</p>
+                    ) : (
+                        (clients ?? []).map((client: any) => (
+                            <div key={client.id} className="rounded-lg border p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p className="font-medium">{client.name}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Created {new Date(client.createdAt).toLocaleString()}
+                                            {client.lastUsedAt ? ` · Last used ${new Date(client.lastUsedAt).toLocaleString()}` : ' · Never used'}
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={client.isActive}
+                                        onCheckedChange={(checked) => updateClient.mutate({ id: client.id, isActive: checked })}
+                                    />
+                                </div>
+                                <div className="flex gap-2 flex-wrap">
+                                    {(client.scopes ?? []).map((scope: string) => (
+                                        <Badge key={scope} variant="outline">{scope}</Badge>
+                                    ))}
+                                    {(client.allowedQueueIds ?? []).length === 0 ? (
+                                        <Badge variant="outline">All departments</Badge>
+                                    ) : (
+                                        client.allowedQueueIds.map((queueId: string) => (
+                                            <Badge key={queueId} variant="outline">{queueId}</Badge>
+                                        ))
+                                    )}
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={() => updateClient.mutate({ id: client.id, rotateKey: true })}>
+                                        Rotate Key
+                                    </Button>
+                                    <Button type="button" variant="destructive" size="sm" onClick={() => deleteClient.mutate(client.id)}>
+                                        Delete
+                                    </Button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
 export default function AdminSettingsPage() {
     return (
         <div className="space-y-6">
@@ -468,12 +748,16 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="entra" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> Entra ID</TabsTrigger>
                     <TabsTrigger value="links" className="gap-1 min-w-max"><LinkIcon className="h-3.5 w-3.5" /> Quick Links</TabsTrigger>
                     <TabsTrigger value="security" className="gap-1 min-w-max"><Lock className="h-3.5 w-3.5" /> Security</TabsTrigger>
+                    <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
+                    <TabsTrigger value="api" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> API Clients</TabsTrigger>
                 </TabsList>
                 <TabsContent value="smtp"><SmtpSettingsTab /></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
                 <TabsContent value="entra"><EntraSettingsTab /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
                 <TabsContent value="security"><SecuritySettingsTab /></TabsContent>
+                <TabsContent value="features"><FeatureFlagsTab /></TabsContent>
+                <TabsContent value="api"><ApiClientsTab /></TabsContent>
             </Tabs>
         </div>
     );
