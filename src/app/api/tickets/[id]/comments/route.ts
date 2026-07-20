@@ -6,6 +6,7 @@ import { sanitizeHtml, isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
+import { canAccessTicket } from '@/lib/permissions';
 
 // POST /api/tickets/[id]/comments
 export async function POST(
@@ -37,8 +38,8 @@ export async function POST(
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        // RBAC: Users can only comment on their own tickets
-        if (session.user.role === 'USER' && ticket.requesterId !== session.user.id) {
+        const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

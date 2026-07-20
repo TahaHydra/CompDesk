@@ -5,6 +5,7 @@ import { isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
+import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
 
 // POST /api/tickets/[id]/escalate — escalate a ticket
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,8 +30,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
+        if (!(await canAccessTicket(session.user.id, session.user.role, ticket))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
         if (ticket.status === 'CLOSED' || ticket.status === 'RESOLVED') {
             return NextResponse.json({ error: 'Cannot escalate a closed/resolved ticket' }, { status: 400 });
+        }
+        if (session.user.role === 'AGENT' && escalateToId) {
+            const target = await prisma.user.findUnique({
+                where: { id: escalateToId },
+                select: { id: true, role: true },
+            });
+            if (!target || !isAgentOrAbove(target.role)) {
+                return NextResponse.json({ error: 'Escalation target must be an agent or admin' }, { status: 400 });
+            }
+            const targetHasAccess = await canAccessQueue(target.id, target.role, ticket.queueId);
+            if (!targetHasAccess) {
+                return NextResponse.json({ error: 'Escalation target does not have access to this department' }, { status: 400 });
+            }
         }
 
         const newLevel = (ticket as any).escalationLevel + 1;
