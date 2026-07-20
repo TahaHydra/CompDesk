@@ -6,6 +6,7 @@ import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { getAgentAccessibleQueueIds, isAgentRole } from '@/lib/permissions';
 
 // Generate a secure random password
 function generatePassword(length = 16): string {
@@ -24,21 +25,52 @@ export async function GET() {
         const session = await auth();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const users = await prisma.user.findMany({
-            select: {
-                id: true, name: true, email: true, role: true, isActive: true, createdAt: true,
-                passwordHash: false,
-                entraObjectId: true,
-                queueMemberships: { select: { queueId: true } },
-            },
-            orderBy: { name: 'asc' },
-        });
+        if (!isAgentRole(session.user.role)) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
 
-        // Add a `loginMethod` field to indicate how the user can log in
+        const userSelect = {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+            entraObjectId: true,
+            queueMemberships: { select: { queueId: true } },
+        } as const;
+
+        let users;
+        if (isAdmin(session.user.role)) {
+            users = await prisma.user.findMany({
+                select: userSelect,
+                orderBy: { name: 'asc' },
+            });
+        } else {
+            const accessibleQueueIds = await getAgentAccessibleQueueIds(session.user.id);
+            users = await prisma.user.findMany({
+                where: {
+                    OR: [
+                        { id: session.user.id },
+                        {
+                            queueMemberships: {
+                                some: {
+                                    queueId: { in: accessibleQueueIds },
+                                    role: 'agent',
+                                },
+                            },
+                        },
+                    ],
+                },
+                select: userSelect,
+                orderBy: { name: 'asc' },
+            });
+        }
+
         const usersWithMeta = users.map(u => ({
             ...u,
             loginMethod: u.entraObjectId ? 'SSO' : 'Local',
-            hasPassword: false, // Never expose this, it's just for UI display
+            hasPassword: false,
         }));
 
         return NextResponse.json(usersWithMeta);
