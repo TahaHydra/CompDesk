@@ -26,6 +26,7 @@ function SmtpSettingsTab() {
     const [smtp, setSmtp] = useState({
         smtp_host: '', smtp_port: '587', smtp_user: '', smtp_password: '', smtp_from: '', smtp_secure: 'false',
     });
+    const smtpPasswordConfigured = settings?.smtp_password_configured === 'true';
 
     useEffect(() => {
         if (settings) {
@@ -95,7 +96,10 @@ function SmtpSettingsTab() {
                         </div>
                         <div className="space-y-2">
                             <Label>Password</Label>
-                            <Input type="password" placeholder="••••••••" value={smtp.smtp_password}
+                            <Input
+                                type="password"
+                                placeholder={smtpPasswordConfigured ? 'Saved password configured. Enter a new one to replace it.' : '••••••••'}
+                                value={smtp.smtp_password}
                                 onChange={(e) => setSmtp({ ...smtp, smtp_password: e.target.value })} />
                         </div>
                     </div>
@@ -210,6 +214,7 @@ function EntraSettingsTab() {
     const [entra, setEntra] = useState({
         azure_ad_client_id: '', azure_ad_client_secret: '', azure_ad_tenant_id: '',
     });
+    const entraSecretConfigured = settings?.azure_ad_client_secret_configured === 'true';
 
     useEffect(() => {
         if (settings) {
@@ -258,7 +263,10 @@ function EntraSettingsTab() {
                     </div>
                     <div className="space-y-2">
                         <Label>Client Secret</Label>
-                        <Input type="password" placeholder="••••••••" value={entra.azure_ad_client_secret}
+                        <Input
+                            type="password"
+                            placeholder={entraSecretConfigured ? 'Saved secret configured. Enter a new one to replace it.' : '••••••••'}
+                            value={entra.azure_ad_client_secret}
                             onChange={(e) => setEntra({ ...entra, azure_ad_client_secret: e.target.value })} />
                     </div>
                     <div className="space-y-2">
