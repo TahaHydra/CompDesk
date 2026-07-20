@@ -67,6 +67,7 @@ model User {
   id            String    @id @default(uuid())
   entraObjectId String?   @unique @map("entra_object_id")
   email         String    @unique
+  emailVerified DateTime? @map("email_verified")
   name          String
   image         String?
   passwordHash  String?   @map("password_hash")
