@@ -98,7 +98,7 @@ export async function authenticateApiRequest(
 }
 
 export function serializeApiClient(client: StoredApiClient) {
-    const { keyHash, ...rest } = client;
+    const { keyHash: _keyHash, ...rest } = client;
     return rest;
 }
 
