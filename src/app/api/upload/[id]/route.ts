@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { isAdmin } from '@/lib/utils';
 import { unlink } from 'fs/promises';
 import path from 'path';
+import { canAccessTicket } from '@/lib/permissions';
 
 // DELETE /api/upload/:id — delete an attachment
 export async function DELETE(
@@ -18,14 +19,15 @@ export async function DELETE(
 
         const attachment = await prisma.attachment.findUnique({
             where: { id },
-            include: { ticket: { select: { requesterId: true } } },
+            include: { ticket: { select: { requesterId: true, queueId: true } } },
         });
 
         if (!attachment) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
 
         // Only the ticket requester or admins can delete attachments
+        const hasTicketAccess = await canAccessTicket(session.user.id, session.user.role, attachment.ticket);
         const isOwner = attachment.ticket.requesterId === session.user.id;
-        if (!isOwner && !isAdmin(session.user.role)) {
+        if (!hasTicketAccess || (!isOwner && !isAdmin(session.user.role) && session.user.role !== 'AGENT')) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
