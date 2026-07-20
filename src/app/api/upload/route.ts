@@ -5,6 +5,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { canAccessTicket } from '@/lib/permissions';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
@@ -21,6 +22,9 @@ export async function POST(req: NextRequest) {
     try {
         const session = await auth();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!(await getFeatureFlag('feature_attachments_enabled'))) {
+            return NextResponse.json({ error: 'Attachments are disabled' }, { status: 403 });
+        }
 
         const formData = await req.formData();
         const file = formData.get('file') as File | null;
