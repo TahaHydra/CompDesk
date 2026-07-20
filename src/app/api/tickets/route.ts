@@ -398,11 +398,15 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+    let requestUserId: string | null = null;
+    let requestIdempotencyKey: string | null = null;
+
     try {
         const session = await auth();
         if (!session?.user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+        requestUserId = session.user.id;
 
         if (!checkRateLimit(`ticket:create:${session.user.id}`, 10, 60000)) {
             return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
@@ -414,7 +418,22 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });
         }
 
-        const { title, description, queueId, categoryId, priority, severity, tagIds, formData } = parsed.data;
+        const { idempotencyKey, title, description, queueId, categoryId, priority, severity, tagIds, formData } = parsed.data;
+        requestIdempotencyKey = idempotencyKey ?? null;
+
+        if (idempotencyKey) {
+            const existingTicket = await prisma.ticket.findFirst({
+                where: { requesterId: session.user.id, idempotencyKey },
+                include: {
+                    queue: true,
+                    requester: true,
+                    assignee: true,
+                },
+            });
+            if (existingTicket) {
+                return NextResponse.json(existingTicket, { status: 200 });
+            }
+        }
 
         const queue = await prisma.queue.findUnique({
             where: { id: queueId },
@@ -467,6 +486,7 @@ export async function POST(req: NextRequest) {
         const ticket = await prisma.ticket.create({
             data: {
                 key: ticketKey,
+                idempotencyKey,
                 title,
                 description: description ? sanitizeHtml(description) : null,
                 status: 'NEW',
@@ -593,7 +613,24 @@ export async function POST(req: NextRequest) {
         });
 
         return NextResponse.json(ticket, { status: 201 });
-    } catch (error) {
+    } catch (error: any) {
+        if (error?.code === 'P2002' && requestUserId && requestIdempotencyKey) {
+            try {
+                const existingTicket = await prisma.ticket.findFirst({
+                    where: { requesterId: requestUserId, idempotencyKey: requestIdempotencyKey },
+                    include: {
+                        queue: true,
+                        requester: true,
+                        assignee: true,
+                    },
+                });
+                if (existingTicket) {
+                    return NextResponse.json(existingTicket, { status: 200 });
+                }
+            } catch {
+                // Fall through to the generic error response.
+            }
+        }
         logger.error('Failed to create ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
