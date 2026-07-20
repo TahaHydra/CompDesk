@@ -61,6 +61,7 @@ export default function NewTicketPage() {
     const queryClient = useQueryClient();
     const descRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
     const [isDragging, setIsDragging] = useState(false);
 
     const [formData, setFormData] = useState({
@@ -241,6 +242,7 @@ export default function NewTicketPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...formData,
+                    idempotencyKey: idempotencyKeyRef.current,
                     categoryId: formData.categoryId || undefined,
                     tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
                     formData:
@@ -303,6 +305,8 @@ export default function NewTicketPage() {
     };
 
     const handleSubmit = () => {
+        if (createTicket.isPending) return;
+
         if (!validateCustomFields()) {
             toast({
                 title: 'Missing required fields',

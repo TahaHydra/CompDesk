@@ -250,6 +250,7 @@ model TicketTag {
 model Ticket {
   id              String       @id @default(uuid())
   key             String       @unique
+  idempotencyKey  String?      @map("idempotency_key")
   title           String
   description     String?      @db.Text
   status          TicketStatus @default(NEW)
@@ -292,6 +293,7 @@ model Ticket {
   @@index([assigneeId])
   @@index([createdAt])
   @@index([escalationLevel])
+  @@unique([requesterId, idempotencyKey])
   @@map("tickets")
 }
 
