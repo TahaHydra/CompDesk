@@ -254,3 +254,55 @@ export async function PATCH(
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }
+
+// DELETE /api/tickets/[id] — user can delete own ticket only if unassigned
+export async function DELETE(
+    req: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const session = await auth();
+        if (!session?.user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const { id } = await params;
+
+        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        if (!ticket) {
+            return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+        }
+
+        // Only the requester can delete
+        if (ticket.requesterId !== session.user.id) {
+            return NextResponse.json({ error: 'Only the ticket requester can delete this ticket' }, { status: 403 });
+        }
+
+        // Only unassigned tickets can be deleted
+        if (ticket.assigneeId) {
+            return NextResponse.json({ error: 'Cannot delete a ticket that has been assigned. Contact an agent.' }, { status: 400 });
+        }
+
+        // Delete all associated records
+        await prisma.$transaction([
+            prisma.timelineEvent.deleteMany({ where: { ticketId: id } }),
+            prisma.ticketWatcher.deleteMany({ where: { ticketId: id } }),
+            prisma.ticketTag.deleteMany({ where: { ticketId: id } }),
+            prisma.attachment.deleteMany({ where: { ticketId: id } }),
+            prisma.ticket.delete({ where: { id } }),
+        ]);
+
+        auditLog({
+            userId: session.user.id,
+            action: 'ticket.deleted',
+            entity: 'ticket',
+            entityId: id,
+            metadata: { key: ticket.key, title: ticket.title },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        logger.error('Failed to delete ticket', { error });
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
