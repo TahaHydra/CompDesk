@@ -98,8 +98,16 @@ export async function authenticateApiRequest(
 }
 
 export function serializeApiClient(client: StoredApiClient) {
-    const { keyHash: _keyHash, ...rest } = client;
-    return rest;
+    return {
+        id: client.id,
+        name: client.name,
+        scopes: client.scopes,
+        allowedQueueIds: client.allowedQueueIds,
+        isActive: client.isActive,
+        createdAt: client.createdAt,
+        updatedAt: client.updatedAt,
+        lastUsedAt: client.lastUsedAt,
+    };
 }
 
 export function buildStoredApiClient(input: {
