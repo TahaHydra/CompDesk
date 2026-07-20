@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx rimraf .next && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -14,6 +15,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "test": "jest --passWithNoTests",
+    "test:ci": "jest --runInBand --passWithNoTests",
     "test:watch": "jest --watch",
     "postinstall": "prisma generate"
   },
