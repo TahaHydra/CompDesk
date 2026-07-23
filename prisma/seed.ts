@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Priority, TicketStatus } from '@prisma/client';
+import { PrismaClient, Priority, TicketStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -11,7 +11,7 @@ async function main() {
     const passwordHash = await bcrypt.hash(defaultPassword, 12);
 
     // ── Users ──────────────────────────────────────────────────
-    const admin = await prisma.user.upsert({
+    await prisma.user.upsert({
         where: { email: 'admin@exco.fr' },
         update: { passwordHash },
         create: {
@@ -67,7 +67,7 @@ async function main() {
     });
 
     // Plain ADMIN (distinct from SUPER_ADMIN) so both admin tiers can be tested
-    const admin2 = await prisma.user.upsert({
+    await prisma.user.upsert({
         where: { email: 'admin2@exco.fr' },
         update: { passwordHash },
         create: {
