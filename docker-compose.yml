@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: compdesk
       POSTGRES_PASSWORD: change-me-password
     ports:
-      - '5433:5432'
+      - '${POSTGRES_PORT:-5433}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -47,3 +47,5 @@ services:
 
 volumes:
   pgdata:
+    name: ${POSTGRES_VOLUME_NAME:-compdesk_pgdata}
+    external: ${POSTGRES_VOLUME_EXTERNAL:-false}
