@@ -42,8 +42,12 @@ services:
       API_KEY: ${API_KEY:-change-me}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-change-me}
       NODE_ENV: production
+    volumes:
+      - uploads:/app/public/uploads
 
 volumes:
   pgdata:
     name: ${POSTGRES_VOLUME_NAME:-compdesk_pgdata}
     external: ${POSTGRES_VOLUME_EXTERNAL:-false}
+  uploads:
+    name: ${UPLOADS_VOLUME_NAME:-compdesk_uploads}

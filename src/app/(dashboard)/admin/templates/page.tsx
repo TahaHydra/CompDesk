@@ -1,210 +1,118 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Archive, Copy, FileText, Pencil, Plus, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
-import { Plus, FileText } from 'lucide-react';
-import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { formatTicketValue, getTicketValueBadgeClass } from '@/lib/ticket-display';
+import { TemplateEditor } from '@/components/admin/template-editor';
+import type { TicketFormTemplateDefinition } from '@/lib/ticket-form/types';
 
-function TemplateOptionBadge({ value }: { value: string }) {
-    const badgeClass = getTicketValueBadgeClass(value);
-
-    return (
-        <Badge variant="outline" className={cn('text-xs', badgeClass)}>
-            {formatTicketValue(value)}
-        </Badge>
-    );
+interface TemplateListItem extends TicketFormTemplateDefinition {
+    updatedAt: string;
+    usage: {
+        departments: Array<{ id: string; name: string }>;
+        categories: Array<{ id: string; name: string; queue: { name: string } }>;
+        historicalTickets: number;
+    };
 }
 
 export default function AdminTemplatesPage() {
-    const { toast } = useToast();
     const queryClient = useQueryClient();
-    const [open, setOpen] = useState(false);
-    const [selectedQueue, setSelectedQueue] = useState('');
-    const [fieldLabel, setFieldLabel] = useState('');
-    const [fieldKey, setFieldKey] = useState('');
-    const [fieldType, setFieldType] = useState('TEXT');
-    const [fieldRequired, setFieldRequired] = useState(false);
-    const [fieldOptions, setFieldOptions] = useState('');
-    const [fieldVisibleTo, setFieldVisibleTo] = useState(['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN']);
+    const { toast } = useToast();
+    const [createOpen, setCreateOpen] = useState(false);
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [editing, setEditing] = useState<TicketFormTemplateDefinition | null>(null);
 
-    const { data: queues } = useQuery({
-        queryKey: ['queues'],
-        queryFn: async () => { const res = await fetch('/api/queues'); return res.json(); },
-    });
-
-    const { data: fields } = useQuery({
-        queryKey: ['form-fields', selectedQueue],
+    const templatesQuery = useQuery<TemplateListItem[]>({
+        queryKey: ['ticket-form-templates', 'all'],
         queryFn: async () => {
-            if (!selectedQueue) return [];
-            const res = await fetch(`/api/form-fields?queueId=${selectedQueue}`);
-            return res.json();
+            const response = await fetch('/api/ticket-form-templates?includeArchived=true');
+            if (!response.ok) throw new Error('Failed to load ticket form templates');
+            return response.json();
         },
-        enabled: !!selectedQueue,
     });
 
-    const createField = useMutation({
-        mutationFn: async () => {
-            const res = await fetch('/api/form-fields', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    queueId: selectedQueue, label: fieldLabel, fieldKey,
-                    type: fieldType, required: fieldRequired,
-                    options: fieldOptions ? fieldOptions.split(',').map((o) => o.trim()) : null,
-                    visibleTo: fieldVisibleTo,
-                }),
+    const refresh = () => queryClient.invalidateQueries({ queryKey: ['ticket-form-templates'] });
+    const createTemplate = useMutation({
+        mutationFn: async (input: { name: string; description?: string | null; sourceTemplateId?: string }) => {
+            const response = await fetch('/api/ticket-form-templates', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
             });
-            if (!res.ok) throw new Error('Failed');
-            return res.json();
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to create template');
+            return payload;
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['form-fields', selectedQueue] });
-            setOpen(false); setFieldLabel(''); setFieldKey(''); setFieldType('TEXT');
-            setFieldRequired(false); setFieldOptions('');
-            toast({ title: 'Custom field created' });
+        onSuccess: async (template) => {
+            await refresh();
+            setCreateOpen(false); setName(''); setDescription('');
+            toast({ title: 'Template created' });
+            setEditing(template);
         },
+        onError: (error: Error) => toast({ title: 'Template could not be created', description: error.message, variant: 'destructive' }),
+    });
+    const lifecycle = useMutation({
+        mutationFn: async ({ template, action }: { template: TemplateListItem; action: 'archive' | 'restore' | 'delete' }) => {
+            const endpoint = action === 'restore'
+                ? `/api/ticket-form-templates/${template.id}?action=restore`
+                : `/api/ticket-form-templates/${template.id}?mode=${action === 'delete' ? 'hard' : 'archive'}`;
+            const response = await fetch(endpoint, { method: action === 'restore' ? 'POST' : 'DELETE' });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || `Failed to ${action} template`);
+            return { action };
+        },
+        onSuccess: async ({ action }) => { await refresh(); toast({ title: `Template ${action === 'delete' ? 'deleted' : action === 'restore' ? 'restored' : 'archived'}` }); },
+        onError: (error: Error) => toast({ title: 'Template action failed', description: error.message, variant: 'destructive' }),
     });
 
-    const deleteField = useMutation({
-        mutationFn: async (id: string) => {
-            const res = await fetch(`/api/form-fields?id=${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('Failed');
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['form-fields', selectedQueue] });
-            toast({ title: 'Field deleted' });
-        },
-    });
-
-    const toggleRole = (role: string) => {
-        setFieldVisibleTo((prev) =>
-            prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
-        );
-    };
-
-    const fieldTypes = [
-        { value: 'TEXT', label: 'Text' }, { value: 'TEXTAREA', label: 'Long Text' },
-        { value: 'DROPDOWN', label: 'Dropdown' }, { value: 'MULTISELECT', label: 'Multi-Select' },
-        { value: 'CHECKBOX', label: 'Checkbox' }, { value: 'DATE', label: 'Date' },
-    ];
-
+    const templates = templatesQuery.data ?? [];
     return (
         <div className="space-y-6">
-            <PageHeader
-                icon={FileText}
-                title="Ticket Templates & Form Fields"
-                description="Manage custom fields per department"
-            />
+            <PageHeader icon={FileText} title="Ticket Form Templates" description="Build reusable forms and assign them to departments or category overrides.">
+                <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New template</Button>
+            </PageHeader>
 
-            <Card className="border shadow-sm pt-4">
-                <CardContent className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Select value={selectedQueue} onValueChange={setSelectedQueue}>
-                            <SelectTrigger className="w-56 h-9"><SelectValue placeholder="Select department" /></SelectTrigger>
-                            <SelectContent>
-                                {(queues ?? []).map((q: any) => (
-                                    <SelectItem key={q.id} value={q.id}>{q.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        {selectedQueue && (
-                            <Dialog open={open} onOpenChange={setOpen}>
-                                <DialogTrigger asChild>
-                                    <Button size="sm" className="gap-1"><Plus className="h-3.5 w-3.5" /> Add Field</Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                    <DialogHeader><DialogTitle>New Custom Field</DialogTitle></DialogHeader>
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <div><Label>Label</Label><Input value={fieldLabel} onChange={(e) => { setFieldLabel(e.target.value); setFieldKey(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')); }} placeholder="e.g. Asset Tag" /></div>
-                                            <div><Label>Key</Label><Input value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} placeholder="auto-generated" /></div>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <div>
-                                                <Label>Type</Label>
-                                                <Select value={fieldType} onValueChange={setFieldType}>
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                    <SelectContent>
-                                                        {fieldTypes.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="flex items-end gap-2 pb-1">
-                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                                    <input type="checkbox" checked={fieldRequired} onChange={(e) => setFieldRequired(e.target.checked)} className="rounded" />
-                                                    Required field
-                                                </label>
-                                            </div>
-                                        </div>
-                                        {(fieldType === 'DROPDOWN' || fieldType === 'MULTISELECT') && (
-                                            <div><Label>Options (comma-separated)</Label><Input value={fieldOptions} onChange={(e) => setFieldOptions(e.target.value)} placeholder="Option 1, Option 2, Option 3" /></div>
-                                        )}
-                                        <div>
-                                            <Label>Visible to roles</Label>
-                                            <div className="flex gap-2 mt-1">
-                                                {['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'].map((role) => (
-                                                    <Badge key={role} variant={fieldVisibleTo.includes(role) ? 'default' : 'outline'}
-                                                        className="cursor-pointer" onClick={() => toggleRole(role)}>
-                                                        {role.replace('_', ' ')}
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <DialogFooter>
-                                        <Button onClick={() => createField.mutate()} disabled={!fieldLabel || !fieldKey}>Create Field</Button>
-                                    </DialogFooter>
-                                </DialogContent>
-                            </Dialog>
-                        )}
-                    </div>
+            {templatesQuery.isLoading ? <div className="rounded-lg border p-10 text-center text-muted-foreground">Loading templates…</div> : null}
+            {templatesQuery.isError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-destructive">{templatesQuery.error.message}</div> : null}
+            {!templatesQuery.isLoading && templates.length === 0 ? <div className="rounded-lg border border-dashed p-10 text-center text-muted-foreground">No ticket form templates are available.</div> : null}
 
-                    {selectedQueue ? (
-                        <div className="space-y-2">
-                            {(fields ?? []).length === 0 ? (
-                                <p className="text-sm text-muted-foreground py-8 text-center border rounded-lg border-dashed">No custom fields for this department. Click "Add Field" to create one.</p>
-                            ) : (
-                                (fields ?? []).map((f: any) => (
-                                    <Card key={f.id} className="border shadow-none">
-                                        <CardContent className="p-3 flex items-center justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="text-sm font-medium">{f.label}</span>
-                                                    <Badge variant="secondary" className="text-xs">{f.type}</Badge>
-                                                    {f.required && <Badge variant="outline" className="text-xs text-red-600">Required</Badge>}
-                                                </div>
-                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">Key: {f.fieldKey} · Visible to: {f.visibleTo?.join(', ') || 'All'}</p>
-                                                {Array.isArray(f.options) && f.options.length > 0 ? (
-                                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                                        {f.options.map((option: string) => (
-                                                            <TemplateOptionBadge key={option} value={option} />
-                                                        ))}
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                            <Button variant="ghost" size="sm" className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                                onClick={() => deleteField.mutate(f.id)}>Delete</Button>
-                                        </CardContent>
-                                    </Card>
-                                ))
-                            )}
-                        </div>
-                    ) : (
-                        <div className="py-8 text-center border rounded-lg border-dashed">
-                            <p className="text-sm text-muted-foreground">Select a department above to manage its custom forms</p>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            <div className="grid gap-4 lg:grid-cols-2">{templates.map((template) => {
+                const assigned = template.usage.departments.length + template.usage.categories.length;
+                const canHardDelete = !template.isSystemDefault && assigned === 0 && template.usage.historicalTickets === 0;
+                return (
+                    <Card key={template.id} className={template.isSystemDefault ? 'border-primary/40 shadow-sm' : 'shadow-sm'}>
+                        <CardContent className="space-y-4 p-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{template.name}</h2>{template.isSystemDefault ? <Badge className="gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Protected default</Badge> : null}<Badge variant={template.archivedAt ? 'destructive' : 'secondary'}>{template.archivedAt ? 'Archived' : 'Active'}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{template.description || 'No description'}</p></div>
+                                <Badge variant="outline">v{template.version}</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">Fields</p><p className="font-medium">{template.fields.length}</p></div><div><p className="text-xs text-muted-foreground">Departments</p><p className="font-medium">{template.usage.departments.length}</p></div><div><p className="text-xs text-muted-foreground">Overrides</p><p className="font-medium">{template.usage.categories.length}</p></div><div><p className="text-xs text-muted-foreground">Historical tickets</p><p className="font-medium">{template.usage.historicalTickets}</p></div></div>
+                            {assigned > 0 ? <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground"><p className="font-medium text-foreground">Assignments</p>{template.usage.departments.length ? <p>Departments: {template.usage.departments.map((item) => item.name).join(', ')}</p> : null}{template.usage.categories.length ? <p>Category overrides: {template.usage.categories.map((item) => `${item.queue.name} / ${item.name}`).join(', ')}</p> : null}</div> : null}
+                            <p className="text-xs text-muted-foreground">Updated {new Date(template.updatedAt).toLocaleString()}</p>
+                            <div className="flex flex-wrap gap-2">
+                                <Button size="sm" variant="outline" onClick={() => setEditing(template)}><Pencil className="mr-1 h-3.5 w-3.5" /> Edit</Button>
+                                <Button size="sm" variant="outline" onClick={() => createTemplate.mutate({ sourceTemplateId: template.id, name: `${template.name} Copy`, description: template.description })}><Copy className="mr-1 h-3.5 w-3.5" /> Duplicate</Button>
+                                {!template.isSystemDefault && !template.archivedAt ? <Button size="sm" variant="outline" onClick={() => lifecycle.mutate({ template, action: 'archive' })}><Archive className="mr-1 h-3.5 w-3.5" /> Archive</Button> : null}
+                                {template.archivedAt ? <Button size="sm" variant="outline" onClick={() => lifecycle.mutate({ template, action: 'restore' })}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore</Button> : null}
+                                {canHardDelete ? <Button size="sm" variant="destructive" onClick={() => window.confirm('Permanently delete this unused template?') && lifecycle.mutate({ template, action: 'delete' })}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button> : null}
+                            </div>
+                        </CardContent>
+                    </Card>
+                );
+            })}</div>
+
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                <DialogContent><DialogHeader><DialogTitle>Create Ticket Form Template</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Name</Label><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></div><div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} /></div><p className="text-sm text-muted-foreground">The new template will clone the current protected system default and can then be customized.</p></div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createTemplate.isPending} onClick={() => createTemplate.mutate({ name, description: description || null })}>Create and edit</Button></DialogFooter></DialogContent>
+            </Dialog>
+            <TemplateEditor template={editing} open={Boolean(editing)} onOpenChange={(open) => { if (!open) setEditing(null); }} onSaved={() => void refresh()} />
         </div>
     );
 }

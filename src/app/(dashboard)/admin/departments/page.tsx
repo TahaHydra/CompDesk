@@ -1,174 +1,33 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FolderKanban, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { useToast } from '@/components/ui/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/layout/page-header';
-import { FolderKanban, Plus, Pencil, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useToast } from '@/components/ui/use-toast';
+
+interface Template { id: string; name: string; isSystemDefault: boolean; archivedAt: string | null }
+interface Department { id: string; name: string; description: string | null; isPublic: boolean; isActive: boolean; autoAssign: boolean; defaultTemplateId: string | null; defaultTemplate: { id: string; name: string } | null; _count: { tickets: number; categories: number } }
 
 export default function AdminDepartmentsPage() {
-    const { toast } = useToast();
-    const queryClient = useQueryClient();
-    const [open, setOpen] = useState(false);
-    const [name, setName] = useState('');
-    const [desc, setDesc] = useState('');
-
-    const [editOpen, setEditOpen] = useState(false);
-    const [editId, setEditId] = useState('');
-    const [editName, setEditName] = useState('');
-    const [editDesc, setEditDesc] = useState('');
-
-    const { data: queues } = useQuery({
-        queryKey: ['queues'],
-        queryFn: async () => { const res = await fetch('/api/queues'); return res.json(); },
-    });
-
-    const createQueue = useMutation({
-        mutationFn: async () => {
-            const res = await fetch('/api/queues', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, description: desc }),
-            });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Failed');
-            }
-            return res.json();
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['queues'] });
-            setOpen(false); setName(''); setDesc('');
-            toast({ title: 'Department created' });
-        },
-        onError: (e) => toast({ title: 'Error', description: e.message, variant: 'destructive' })
-    });
-
-    const updateQueue = useMutation({
-        mutationFn: async () => {
-            const res = await fetch('/api/queues', {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: editId, name: editName, description: editDesc }),
-            });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Failed');
-            }
-            return res.json();
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['queues'] });
-            setEditOpen(false); setEditId(''); setEditName(''); setEditDesc('');
-            toast({ title: 'Department updated' });
-        },
-        onError: (e) => toast({ title: 'Error', description: e.message, variant: 'destructive' })
-    });
-
-    const removeQueue = useMutation({
-        mutationFn: async (id: string) => {
-            if (!confirm('Are you sure you want to delete this department? You cannot delete a department if it still has active tickets.')) return Promise.reject(new Error('Cancelled'));
-            const res = await fetch(`/api/queues?id=${id}`, { method: 'DELETE' });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Failed');
-            }
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['queues'] });
-            toast({ title: 'Department deleted' });
-        },
-        onError: (e) => {
-            if (e.message !== 'Cancelled') toast({ title: 'Error', description: e.message, variant: 'destructive' });
-        }
-    });
-
-    const handleEditClick = (q: any) => {
-        setEditId(q.id);
-        setEditName(q.name);
-        setEditDesc(q.description || '');
-        setEditOpen(true);
-    };
-
-    return (
-        <div className="space-y-6">
-            <PageHeader
-                icon={FolderKanban}
-                title="Departments"
-                description="Manage organizational departments and routing queues"
-            />
-
-            <Card className="border shadow-sm pt-4">
-                <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold">All Departments</h2>
-                        <Dialog open={open} onOpenChange={setOpen}>
-                            <DialogTrigger asChild>
-                                <Button size="sm" className="gap-1"><Plus className="h-3.5 w-3.5" /> Add Department</Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader><DialogTitle>New Department</DialogTitle></DialogHeader>
-                                <div className="space-y-4 pt-2">
-                                    <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-                                    <div><Label>Description</Label><Input value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
-                                </div>
-                                <DialogFooter>
-                                    <Button onClick={() => createQueue.mutate()} disabled={!name}>Create</Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {(queues ?? []).map((q: any) => (
-                            <Card key={q.id} className="border shadow-none">
-                                <CardContent className="p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <h3 className="truncate font-medium">{q.name}</h3>
-                                            <p className="mt-1 truncate text-sm text-muted-foreground">{q.description || 'No description provided'}</p>
-                                        </div>
-                                        <div className="flex shrink-0 items-center gap-2">
-                                            <Badge variant="secondary" className="whitespace-nowrap">{q._count?.tickets ?? 0} tickets</Badge>
-                                            <div className="flex gap-1">
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEditClick(q)}>
-                                                    <Pencil className="h-4 w-4" />
-                                                </Button>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => removeQueue.mutate(q.id)}>
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                        {(!queues || queues.length === 0) && (
-                            <div className="col-span-full py-8 text-center border rounded-lg border-dashed">
-                                <p className="text-sm text-muted-foreground">No departments exist yet.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Edit Dialog */}
-                    <Dialog open={editOpen} onOpenChange={setEditOpen}>
-                        <DialogContent>
-                            <DialogHeader><DialogTitle>Edit Department</DialogTitle></DialogHeader>
-                            <div className="space-y-4 pt-2">
-                                <div><Label>Name</Label><Input value={editName} onChange={(e) => setEditName(e.target.value)} /></div>
-                                <div><Label>Description</Label><Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} /></div>
-                            </div>
-                            <DialogFooter>
-                                <Button onClick={() => updateQueue.mutate()} disabled={!editName || (editName === queues?.find((q: any) => q.id === editId)?.name && editDesc === (queues?.find((q: any) => q.id === editId)?.description || ''))}>Save changes</Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-                </CardContent>
-            </Card>
-        </div>
-    );
+    const queryClient = useQueryClient(); const { toast } = useToast();
+    const [dialogOpen, setDialogOpen] = useState(false); const [editing, setEditing] = useState<Department | null>(null);
+    const [name, setName] = useState(''); const [description, setDescription] = useState(''); const [isPublic, setIsPublic] = useState(false); const [isActive, setIsActive] = useState(true); const [autoAssign, setAutoAssign] = useState(false); const [defaultTemplateId, setDefaultTemplateId] = useState('system');
+    const departmentsQuery = useQuery<Department[]>({ queryKey: ['queues', 'admin'], queryFn: async () => { const response = await fetch('/api/queues?includeInactive=true'); if (!response.ok) throw new Error('Failed to load departments'); return response.json(); } });
+    const templatesQuery = useQuery<Template[]>({ queryKey: ['ticket-form-templates', 'active'], queryFn: async () => { const response = await fetch('/api/ticket-form-templates'); if (!response.ok) throw new Error('Failed to load templates'); return response.json(); } });
+    const systemTemplate = templatesQuery.data?.find((template) => template.isSystemDefault);
+    const openCreate = () => { setEditing(null); setName(''); setDescription(''); setIsPublic(false); setIsActive(true); setAutoAssign(false); setDefaultTemplateId('system'); setDialogOpen(true); };
+    const openEdit = (department: Department) => { setEditing(department); setName(department.name); setDescription(department.description ?? ''); setIsPublic(department.isPublic); setIsActive(department.isActive); setAutoAssign(department.autoAssign); setDefaultTemplateId(department.defaultTemplateId ?? 'system'); setDialogOpen(true); };
+    const save = useMutation({ mutationFn: async () => { const response = await fetch('/api/queues', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(editing ? { id: editing.id } : {}), name, description: description || undefined, isPublic, isActive, autoAssign, defaultTemplateId: defaultTemplateId === 'system' ? null : defaultTemplateId }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to save department'); }, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['queues'] }); setDialogOpen(false); toast({ title: editing ? 'Department updated' : 'Department created' }); }, onError: (error: Error) => toast({ title: 'Department could not be saved', description: error.message, variant: 'destructive' }) });
+    const remove = useMutation({ mutationFn: async (id: string) => { const response = await fetch(`/api/queues?id=${id}`, { method: 'DELETE' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to delete department'); }, onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['queues'] }); toast({ title: 'Department deleted' }); }, onError: (error: Error) => toast({ title: 'Department could not be deleted', description: error.message, variant: 'destructive' }) });
+    return <div className="space-y-6"><PageHeader icon={FolderKanban} title="Departments" description="Manage routing departments and their default ticket form templates."><Button onClick={openCreate}><Plus className="mr-1 h-4 w-4" /> Add department</Button></PageHeader><div className="grid gap-4 md:grid-cols-2">{(departmentsQuery.data ?? []).map((department) => <Card key={department.id}><CardContent className="space-y-4 p-5"><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{department.name}</h2><Badge variant={department.isActive ? 'secondary' : 'destructive'}>{department.isActive ? 'Active' : 'Inactive'}</Badge>{department.isPublic ? <Badge variant="outline">Public</Badge> : null}</div><p className="mt-1 text-sm text-muted-foreground">{department.description || 'No description'}</p></div></div><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Tickets</p><p className="font-medium">{department._count.tickets}</p></div><div><p className="text-xs text-muted-foreground">Categories</p><p className="font-medium">{department._count.categories}</p></div></div><div className="rounded-md bg-muted/50 p-3 text-sm"><span className="text-muted-foreground">Default form: </span><span className="font-medium">{department.defaultTemplate?.name ?? systemTemplate?.name ?? 'System default'}</span><span className="text-xs text-muted-foreground"> · {department.defaultTemplateId ? 'Explicit' : 'Inherited system fallback'}</span></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openEdit(department)}><Pencil className="mr-1 h-3.5 w-3.5" /> Edit</Button>{department._count.tickets === 0 && department._count.categories === 0 ? <Button size="sm" variant="destructive" onClick={() => window.confirm('Permanently delete this empty department?') && remove.mutate(department.id)}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button> : null}</div></CardContent></Card>)}</div><Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent><DialogHeader><DialogTitle>{editing ? 'Edit department' : 'Create department'}</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Name</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div><div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} /></div><div className="space-y-2"><Label>Default ticket form</Label><Select value={defaultTemplateId} onValueChange={setDefaultTemplateId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="system">System default (fallback)</SelectItem>{(templatesQuery.data ?? []).filter((template) => !template.isSystemDefault && !template.archivedAt).map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent></Select></div><div className="grid gap-3 sm:grid-cols-3"><div className="flex items-center justify-between rounded-md border p-3"><Label>Active</Label><Switch checked={isActive} onCheckedChange={setIsActive} /></div><div className="flex items-center justify-between rounded-md border p-3"><Label>Public</Label><Switch checked={isPublic} onCheckedChange={setIsPublic} /></div><div className="flex items-center justify-between rounded-md border p-3"><Label>Auto-assign</Label><Switch checked={autoAssign} onCheckedChange={setAutoAssign} /></div></div></div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button><Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>Save department</Button></DialogFooter></DialogContent></Dialog></div>;
 }

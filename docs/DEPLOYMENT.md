@@ -24,7 +24,7 @@ This guide covers every way to deploy CompDesk: from a quick local test to a ful
 
 | Requirement | Version | Purpose |
 |-------------|---------|---------|
-| **Node.js** | 20+ | Runtime |
+| **Node.js** | 22.12+ (24 LTS recommended) | Runtime |
 | **npm** | 10+ | Package manager |
 | **PostgreSQL** | 16+ | Database (via Docker or standalone) |
 | **Docker** + Docker Compose | Latest | Container deployment (optional) |
@@ -33,9 +33,9 @@ This guide covers every way to deploy CompDesk: from a quick local test to a ful
 ### Install Node.js (Linux/Ubuntu)
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
-node -v    # Should show v20.x
+node -v    # Should show v24.x
 npm -v     # Should show 10.x
 ```
 
@@ -111,6 +111,23 @@ LOG_LEVEL="info"
 
 ---
 
+## Production upgrade and persistence rules
+
+Before every upgrade, back up both PostgreSQL and uploaded files. Never run `prisma migrate reset`, `npm run db:reset`, or `docker compose down -v` against production.
+
+```bash
+pg_dump --format=custom --file=compdesk-before-upgrade.dump "$DATABASE_URL"
+npm ci
+npm run db:generate
+npm run db:migrate:prod
+npm run verify
+```
+
+The department-category/template migration is transactional and preserves existing users, tickets, categories, submitted values, and queue-owned fields. It does not require seed execution.
+
+Ticket attachments and branding assets live in `public/uploads`. Docker Compose mounts the persistent `compdesk_uploads` named volume at `/app/public/uploads`; include it in backups. A standalone or multi-replica deployment must provide equivalent durable shared storage with write access for the application user.
+
+Do not run `npm run db:seed` in production unless you explicitly want demo data. A clean demo install can override `SEED_ADMIN_EMAIL` and `SEED_DEFAULT_PASSWORD`.
 ## Option A: Docker Compose (Recommended)
 
 The easiest way to deploy. One command starts both the database and the app.
@@ -118,8 +135,8 @@ The easiest way to deploy. One command starts both the database and the app.
 ### Step 1: Clone and Configure
 
 ```bash
-git clone https://github.com/your-org/compdesk.git
-cd compdesk
+git clone https://github.com/TahaHydra/CompDesk.git
+cd CompDesk
 cp .env.example .env
 nano .env    # Edit all values
 ```
@@ -176,8 +193,8 @@ Deploy without Docker — just Node.js + a PostgreSQL server.
 ### Step 1: Install Dependencies
 
 ```bash
-git clone https://github.com/your-org/compdesk.git
-cd compdesk
+git clone https://github.com/TahaHydra/CompDesk.git
+cd CompDesk
 npm ci --production=false
 ```
 
@@ -579,7 +596,7 @@ sudo kill -9 <PID>
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/compdesk.git && cd compdesk
+git clone https://github.com/TahaHydra/CompDesk.git && cd CompDesk
 
 # 2. Configure
 cp .env.example .env && nano .env
@@ -592,5 +609,5 @@ docker compose exec app npx prisma db seed
 
 # 5. Open browser
 open http://localhost:3000
-# Login: admin@example.invalid / Password123!
+# Login: the SEED_ADMIN_EMAIL / SEED_DEFAULT_PASSWORD values
 ```

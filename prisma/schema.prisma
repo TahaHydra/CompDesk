@@ -61,6 +61,15 @@ enum FormFieldType {
   FILE
 }
 
+enum BuiltInTicketField {
+  TITLE
+  DESCRIPTION
+  PRIORITY
+  SEVERITY
+  ATTACHMENTS
+  TAGS
+}
+
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
@@ -77,17 +86,17 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  requestedTickets    Ticket[]        @relation("TicketRequester")
-  assignedTickets     Ticket[]        @relation("TicketAssignee")
-  escalatedByTickets  Ticket[]        @relation("TicketEscalatedBy")
-  escalatedToTickets  Ticket[]        @relation("TicketEscalatedTo")
-  watchedTickets      TicketWatcher[]
-  timelineEvents      TimelineEvent[]
-  groupMemberships    GroupMember[]
-  queueMemberships    QueueMember[]
-  auditLogs           AuditLog[]
-  sessions            Session[]
-  accounts            Account[]
+  requestedTickets   Ticket[]        @relation("TicketRequester")
+  assignedTickets    Ticket[]        @relation("TicketAssignee")
+  escalatedByTickets Ticket[]        @relation("TicketEscalatedBy")
+  escalatedToTickets Ticket[]        @relation("TicketEscalatedTo")
+  watchedTickets     TicketWatcher[]
+  timelineEvents     TimelineEvent[]
+  groupMemberships   GroupMember[]
+  queueMemberships   QueueMember[]
+  auditLogs          AuditLog[]
+  sessions           Session[]
+  accounts           Account[]
 
   @@map("users")
 }
@@ -137,13 +146,13 @@ model VerificationToken {
 // ── Groups (Entra Synced) ──────────────────────────────────────
 
 model Group {
-  id            String   @id @default(uuid())
-  entraObjectId String?  @unique @map("entra_object_id")
+  id            String    @id @default(uuid())
+  entraObjectId String?   @unique @map("entra_object_id")
   name          String
   description   String?
   syncedAt      DateTime? @map("synced_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   members          GroupMember[]
   queueAssignments QueueGroup[]
@@ -166,20 +175,25 @@ model GroupMember {
 // ── Queues ─────────────────────────────────────────────────────
 
 model Queue {
-  id              String   @id @default(uuid())
-  name            String   @unique
-  description     String?
-  isPublic        Boolean  @default(false) @map("is_public")
-  autoAssign      Boolean  @default(false) @map("auto_assign")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(uuid())
+  name              String   @unique
+  description       String?
+  isPublic          Boolean  @default(false) @map("is_public")
+  isActive          Boolean  @default(true) @map("is_active")
+  autoAssign        Boolean  @default(false) @map("auto_assign")
+  defaultTemplateId String?  @map("default_template_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  tickets    Ticket[]
-  groups     QueueGroup[]
-  members    QueueMember[]
-  slaPolices SlaPolicy[]
-  formFields FormField[]
+  tickets         Ticket[]
+  categories      Category[]
+  groups          QueueGroup[]
+  members         QueueMember[]
+  slaPolices      SlaPolicy[]
+  defaultTemplate TicketFormTemplate? @relation("QueueDefaultTemplate", fields: [defaultTemplateId], references: [id], onDelete: SetNull)
 
+  @@index([isActive])
+  @@index([defaultTemplateId])
   @@map("queues")
 }
 
@@ -212,14 +226,23 @@ model QueueMember {
 // ── Categories & Tags ──────────────────────────────────────────
 
 model Category {
-  id          String   @id @default(uuid())
-  name        String   @unique
+  id          String    @id @default(uuid())
+  queueId     String    @map("queue_id")
+  templateId  String?   @map("template_id")
+  name        String
   description String?
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
+  isActive    Boolean   @default(true) @map("is_active")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  tickets Ticket[]
+  queue    Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
+  template TicketFormTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  tickets  Ticket[]
 
+  @@unique([queueId, name])
+  @@index([queueId, isActive])
+  @@index([templateId])
   @@map("categories")
 }
 
@@ -248,52 +271,58 @@ model TicketTag {
 // ── Tickets ────────────────────────────────────────────────────
 
 model Ticket {
-  id              String       @id @default(uuid())
-  key             String       @unique
-  idempotencyKey  String?      @map("idempotency_key")
-  title           String
-  description     String?      @db.Text
-  status          TicketStatus @default(NEW)
-  priority        Priority     @default(NORMAL)
-  severity        Severity?
-  queueId         String       @map("queue_id")
-  categoryId      String?      @map("category_id")
-  requesterId     String       @map("requester_id")
-  assigneeId      String?      @map("assignee_id")
-  formData        Json?        @map("form_data")
-  dueAt           DateTime?    @map("due_at")
-  firstResponseAt DateTime?    @map("first_response_at")
-  resolvedAt      DateTime?    @map("resolved_at")
-  closedAt        DateTime?    @map("closed_at")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
-  lockedBy        String?      @map("locked_by")
-  lockedAt        DateTime?    @map("locked_at")
+  id                      String       @id @default(uuid())
+  key                     String       @unique
+  idempotencyKey          String?      @map("idempotency_key")
+  title                   String
+  description             String?      @db.Text
+  status                  TicketStatus @default(NEW)
+  priority                Priority     @default(NORMAL)
+  severity                Severity?
+  queueId                 String       @map("queue_id")
+  categoryId              String?      @map("category_id")
+  requesterId             String       @map("requester_id")
+  assigneeId              String?      @map("assignee_id")
+  resolvedTemplateId      String       @map("resolved_template_id")
+  resolvedTemplateVersion Int          @map("resolved_template_version")
+  formSchemaSnapshot      Json         @map("form_schema_snapshot")
+  submittedFormValues     Json         @default("{}") @map("submitted_form_values")
+  dueAt                   DateTime?    @map("due_at")
+  firstResponseAt         DateTime?    @map("first_response_at")
+  resolvedAt              DateTime?    @map("resolved_at")
+  closedAt                DateTime?    @map("closed_at")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+  lockedBy                String?      @map("locked_by")
+  lockedAt                DateTime?    @map("locked_at")
 
   // Escalation
-  escalationLevel Int          @default(0) @map("escalation_level")
-  escalatedAt     DateTime?    @map("escalated_at")
-  escalatedById   String?      @map("escalated_by_id")
-  escalatedToId   String?      @map("escalated_to_id")
+  escalationLevel Int       @default(0) @map("escalation_level")
+  escalatedAt     DateTime? @map("escalated_at")
+  escalatedById   String?   @map("escalated_by_id")
+  escalatedToId   String?   @map("escalated_to_id")
 
-  queue       Queue          @relation(fields: [queueId], references: [id])
-  category    Category?      @relation(fields: [categoryId], references: [id])
-  requester   User           @relation("TicketRequester", fields: [requesterId], references: [id])
-  assignee    User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  escalatedBy User?          @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
-  escalatedTo User?          @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
-  tags        TicketTag[]
-  watchers    TicketWatcher[]
-  timeline    TimelineEvent[]
-  attachments Attachment[]
+  queue            Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
+  category         Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  resolvedTemplate TicketFormTemplate  @relation(fields: [resolvedTemplateId], references: [id], onDelete: Restrict)
+  requester        User                @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee         User?               @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  escalatedBy      User?               @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
+  escalatedTo      User?               @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
+  tags             TicketTag[]
+  watchers         TicketWatcher[]
+  timeline         TimelineEvent[]
+  attachments      Attachment[]
 
+  @@unique([requesterId, idempotencyKey])
   @@index([status])
   @@index([queueId])
+  @@index([categoryId])
+  @@index([resolvedTemplateId])
   @@index([requesterId])
   @@index([assigneeId])
   @@index([createdAt])
   @@index([escalationLevel])
-  @@unique([requesterId, idempotencyKey])
   @@map("tickets")
 }
 
@@ -360,27 +389,56 @@ model SlaPolicy {
   @@map("sla_policies")
 }
 
-// ── Form Fields ────────────────────────────────────────────────
+// ── Ticket Form Templates ──────────────────────────────────────
 
-model FormField {
-  id               String        @id @default(uuid())
-  queueId          String        @map("queue_id")
+model TicketFormTemplate {
+  id              String    @id @default(uuid())
+  name            String
+  description     String?
+  version         Int       @default(1)
+  isSystemDefault Boolean   @default(false) @map("is_system_default")
+  isActive        Boolean   @default(true) @map("is_active")
+  archivedAt      DateTime? @map("archived_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  fields             TicketFormTemplateField[]
+  departmentDefaults Queue[]                   @relation("QueueDefaultTemplate")
+  categoryOverrides  Category[]
+  tickets            Ticket[]
+
+  @@index([isSystemDefault, isActive])
+  @@index([archivedAt])
+  @@map("ticket_form_templates")
+}
+
+model TicketFormTemplateField {
+  id               String              @id @default(uuid())
+  templateId       String              @map("template_id")
+  fieldKey         String              @map("field_key")
   label            String
-  fieldKey         String        @map("field_key")
   type             FormFieldType
-  required         Boolean       @default(false)
-  options          Json?         // for dropdown/multiselect
-  validationRules  Json?         @map("validation_rules") // {minLength, maxLength, regex, fileTypes}
-  conditionalRules Json?         @map("conditional_rules") // {dependsOn, showWhen}
-  visibleTo        String[]      @default(["USER", "AGENT", "ADMIN", "SUPER_ADMIN"]) @map("visible_to") // roles that can see this field
-  sortOrder        Int           @default(0) @map("sort_order")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  builtIn          BuiltInTicketField? @map("built_in")
+  placeholder      String?
+  helpText         String?             @map("help_text")
+  required         Boolean             @default(false)
+  defaultValue     Json?               @map("default_value")
+  options          Json?
+  validationRules  Json?               @map("validation_rules")
+  conditionalRules Json?               @map("conditional_rules")
+  visibleTo        String[]            @default(["USER", "AGENT", "ADMIN", "SUPER_ADMIN"]) @map("visible_to")
+  editableBy       String[]            @default(["USER", "AGENT", "ADMIN", "SUPER_ADMIN"]) @map("editable_by")
+  sortOrder        Int                 @default(0) @map("sort_order")
+  width            Int                 @default(12)
+  isActive         Boolean             @default(true) @map("is_active")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
 
-  queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  template TicketFormTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  @@unique([queueId, fieldKey])
-  @@map("form_fields")
+  @@unique([templateId, fieldKey])
+  @@index([templateId, sortOrder])
+  @@map("ticket_form_template_fields")
 }
 
 // ── Canned Responses ───────────────────────────────────────────
@@ -433,9 +491,9 @@ model AuditLog {
 // ── App Settings ───────────────────────────────────────────────
 
 model AppSetting {
-  id    String @id @default(uuid())
-  key   String @unique
-  value String @db.Text
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String   @db.Text
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("app_settings")

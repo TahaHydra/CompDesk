@@ -286,7 +286,7 @@ export default function AdminUsersPage() {
                         </div>
                         <div className="space-y-2">
                             <Label>Email</Label>
-                            <Input placeholder="jean.dupont@example.invalid" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                            <Input placeholder="user@example.com" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
                         </div>
                         <div className="space-y-2">
                             <Label>Role</Label>
