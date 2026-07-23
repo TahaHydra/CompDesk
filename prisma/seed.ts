@@ -66,6 +66,18 @@ async function main() {
         },
     });
 
+    // Plain ADMIN (distinct from SUPER_ADMIN) so both admin tiers can be tested
+    const admin2 = await prisma.user.upsert({
+        where: { email: 'admin2@example.invalid' },
+        update: { passwordHash },
+        create: {
+            email: 'admin2@example.invalid',
+            name: 'Nadia Admin',
+            role: 'ADMIN',
+            passwordHash,
+        },
+    });
+
     console.log('✅ Users created');
 
     // ── Groups ─────────────────────────────────────────────────
@@ -152,6 +164,13 @@ async function main() {
         where: { queueId_groupId_role: { queueId: hrQueue.id, groupId: hrGroup.id, role: 'agent' } },
         update: {},
         create: { queueId: hrQueue.id, groupId: hrGroup.id, role: 'agent' },
+    });
+
+    // Give agent2 direct membership on Finance (no dedicated group needed for a demo queue)
+    await prisma.queueMember.upsert({
+        where: { queueId_userId_role: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' } },
+        update: {},
+        create: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' },
     });
 
     console.log('✅ Queues created');
@@ -269,15 +288,46 @@ async function main() {
             requesterId: user2.id,
             assigneeId: agent1.id,
         },
+        {
+            // Keys deliberately outside the normal auto-generated sequence range
+            // (see counter-safety note below) to avoid colliding with real tickets
+            // created through the app on a DB that already has organic activity.
+            key: 'TCK-2026-SEED91',
+            title: 'Expense report reimbursement delayed',
+            description: 'I submitted my March expense report three weeks ago and have not received reimbursement yet. Report ID: EXP-4471.',
+            status: TicketStatus.PENDING_AGENT,
+            priority: Priority.NORMAL,
+            queueId: financeQueue.id,
+            requesterId: user1.id,
+            assigneeId: agent2.id,
+        },
+        {
+            key: 'TCK-2026-SEED92',
+            title: 'Need updated W-9 form for vendor onboarding',
+            description: 'Our new vendor needs our company\'s current W-9 to set up payment. Can Finance provide the latest version?',
+            status: TicketStatus.NEW,
+            priority: Priority.LOW,
+            queueId: financeQueue.id,
+            requesterId: user2.id,
+            assigneeId: null,
+        },
     ];
 
-    // Update counter
-    await prisma.ticketCounter.update({
-        where: { id: 'singleton' },
-        data: { count: tickets.length },
-    });
+    // Bump the counter forward only if needed — never rewind it. The app's
+    // ticket-key generator reads this counter to mint the *next* real ticket
+    // key, so setting it backwards on a DB that already has organic tickets
+    // would hand out a key that collides with an existing one.
+    const currentCounter = await prisma.ticketCounter.findUnique({ where: { id: 'singleton' } });
+    if ((currentCounter?.count ?? 0) < tickets.length) {
+        await prisma.ticketCounter.update({
+            where: { id: 'singleton' },
+            data: { count: tickets.length },
+        });
+    }
 
     for (const t of tickets) {
+        const alreadyExisted = await prisma.ticket.findUnique({ where: { key: t.key } });
+
         const ticket = await prisma.ticket.upsert({
             where: { key: t.key },
             update: {},
@@ -291,18 +341,71 @@ async function main() {
             create: { ticketId: ticket.id, userId: t.requesterId },
         });
 
-        // Add created timeline event
-        await prisma.timelineEvent.create({
-            data: {
-                ticketId: ticket.id,
-                userId: t.requesterId,
-                type: 'CREATED',
-                content: `Ticket created: ${t.title}`,
-            },
-        });
+        // Add created timeline event — only for tickets seeded for the first
+        // time. Re-running this script against an already-seeded DB must not
+        // append another "Ticket created" entry to the timeline.
+        if (!alreadyExisted) {
+            await prisma.timelineEvent.create({
+                data: {
+                    ticketId: ticket.id,
+                    userId: t.requesterId,
+                    type: 'CREATED',
+                    content: `Ticket created: ${t.title}`,
+                },
+            });
+        }
     }
 
     console.log('✅ Sample tickets created');
+
+    // ── Sample Replies / Conversation Threads ───────────────────
+    // Guarded: only seed a ticket's conversation once (skip if it already
+    // has more than the single CREATED event from above).
+    const replyThreads: Record<string, Array<{ userId: string; type: 'COMMENT' | 'INTERNAL_NOTE'; content: string }>> = {
+        'TCK-2026-000001': [
+            { userId: agent1.id, type: 'INTERNAL_NOTE', content: 'Checked VPN concentrator logs — seeing repeated auth timeouts from this user\'s IP range. Might be an MFA push issue.' },
+            { userId: agent1.id, type: 'COMMENT', content: 'Hi Jean, could you confirm whether you\'re getting an MFA prompt on your phone before the timeout happens?' },
+            { userId: user1.id, type: 'COMMENT', content: 'No prompt at all, it just times out after ~10 seconds on the "Connecting..." screen.' },
+            { userId: agent1.id, type: 'COMMENT', content: 'Thanks — that points to a client-side cache issue rather than MFA. Please clear the Cisco AnyConnect profile cache and retry, steps here: %APPDATA%\\Cisco\\Cisco AnyConnect Secure Mobility Client\\Profile — delete the .xml files and reconnect.' },
+        ],
+        'TCK-2026-000003': [
+            { userId: agent2.id, type: 'COMMENT', content: 'Hi Jean, thanks for the report. Can you try Outlook > Account Settings > Repair for the affected profile?' },
+            { userId: user1.id, type: 'COMMENT', content: 'Just tried that, still not syncing. Web version is fine as I mentioned.' },
+            { userId: agent2.id, type: 'INTERNAL_NOTE', content: 'Escalating internally to check if this is the known Exchange cache corruption issue from last week\'s patch.' },
+        ],
+        'TCK-2026-000005': [
+            { userId: agent1.id, type: 'COMMENT', content: 'On it — heading up to the 3rd floor now to check the printer.' },
+            { userId: agent1.id, type: 'COMMENT', content: 'Confirmed E3 is a fuser unit error. Ordering a replacement part, should be resolved by tomorrow morning.' },
+            { userId: user2.id, type: 'COMMENT', content: 'Thanks for the quick update!' },
+        ],
+        'TCK-2026-SEED91': [
+            { userId: agent2.id, type: 'COMMENT', content: 'Hi, thanks for following up. I can see your report in the queue — it\'s pending approval from your manager before payment can be released.' },
+            { userId: user1.id, type: 'COMMENT', content: 'Ah I wasn\'t aware it needed manager approval. I\'ll follow up with them directly, thanks!' },
+        ],
+    };
+
+    for (const [ticketKey, events] of Object.entries(replyThreads)) {
+        const ticket = await prisma.ticket.findUnique({ where: { key: ticketKey } });
+        if (!ticket) continue;
+
+        const existingReplyCount = await prisma.timelineEvent.count({
+            where: { ticketId: ticket.id, type: { in: ['COMMENT', 'INTERNAL_NOTE'] } },
+        });
+        if (existingReplyCount > 0) continue; // conversation already seeded
+
+        for (const event of events) {
+            await prisma.timelineEvent.create({
+                data: {
+                    ticketId: ticket.id,
+                    userId: event.userId,
+                    type: event.type,
+                    content: event.content,
+                },
+            });
+        }
+    }
+
+    console.log('✅ Sample replies created');
 
     // ── Canned Responses ───────────────────────────────────────
     const cannedResponses = [
