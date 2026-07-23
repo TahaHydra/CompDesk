@@ -50,6 +50,9 @@ async function isLocalLoginEnabled(): Promise<boolean> {
 
 export const authConfig: NextAuthConfig = {
     adapter: PrismaAdapter(prisma),
+    // AUTH_SECRET is the Auth.js v5 name. NEXTAUTH_SECRET remains a
+    // compatibility fallback, but both must resolve to one stable key.
+    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
     session: { strategy: 'jwt' },
     trustHost: true,
     providers: [
@@ -197,9 +200,13 @@ export const authConfig: NextAuthConfig = {
             return true;
         },
         async jwt({ token, user }) {
-            if (user) {
+            // Hydrate on sign-in and repair older/incomplete tokens.
+            if (user || !token.id || !token.role || !Array.isArray(token.groupIds)) {
+                const email = user?.email ?? token.email;
+                if (!email) return token;
+
                 const dbUser = await prisma.user.findUnique({
-                    where: { email: token.email! },
+                    where: { email },
                     include: { groupMemberships: true },
                 });
                 if (dbUser) {

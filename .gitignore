@@ -48,3 +48,11 @@ public/uploads/*
 # Coverage
 coverage/
 .nyc_output/
+# Local tooling metadata
+.aitool-a/
+.codex/
+.cursor/
+.windsurf/
+AITOOL_A.md
+AITOOL_A_*.md
+AGENTS.md

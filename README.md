@@ -342,8 +342,8 @@ Tests cover:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `NEXTAUTH_SECRET` | Yes | Random 32+ char secret |
-| `NEXTAUTH_URL` | Yes | App URL (e.g., `https://compdesk.yourorg.com`) |
+| `AUTH_SECRET` | Yes | Random 32+ char secret |
+| `AUTH_URL` | Yes | App URL (e.g., `https://compdesk.yourorg.com`) |
 | `AZURE_AD_CLIENT_ID` | Yes | Entra app client ID |
 | `AZURE_AD_CLIENT_SECRET` | Yes | Entra app client secret |
 | `AZURE_AD_TENANT_ID` | Yes | Entra tenant ID |
