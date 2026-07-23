@@ -48,3 +48,11 @@ public/uploads/*
 # Coverage
 coverage/
 .nyc_output/
+# Local tooling metadata
+.claude/
+.codex/
+.cursor/
+.windsurf/
+CLAUDE.md
+CLAUDE_*.md
+AGENTS.md

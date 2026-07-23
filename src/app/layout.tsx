@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { QueryProvider } from '@/components/providers/query-provider';
-import { AuthProvider } from '@/components/providers/auth-provider';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 
 export const metadata: Metadata = {
@@ -42,12 +41,10 @@ export default function RootLayout({
             </head>
             <body className="min-h-screen transition-theme">
                 <ThemeProvider>
-                    <AuthProvider>
-                        <QueryProvider>
-                            {children}
-                            <Toaster />
-                        </QueryProvider>
-                    </AuthProvider>
+                    <QueryProvider>
+                        {children}
+                        <Toaster />
+                    </QueryProvider>
                 </ThemeProvider>
             </body>
         </html>

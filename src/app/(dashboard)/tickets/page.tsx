@@ -38,9 +38,10 @@ export default function TicketsPage() {
     const router = useRouter();
     const { data: session } = useSession();
 
-    const userRole = session?.user?.role ?? 'USER';
+    const userRole = session?.user?.role;
 
     const allowedViews = useMemo<string[]>(() => {
+        if (!userRole) return [];
         if (userRole === 'USER') return ['my'];
         if (userRole === 'AGENT') return ['my', 'queue'];
         return [...VIEW_VALUES];
@@ -137,6 +138,7 @@ export default function TicketsPage() {
             if (!res.ok) throw new Error('Failed to fetch tickets');
             return res.json();
         },
+        enabled: !!userRole,
     });
 
     const tickets = data?.tickets ?? [];

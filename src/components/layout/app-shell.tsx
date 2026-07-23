@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
+import type { Session } from 'next-auth';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -74,18 +75,28 @@ const notificationIcon = (type: string) => {
     }
 };
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
-    const { data: session } = useSession();
+export default function AppShell({
+    children,
+    initialSession,
+}: {
+    children: React.ReactNode;
+    initialSession: Session;
+}) {
+    const { data: clientSession, status } = useSession();
     const pathname = usePathname();
     const router = useRouter();
     const queryClient = useQueryClient();
+    // Never downgrade a temporarily unavailable client session to USER.
+    // The server-validated session remains authoritative until a refresh
+    // restores the client session or redirects an expired login.
+    const session = clientSession?.user?.role ? clientSession : initialSession;
     // collapsed = desktop rail collapse; mobileOpen = off-canvas drawer on phones/tablets
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [notifOpen, setNotifOpen] = useState(false);
 
-    const userRole = session?.user?.role ?? 'USER';
+    const userRole = session.user.role;
     const isAdminUser = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
     const initials = session?.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
 
@@ -93,6 +104,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         setMobileOpen(false);
     }, [pathname]);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.refresh();
+        }
+    }, [router, status]);
 
     // Lock body scroll while the mobile drawer is open
     useEffect(() => {

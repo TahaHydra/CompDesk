@@ -67,10 +67,8 @@ nano .env
 DATABASE_URL="postgresql://excodesk:YOUR_STRONG_PASSWORD@localhost:5432/excodesk?schema=public"
 
 # ── Auth ─────────────────────────────────────────────────────────
-NEXTAUTH_URL="https://excodesk.yourorg.com"       # Your public URL
-NEXTAUTH_SECRET="$(openssl rand -base64 32)"       # Generate with this command
 AUTH_URL="https://excodesk.yourorg.com"
-AUTH_SECRET="same-value-as-NEXTAUTH_SECRET"
+AUTH_SECRET="$(openssl rand -base64 32)"           # Generate with this command
 
 # ── Microsoft Entra ID (SSO) ────────────────────────────────────
 # Leave empty if not using SSO — local login will still work
@@ -82,7 +80,7 @@ AZURE_AD_TENANT_ID=""
 ### Generate Secrets
 
 ```bash
-# Generate NEXTAUTH_SECRET (run once, copy to .env)
+# Generate AUTH_SECRET (run once, copy to .env)
 openssl rand -base64 32
 # or
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
@@ -554,7 +552,7 @@ Make sure `.next/static` is accessible. If using standalone mode, both `server.j
 
 ### SSO callback error
 
-- Verify `NEXTAUTH_URL` matches your actual URL exactly (no trailing slash)
+- Verify `AUTH_URL` matches your actual URL exactly (no trailing slash)
 - Verify the Azure redirect URI matches: `https://excodesk.yourorg.com/api/auth/callback/microsoft-entra-id`
 - Ensure admin consent is granted in Azure Portal
 
