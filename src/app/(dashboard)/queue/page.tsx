@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageHeader } from '@/components/layout/page-header';
 import { Inbox, Search, AlertTriangle, SlidersHorizontal, X } from 'lucide-react';
 
 const DEFAULT_LIMIT = 20;
@@ -95,14 +96,11 @@ export default function QueueInboxPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <Inbox className="h-8 w-8 text-primary" /> Department Inbox
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                    {pagination.total} ticket{pagination.total !== 1 ? 's' : ''} in your departments
-                </p>
-            </div>
+            <PageHeader
+                icon={Inbox}
+                title="Department Inbox"
+                description={`${pagination.total} ticket${pagination.total !== 1 ? 's' : ''} in your departments`}
+            />
 
             {/* Filters */}
             <Card className="border-0 shadow-sm">

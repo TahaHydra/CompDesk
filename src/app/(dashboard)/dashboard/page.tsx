@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/layout/page-header';
 import Link from 'next/link';
 import {
     Ticket,
@@ -78,33 +79,29 @@ export default function DashboardPage() {
     return (
         <div className="space-y-8">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-                    <p className="text-muted-foreground mt-1">Overview of your helpdesk activity</p>
-                </div>
+            <PageHeader eyebrow="Overview" title="Dashboard" description="A snapshot of your helpdesk activity">
                 <Link href="/tickets/new">
                     <Button className="gap-2 shadow-lg shadow-primary/25">
                         <Plus className="h-4 w-4" />
                         New Ticket
                     </Button>
                 </Link>
-            </div>
+            </PageHeader>
 
             {/* Stats Grid — each card links to filtered ticket list */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                {statCards.map((stat) => (
-                    <Link key={stat.label} href={stat.href}>
-                        <Card className="overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
-                            <CardContent className="p-5">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">{stat.label}</p>
-                                        <p className={`text-3xl font-bold mt-1 ${stat.textColor}`}>
-                                            {isLoading ? '—' : stat.value}
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+                {statCards.map((stat, i) => (
+                    <Link key={stat.label} href={stat.href} className="animate-rise" style={{ '--i': i } as React.CSSProperties}>
+                        <Card className="group h-full cursor-pointer overflow-hidden border-0 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+                            <CardContent className="p-4 sm:p-5">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground sm:text-sm">{stat.label}</p>
+                                        <p className={`mt-1 text-2xl font-bold tabular-nums sm:text-3xl ${stat.textColor}`}>
+                                            {isLoading ? <span className="inline-block h-7 w-10 animate-pulse rounded bg-muted align-middle" /> : stat.value}
                                         </p>
                                     </div>
-                                    <div className={`${stat.bgColor} p-3 rounded-xl`}>
+                                    <div className={`${stat.bgColor} shrink-0 rounded-xl p-2.5 sm:p-3`}>
                                         <stat.icon className={`h-5 w-5 ${stat.textColor}`} />
                                     </div>
                                 </div>
@@ -150,7 +147,13 @@ export default function DashboardPage() {
                     </Link>
                 </CardHeader>
                 <CardContent className="px-0 pb-0">
-                    {recentTickets.length === 0 ? (
+                    {isLoading ? (
+                        <div className="space-y-2 px-4 pb-4">
+                            {Array.from({ length: 4 }).map((_, i) => (
+                                <div key={i} className="h-11 animate-pulse rounded-lg bg-muted/60" />
+                            ))}
+                        </div>
+                    ) : recentTickets.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 text-center">
                             <div className="rounded-full bg-muted p-4 mb-4">
                                 <Ticket className="h-8 w-8 text-muted-foreground" />

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/layout/page-header';
 import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
@@ -77,7 +78,7 @@ function SmtpSettingsTab() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>SMTP Host</Label>
                             <Input placeholder="smtp.office365.com" value={smtp.smtp_host}
@@ -89,7 +90,7 @@ function SmtpSettingsTab() {
                                 onChange={(e) => setSmtp({ ...smtp, smtp_port: e.target.value })} />
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>Username / Email</Label>
                             <Input placeholder="noreply@example.invalid" value={smtp.smtp_user}
@@ -104,7 +105,7 @@ function SmtpSettingsTab() {
                                 onChange={(e) => setSmtp({ ...smtp, smtp_password: e.target.value })} />
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>From Address</Label>
                             <Input placeholder="noreply@example.invalid" value={smtp.smtp_from}
@@ -368,16 +369,16 @@ function DashboardLinksTab() {
                 ) : (
                     <div className="space-y-3">
                         {links.map((link, i) => (
-                            <div key={i} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg border">
+                            <div key={i} className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-3 sm:flex-row sm:items-end">
                                 <div className="flex-1 space-y-1">
                                     <Label className="text-xs text-muted-foreground">Title</Label>
                                     <Input placeholder="e.g. Leave Request Form" value={link.title} onChange={(e) => updateLink(i, 'title', e.target.value)} />
                                 </div>
-                                <div className="flex-[2] space-y-1">
+                                <div className="space-y-1 sm:flex-[2]">
                                     <Label className="text-xs text-muted-foreground">URL</Label>
                                     <Input placeholder="https://..." value={link.url} onChange={(e) => updateLink(i, 'url', e.target.value)} />
                                 </div>
-                                <Button variant="ghost" size="icon" className="mt-5 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeLink(i)}>
+                                <Button variant="ghost" size="icon" className="shrink-0 self-end text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeLink(i)}>
                                     <X className="h-4 w-4" />
                                 </Button>
                             </div>
@@ -420,7 +421,7 @@ function SecuritySettingsTab() {
     });
 
     return (
-        <Card className="mt-4">
+        <Card className="mt-4 border-0 shadow-sm">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Lock className="h-5 w-5" /> Login Security</CardTitle>
             </CardHeader>
@@ -500,7 +501,7 @@ function FeatureFlagsTab() {
     });
 
     return (
-        <Card className="mt-4">
+        <Card className="mt-4 border-0 shadow-sm">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Feature Flags</CardTitle>
             </CardHeader>
@@ -734,12 +735,7 @@ function ApiClientsTab() {
 export default function AdminSettingsPage() {
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <Settings className="h-8 w-8 text-primary" /> Settings
-                </h1>
-                <p className="text-muted-foreground mt-1">Application configuration</p>
-            </div>
+            <PageHeader icon={Settings} title="Settings" description="Application configuration" />
 
             <Tabs defaultValue="smtp">
                 <TabsList className="w-full justify-start overflow-x-auto">

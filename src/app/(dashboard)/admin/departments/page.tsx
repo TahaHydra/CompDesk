@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/layout/page-header';
 import { FolderKanban, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -95,12 +96,11 @@ export default function AdminDepartmentsPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <FolderKanban className="h-8 w-8 text-primary" /> Departments
-                </h1>
-                <p className="text-muted-foreground mt-1">Manage organizational departments and routing queues</p>
-            </div>
+            <PageHeader
+                icon={FolderKanban}
+                title="Departments"
+                description="Manage organizational departments and routing queues"
+            />
 
             <Card className="border shadow-sm pt-4">
                 <CardContent className="space-y-4">
@@ -127,14 +127,14 @@ export default function AdminDepartmentsPage() {
                         {(queues ?? []).map((q: any) => (
                             <Card key={q.id} className="border shadow-none">
                                 <CardContent className="p-4">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h3 className="font-medium">{q.name}</h3>
-                                            <p className="text-sm text-muted-foreground mt-1">{q.description || 'No description provided'}</p>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <h3 className="truncate font-medium">{q.name}</h3>
+                                            <p className="mt-1 truncate text-sm text-muted-foreground">{q.description || 'No description provided'}</p>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <Badge variant="secondary">{q._count?.tickets ?? 0} tickets</Badge>
-                                            <div className="flex gap-1 ml-2">
+                                        <div className="flex shrink-0 items-center gap-2">
+                                            <Badge variant="secondary" className="whitespace-nowrap">{q._count?.tickets ?? 0} tickets</Badge>
+                                            <div className="flex gap-1">
                                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEditClick(q)}>
                                                     <Pencil className="h-4 w-4" />
                                                 </Button>

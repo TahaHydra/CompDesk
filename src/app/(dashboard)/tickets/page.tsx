@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/layout/page-header';
 import { Ticket, Plus, Search, AlertTriangle, SlidersHorizontal, X } from 'lucide-react';
 
 const DEFAULT_LIMIT = 20;
@@ -144,20 +145,17 @@ export default function TicketsPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Tickets</h1>
-                    <p className="text-muted-foreground mt-1">
-                        {pagination.total} ticket{pagination.total !== 1 ? 's' : ''} total
-                    </p>
-                </div>
+            <PageHeader
+                title="Tickets"
+                description={`${pagination.total} ticket${pagination.total !== 1 ? 's' : ''} total`}
+            >
                 <Link href="/tickets/new">
                     <Button className="gap-2 shadow-lg shadow-primary/25">
                         <Plus className="h-4 w-4" />
                         New Ticket
                     </Button>
                 </Link>
-            </div>
+            </PageHeader>
 
             {/* Filters */}
             <Card className="border-0 shadow-sm">
@@ -276,8 +274,11 @@ export default function TicketsPage() {
                                                 {ticket.key}
                                                 {ticket.slaBreached && <AlertTriangle className="inline h-3 w-3 text-destructive ml-1" />}
                                             </td>
-                                            <td className="px-4 py-3 font-medium max-w-[280px]">
+                                            <td className="px-4 py-3 font-medium max-w-[200px] sm:max-w-[280px]">
                                                 <span className="truncate block">{ticket.title}</span>
+                                                <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground md:hidden">
+                                                    {ticket.queue?.name ?? '—'}{ticket.requester?.name ? ` · ${ticket.requester.name}` : ''}
+                                                </span>
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
                                                 {ticket.queue?.name ?? '—'}
