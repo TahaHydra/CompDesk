@@ -1,22 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
+import path from 'path';
+import { mkdir, writeFile } from 'fs/promises';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import crypto from 'crypto';
 import { canAccessTicket } from '@/lib/permissions';
 import { getFeatureFlag } from '@/lib/feature-flags';
+import logger from '@/lib/logger';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = [
-    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp',
-    'application/pdf',
-    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
-    'text/plain', 'text/csv',
-];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MIME_EXTENSIONS: Record<string, string> = {
+    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp', 'image/bmp': '.bmp',
+    'application/pdf': '.pdf', 'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/vnd.ms-excel': '.xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    'application/vnd.ms-powerpoint': '.ppt', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+    'application/zip': '.zip', 'application/x-rar-compressed': '.rar', 'application/x-7z-compressed': '.7z',
+    'text/plain': '.txt', 'text/csv': '.csv',
+};
+
+function contentMatchesMime(type: string, buffer: Buffer): boolean {
+    if (type === 'image/png') return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
+    if (type === 'image/jpeg') return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+    if (type === 'image/gif') return buffer.length >= 6 && ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString('ascii'));
+    if (type === 'image/webp') return buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+    if (type === 'image/bmp') return buffer.length >= 2 && buffer.subarray(0, 2).toString('ascii') === 'BM';
+    if (type === 'application/pdf') return buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+    return true;
+}
 
 export async function POST(req: NextRequest) {
     try {
@@ -25,68 +36,60 @@ export async function POST(req: NextRequest) {
         if (!(await getFeatureFlag('feature_attachments_enabled'))) {
             return NextResponse.json({ error: 'Attachments are disabled' }, { status: 403 });
         }
-
-        const formData = await req.formData();
-        const file = formData.get('file') as File | null;
-        const ticketId = formData.get('ticketId') as string | null;
-
-        if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-        if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: 'File too large (max 10MB)' }, { status: 400 });
-        if (!ALLOWED_TYPES.includes(file.type)) {
-            return NextResponse.json({ error: `File type not allowed: ${file.type}` }, { status: 400 });
+        const body = await req.formData();
+        const fileValue = body.get('file');
+        const ticketIdValue = body.get('ticketId');
+        const ticketId = typeof ticketIdValue === 'string' && ticketIdValue ? ticketIdValue : null;
+        if (!(fileValue instanceof File)) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+        if (fileValue.size === 0 || fileValue.size > MAX_FILE_SIZE) {
+            return NextResponse.json({ error: 'Files must be between 1 byte and 10 MB' }, { status: 400 });
         }
+        const extension = MIME_EXTENSIONS[fileValue.type];
+        if (!extension) return NextResponse.json({ error: `File type not allowed: ${fileValue.type || 'unknown'}` }, { status: 400 });
 
-        // Generate unique filename
-        const ext = path.extname(file.name) || '';
-        const uniqueName = `${crypto.randomBytes(8).toString('hex')}${ext}`;
-        const subDir = ticketId || 'temp';
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads', subDir);
-
-        await mkdir(uploadDir, { recursive: true });
-
-        const filePath = path.join(uploadDir, uniqueName);
-        const buffer = Buffer.from(await file.arrayBuffer());
-        await writeFile(filePath, buffer);
-
-        const relativePath = `/uploads/${subDir}/${uniqueName}`;
-
-        // Create attachment record if ticketId is provided
-        let attachment = null;
+        let ticket: { id: string; requesterId: string; queueId: string } | null = null;
         if (ticketId) {
-            // Verify ticket exists
-            const ticket = await prisma.ticket.findUnique({
-                where: { id: ticketId },
-                select: { id: true, requesterId: true, queueId: true },
-            });
-            if (!ticket) {
-                return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ticketId)) {
+                return NextResponse.json({ error: 'Invalid ticket id' }, { status: 400 });
             }
-            const hasAccess = await canAccessTicket(session.user.id, session.user.role, ticket);
-            if (!hasAccess) {
+            ticket = await prisma.ticket.findUnique({
+                where: { id: ticketId }, select: { id: true, requesterId: true, queueId: true },
+            });
+            if (!ticket) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+            if (!(await canAccessTicket(session.user.id, session.user.role, ticket))) {
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
-
-            attachment = await prisma.attachment.create({
-                data: {
-                    ticketId,
-                    filename: file.name,
-                    mimetype: file.type,
-                    size: file.size,
-                    path: relativePath,
-                },
-            });
         }
 
+        const buffer = Buffer.from(await fileValue.arrayBuffer());
+        if (!contentMatchesMime(fileValue.type, buffer)) {
+            return NextResponse.json({ error: 'The uploaded file content does not match its declared type' }, { status: 400 });
+        }
+        const uniqueName = `${crypto.randomBytes(16).toString('hex')}${extension}`;
+        const uploadsRoot = path.resolve(process.cwd(), 'public', 'uploads');
+        const subdirectory = ticket?.id ?? 'temp';
+        const uploadDirectory = path.resolve(uploadsRoot, subdirectory);
+        const filePath = path.resolve(uploadDirectory, uniqueName);
+        if (!uploadDirectory.startsWith(`${uploadsRoot}${path.sep}`) || !filePath.startsWith(`${uploadDirectory}${path.sep}`)) {
+            return NextResponse.json({ error: 'Invalid upload path' }, { status: 400 });
+        }
+        await mkdir(uploadDirectory, { recursive: true });
+        await writeFile(filePath, buffer, { flag: 'wx' });
+        const relativePath = `/uploads/${subdirectory}/${uniqueName}`;
+        const safeOriginalName = path.basename(fileValue.name).slice(0, 255) || `attachment${extension}`;
+        const attachment = ticket ? await prisma.attachment.create({
+            data: { ticketId: ticket.id, filename: safeOriginalName, mimetype: fileValue.type, size: fileValue.size, path: relativePath },
+        }) : null;
         return NextResponse.json({
-            id: attachment?.id || null,
-            filename: file.name,
-            mimetype: file.type,
-            size: file.size,
+            id: attachment?.id ?? null,
+            filename: safeOriginalName,
+            mimetype: fileValue.type,
+            size: fileValue.size,
             url: relativePath,
             path: relativePath,
         });
     } catch (error) {
-        console.error('Upload failed:', error);
+        logger.error('Upload failed', { error });
         return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
     }
 }

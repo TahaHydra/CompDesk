@@ -8,6 +8,7 @@ import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
+import { fieldsVisibleToRoleFromSnapshot, parseTicketFormSchemaSnapshot } from '@/lib/ticket-form/validation';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -48,10 +49,20 @@ export async function GET(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        // Filter internal notes for non-agent users
+        // Filter internal notes and historical form fields for the requesting role.
         if (session.user.role === 'USER') {
             ticket.timeline = ticket.timeline.filter((e) => e.type !== 'INTERNAL_NOTE');
         }
+        const snapshot = parseTicketFormSchemaSnapshot(ticket.formSchemaSnapshot);
+        const historicalFields = fieldsVisibleToRoleFromSnapshot(ticket.formSchemaSnapshot, session.user.role);
+        const storedValues = ticket.submittedFormValues && typeof ticket.submittedFormValues === 'object' && !Array.isArray(ticket.submittedFormValues)
+            ? ticket.submittedFormValues as Record<string, unknown>
+            : {};
+        const historicalValues = Object.fromEntries(
+            historicalFields
+                .filter((field) => Object.prototype.hasOwnProperty.call(storedValues, field.fieldKey))
+                .map((field) => [field.fieldKey, storedValues[field.fieldKey]])
+        );
 
         // SLA info
         let slaInfo = null;
@@ -92,7 +103,19 @@ export async function GET(
             });
         }
 
-        return NextResponse.json({ ...ticket, slaInfo, lockInfo });
+        const safeTicket = { ...ticket, formSchemaSnapshot: undefined, submittedFormValues: undefined };
+        return NextResponse.json({
+            ...safeTicket,
+            slaInfo,
+            lockInfo,
+            historicalForm: snapshot ? {
+                templateId: snapshot.templateId,
+                templateName: snapshot.templateName,
+                version: snapshot.version,
+                fields: historicalFields,
+                values: historicalValues,
+            } : null,
+        });
     } catch (error) {
         logger.error('Failed to fetch ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -128,6 +151,12 @@ export async function PATCH(
         }
 
         const data = parsed.data;
+        if (session.user.role === 'USER') {
+            const protectedKeys = ['queueId', 'categoryId', 'assigneeId', 'priority', 'severity', 'tagIds'] as const;
+            if (protectedKeys.some((key) => data[key] !== undefined)) {
+                return NextResponse.json({ error: 'Only agents can change ticket routing, assignment, priority, severity, or tags' }, { status: 403 });
+            }
+        }
         if (
             session.user.role === 'AGENT' &&
             data.queueId &&
@@ -135,6 +164,22 @@ export async function PATCH(
             !(await canAccessQueue(session.user.id, session.user.role, data.queueId))
         ) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        const targetQueueId = data.queueId ?? existingTicket.queueId;
+        const targetCategoryId = data.categoryId !== undefined ? data.categoryId : existingTicket.categoryId;
+        if (targetCategoryId && (data.categoryId !== undefined || data.queueId !== undefined)) {
+            const category = await prisma.category.findUnique({
+                where: { id: targetCategoryId },
+                select: { queueId: true, isActive: true, archivedAt: true },
+            });
+            if (!category) return NextResponse.json({ error: 'Category not found' }, { status: 404 });
+            if (category.queueId !== targetQueueId) {
+                return NextResponse.json({ error: 'The selected category does not belong to the ticket department' }, { status: 400 });
+            }
+            if (data.categoryId !== undefined && (!category.isActive || category.archivedAt)) {
+                return NextResponse.json({ error: 'Archived categories cannot be newly assigned' }, { status: 400 });
+            }
         }
 
         const timelineEvents: Array<{ type: string; content: string; metadata?: Record<string, unknown> }> = [];

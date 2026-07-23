@@ -1,702 +1,248 @@
-/* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, CheckCircle2, Loader2, Route, Send, Sparkles } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import { ArrowLeft, Send, Sparkles, Tag, Upload, X, FileIcon, ImageIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { formatTicketValue, getPriorityBadgeClass, getTicketValueBadgeClass } from '@/lib/ticket-display';
-import Link from 'next/link';
+import { DynamicTicketForm } from '@/components/ticket-form/dynamic-ticket-form';
+import { isFieldConditionVisible } from '@/lib/ticket-form/conditions';
+import type { TicketFormFieldDefinition, TicketFormTemplateDefinition, TemplateResolutionSource } from '@/lib/ticket-form/types';
 
-interface CustomField {
-    id: string;
-    label: string;
-    fieldKey: string;
-    type: 'TEXT' | 'TEXTAREA' | 'DROPDOWN' | 'MULTISELECT' | 'CHECKBOX' | 'DATE' | 'FILE';
-    required: boolean;
-    options?: string[];
+interface Department { id: string; name: string; description?: string | null }
+interface Category { id: string; name: string; description?: string | null }
+interface TagOption { id: string; name: string; color?: string }
+interface ResolvedResponse {
+    template: TicketFormTemplateDefinition;
+    fields: TicketFormFieldDefinition[];
+    source: TemplateResolutionSource;
+    queue: { id: string; name: string };
+    category: { id: string; name: string } | null;
 }
 
-interface ApiError extends Error {
-    details?: Record<string, string>;
+function hasMeaningfulValues(values: Record<string, unknown>) {
+    return Object.values(values).some((value) => {
+        if (value === undefined || value === null || value === '') return false;
+        if (Array.isArray(value)) return value.length > 0;
+        if (typeof value === 'boolean') return value;
+        return true;
+    });
 }
 
-interface UploadedFile {
-    file?: File;
-    filename: string;
-    url: string;
-    mimetype: string;
-    size: number;
-    uploading?: boolean;
-}
-
-function isEmptyCustomValue(field: CustomField, value: unknown) {
-    if (value === undefined || value === null) return true;
-    if (field.type === 'CHECKBOX') return value !== true;
-    if (typeof value === 'string') return value.trim() === '';
-    if (Array.isArray(value)) return value.length === 0;
-    return false;
-}
-
-function formatFileSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isImageType(mimetype: string) {
-    return mimetype.startsWith('image/');
-}
-
-const PRIORITY_OPTIONS = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
-
-function TicketValueBadge({ value }: { value: string }) {
-    const badgeClass = getTicketValueBadgeClass(value);
-
-    if (!badgeClass) return <span>{value}</span>;
-
-    return (
-        <Badge variant="outline" className={cn('text-xs', badgeClass)}>
-            {formatTicketValue(value)}
-        </Badge>
-    );
+function compatibleValues(
+    current: Record<string, unknown>,
+    previousFields: TicketFormFieldDefinition[],
+    nextFields: TicketFormFieldDefinition[]
+) {
+    const previous = new Map(previousFields.map((field) => [field.fieldKey, field]));
+    return Object.fromEntries(nextFields.flatMap((field) => {
+        const oldField = previous.get(field.fieldKey);
+        if (oldField?.type === field.type && Object.prototype.hasOwnProperty.call(current, field.fieldKey)) {
+            return [[field.fieldKey, current[field.fieldKey]]];
+        }
+        return field.defaultValue === undefined || field.defaultValue === null
+            ? []
+            : [[field.fieldKey, field.defaultValue]];
+    }));
 }
 
 export default function NewTicketPage() {
     const router = useRouter();
-    const { toast } = useToast();
     const queryClient = useQueryClient();
-    const descRef = useRef<HTMLTextAreaElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
-    const [isDragging, setIsDragging] = useState(false);
+    const { toast } = useToast();
+    const idempotencyKey = useRef(crypto.randomUUID());
+    const previousFields = useRef<TicketFormFieldDefinition[]>([]);
+    const [queueId, setQueueId] = useState('');
+    const [categoryId, setCategoryId] = useState('');
+    const [values, setValues] = useState<Record<string, unknown>>({});
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [filesUploading, setFilesUploading] = useState(false);
 
-    const [formData, setFormData] = useState({
-        title: '',
-        description: '',
-        queueId: '',
-        categoryId: '',
-        priority: 'NORMAL',
-    });
-
-    const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
-    const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
-    const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
-    const [attachments, setAttachments] = useState<UploadedFile[]>([]);
-
-    const { data: queues } = useQuery({
-        queryKey: ['queues'],
+    const departmentsQuery = useQuery<Department[]>({
+        queryKey: ['queues', 'ticket-routing'],
         queryFn: async () => {
-            const res = await fetch('/api/queues');
-            if (!res.ok) throw new Error('Failed to load departments');
-            return res.json();
+            const response = await fetch('/api/queues');
+            if (!response.ok) throw new Error('Failed to load departments');
+            return response.json();
         },
     });
-
-    const { data: categories } = useQuery({
-        queryKey: ['categories'],
+    const categoriesQuery = useQuery<Category[]>({
+        queryKey: ['categories', queueId],
+        enabled: Boolean(queueId),
         queryFn: async () => {
-            const res = await fetch('/api/categories');
-            if (!res.ok) throw new Error('Failed to load categories');
-            return res.json();
+            const response = await fetch(`/api/categories?queueId=${encodeURIComponent(queueId)}`);
+            if (!response.ok) throw new Error('Failed to load categories');
+            return response.json();
         },
     });
-
-    const { data: tags } = useQuery({
+    const tagsQuery = useQuery<TagOption[]>({
         queryKey: ['tags'],
         queryFn: async () => {
-            const res = await fetch('/api/tags');
-            if (!res.ok) throw new Error('Failed to load tags');
-            return res.json();
+            const response = await fetch('/api/tags');
+            return response.ok ? response.json() : [];
         },
     });
 
-    const { data: customFields } = useQuery<CustomField[]>({
-        queryKey: ['form-fields', formData.queueId],
+    const routeComplete = Boolean(
+        queueId && categoriesQuery.data && (categoriesQuery.data.length === 0 || categoryId)
+    );
+    const templateQuery = useQuery<ResolvedResponse>({
+        queryKey: ['ticket-form-resolution', queueId, categoryId],
+        enabled: routeComplete,
         queryFn: async () => {
-            const res = await fetch(`/api/form-fields?queueId=${formData.queueId}`);
-            if (!res.ok) return [];
-            return res.json();
+            const params = new URLSearchParams({ queueId });
+            if (categoryId) params.set('categoryId', categoryId);
+            const response = await fetch(`/api/ticket-form/resolve?${params}`);
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to resolve ticket form');
+            return payload;
         },
-        enabled: !!formData.queueId,
     });
 
     useEffect(() => {
-        setCustomFieldValues({});
-        setCustomFieldErrors({});
-    }, [formData.queueId]);
+        const fields = templateQuery.data?.fields;
+        if (!fields) return;
+        setValues((current) => compatibleValues(current, previousFields.current, fields));
+        setErrors({});
+        previousFields.current = fields;
+    }, [templateQuery.data?.template.id, templateQuery.data?.template.version, templateQuery.data?.fields]);
 
-    const normalizedCustomFieldData = useMemo(() => {
-        return Object.fromEntries(
-            Object.entries(customFieldValues).filter(([, value]) => {
-                if (value === undefined || value === null) return false;
-                if (typeof value === 'string' && value.trim() === '') return false;
-                if (Array.isArray(value) && value.length === 0) return false;
-                return true;
-            })
-        );
-    }, [customFieldValues]);
-
-    const validateCustomFields = () => {
-        const errors: Record<string, string> = {};
-        for (const field of customFields ?? []) {
-            if (!field.required) continue;
-            const value = customFieldValues[field.fieldKey];
-            if (isEmptyCustomValue(field, value)) {
-                errors[field.fieldKey] = `${field.label} is required`;
-            }
+    const visibleRequiredErrors = useMemo(() => {
+        const next: Record<string, string> = {};
+        for (const field of templateQuery.data?.fields ?? []) {
+            if (!field.required || !isFieldConditionVisible(field.conditionalRules, values)) continue;
+            const value = values[field.fieldKey];
+            const missing = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0) || (field.type === 'CHECKBOX' && value !== true);
+            if (missing) next[field.fieldKey] = `${field.label} is required`;
         }
-        setCustomFieldErrors(errors);
-        return Object.keys(errors).length === 0;
+        return next;
+    }, [templateQuery.data?.fields, values]);
+
+    const confirmRoutingChange = () => !hasMeaningfulValues(values) || window.confirm(
+        'Changing the department or category can change the ticket form. Compatible values will be kept, but other entered values may be removed. Continue?'
+    );
+
+    const changeDepartment = (nextQueueId: string) => {
+        if (nextQueueId === queueId || !confirmRoutingChange()) return;
+        setQueueId(nextQueueId);
+        setCategoryId('');
+        setErrors({});
     };
-
-    // Upload a file to the server (temp — no ticketId yet)
-    const uploadFile = useCallback(async (file: File) => {
-        if (attachments.length >= 5) {
-            toast({ title: 'Maximum 5 files', variant: 'destructive' });
-            return;
-        }
-
-        const tempEntry: UploadedFile = {
-            file,
-            filename: file.name,
-            url: '',
-            mimetype: file.type,
-            size: file.size,
-            uploading: true,
-        };
-        setAttachments(prev => [...prev, tempEntry]);
-
-        try {
-            const fd = new FormData();
-            fd.append('file', file);
-            const res = await fetch('/api/upload', { method: 'POST', body: fd });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error || 'Upload failed');
-            }
-            const data = await res.json();
-
-            setAttachments(prev =>
-                prev.map(a => a.filename === file.name && a.uploading
-                    ? { ...a, url: data.url, uploading: false }
-                    : a
-                )
-            );
-
-            // If image, insert markdown reference into description
-            if (isImageType(file.type)) {
-                setFormData(prev => ({
-                    ...prev,
-                    description: prev.description + (prev.description ? '\n' : '') + `![${file.name}](${data.url})`,
-                }));
-            }
-        } catch (err: any) {
-            toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
-            setAttachments(prev => prev.filter(a => !(a.filename === file.name && a.uploading)));
-        }
-    }, [attachments.length, toast]);
-
-    const removeAttachment = (index: number) => {
-        setAttachments(prev => prev.filter((_, i) => i !== index));
-    };
-
-    // Handle paste in description (for screenshots)
-    const handlePaste = useCallback((e: React.ClipboardEvent) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        for (const item of Array.from(items)) {
-            if (item.type.startsWith('image/')) {
-                e.preventDefault();
-                const file = item.getAsFile();
-                if (file) {
-                    const named = new File([file], `screenshot-${Date.now()}.png`, { type: file.type });
-                    uploadFile(named);
-                }
-                break;
-            }
-        }
-    }, [uploadFile]);
-
-    // Drag and drop handlers
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(true);
-    }, []);
-
-    const handleDragLeave = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-    }, []);
-
-    const handleDrop = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        const files = Array.from(e.dataTransfer.files);
-        files.forEach(file => uploadFile(file));
-    }, [uploadFile]);
-
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files ?? []);
-        files.forEach(file => uploadFile(file));
-        e.target.value = '';
+    const changeCategory = (nextCategoryId: string) => {
+        if (nextCategoryId === categoryId || !confirmRoutingChange()) return;
+        setCategoryId(nextCategoryId);
+        setErrors({});
     };
 
     const createTicket = useMutation({
         mutationFn: async () => {
-            const res = await fetch('/api/tickets', {
+            const response = await fetch('/api/tickets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    ...formData,
-                    idempotencyKey: idempotencyKeyRef.current,
-                    categoryId: formData.categoryId || undefined,
-                    tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
-                    formData:
-                        Object.keys(normalizedCustomFieldData).length > 0
-                            ? normalizedCustomFieldData
-                            : undefined,
-                    attachments: attachments
-                        .filter(a => !a.uploading && a.url)
-                        .map(a => ({ filename: a.filename, url: a.url, mimetype: a.mimetype, size: a.size })),
+                    idempotencyKey: idempotencyKey.current,
+                    queueId,
+                    categoryId: categoryId || undefined,
+                    values,
                 }),
             });
-
-            const payload = await res.json();
-            if (!res.ok) {
-                const apiError = new Error(payload.error || 'Failed to create ticket') as ApiError;
-                if (payload.details && typeof payload.details === 'object') {
-                    apiError.details = payload.details as Record<string, string>;
-                }
-                throw apiError;
+            const payload = await response.json();
+            if (!response.ok) {
+                const error = new Error(payload.error || 'Failed to create ticket') as Error & { details?: Record<string, string> };
+                if (payload.details && typeof payload.details === 'object') error.details = payload.details;
+                throw error;
             }
-
             return payload;
         },
-        onSuccess: (data) => {
-            toast({ title: 'Ticket created!', description: `${data.key} has been created successfully.` });
-            queryClient.invalidateQueries({ queryKey: ['tickets'] });
-            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-            router.push(`/tickets/${data.id}`);
+        onSuccess: (ticket) => {
+            void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+            void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+            toast({ title: 'Ticket created', description: `${ticket.key} was submitted successfully.` });
+            router.push(`/tickets/${ticket.id}`);
         },
-        onError: (error: ApiError) => {
-            if (error.details) {
-                setCustomFieldErrors(error.details);
-            }
-            toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        onError: (error: Error & { details?: Record<string, string> }) => {
+            if (error.details) setErrors(error.details);
+            toast({ title: 'Ticket could not be created', description: error.message, variant: 'destructive' });
         },
     });
 
-    const updateCustomFieldValue = (fieldKey: string, value: unknown) => {
-        setCustomFieldValues((prev) => ({ ...prev, [fieldKey]: value }));
-        setCustomFieldErrors((prev) => {
-            const next = { ...prev };
-            delete next[fieldKey];
-            return next;
-        });
-    };
-
-    const toggleTag = (tagId: string) => {
-        setSelectedTagIds((prev) =>
-            prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
-        );
-    };
-
-    const toggleMultiSelectOption = (fieldKey: string, option: string) => {
-        const current = customFieldValues[fieldKey];
-        const currentValues = Array.isArray(current) ? (current as string[]) : [];
-        const next = currentValues.includes(option)
-            ? currentValues.filter((entry) => entry !== option)
-            : [...currentValues, option];
-        updateCustomFieldValue(fieldKey, next);
-    };
-
-    const handleSubmit = () => {
-        if (createTicket.isPending) return;
-
-        if (!validateCustomFields()) {
-            toast({
-                title: 'Missing required fields',
-                description: 'Please complete all required custom fields.',
-                variant: 'destructive',
-            });
+    const submit = () => {
+        if (filesUploading) {
+            toast({ title: 'Wait for file uploads to finish', variant: 'destructive' });
+            return;
+        }
+        if (Object.keys(visibleRequiredErrors).length > 0) {
+            setErrors(visibleRequiredErrors);
+            toast({ title: 'Complete the required fields', variant: 'destructive' });
             return;
         }
         createTicket.mutate();
     };
 
     return (
-        <div className="max-w-2xl mx-auto space-y-6">
-            <div className="flex items-center gap-3">
-                <Link href="/tickets">
-                    <Button variant="ghost" size="icon">
-                        <ArrowLeft className="h-4 w-4" />
-                    </Button>
-                </Link>
+        <div className="mx-auto max-w-3xl space-y-6">
+            <div className="flex items-start gap-3">
+                <Button asChild variant="ghost" size="icon"><Link href="/tickets" aria-label="Back to tickets"><ArrowLeft className="h-4 w-4" /></Link></Button>
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">New Ticket</h1>
-                    <p className="text-muted-foreground mt-1">Submit a support request</p>
+                    <p className="mt-1 text-muted-foreground">Choose where the request belongs, then complete the resolved form.</p>
                 </div>
             </div>
 
-            <Card className="border-0 shadow-lg">
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-lg">Ticket Details</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
+            <Card className="border-0 shadow-sm">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Route className="h-5 w-5 text-primary" /> 1. Route the request</CardTitle></CardHeader>
+                <CardContent className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                        <Label htmlFor="title">Title *</Label>
-                        <Input
-                            id="title"
-                            placeholder="Brief summary of your issue"
-                            value={formData.title}
-                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                            required
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Department *</Label>
-                            <Select
-                                value={formData.queueId}
-                                onValueChange={(value) => setFormData({ ...formData, queueId: value })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select department" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {(queues ?? []).map((queue: any) => (
-                                        <SelectItem key={queue.id} value={queue.id}>
-                                            {queue.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label>Priority</Label>
-                            <Select
-                                value={formData.priority}
-                                onValueChange={(value) => setFormData({ ...formData, priority: value })}
-                            >
-                                <SelectTrigger>
-                                    <Badge variant="outline" className={cn('text-xs', getPriorityBadgeClass(formData.priority))}>
-                                        {formatTicketValue(formData.priority)}
-                                    </Badge>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {PRIORITY_OPTIONS.map((priority) => (
-                                        <SelectItem key={priority} value={priority}>
-                                            <TicketValueBadge value={priority} />
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>Category</Label>
-                        <Select
-                            value={formData.categoryId || 'none'}
-                            onValueChange={(value) =>
-                                setFormData({ ...formData, categoryId: value === 'none' ? '' : value })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select category (optional)" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">No category</SelectItem>
-                                {(categories ?? []).map((category: any) => (
-                                    <SelectItem key={category.id} value={category.id}>
-                                        {category.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
+                        <Label>Department <span className="text-destructive">*</span></Label>
+                        <Select value={queueId} onValueChange={changeDepartment} disabled={departmentsQuery.isLoading}>
+                            <SelectTrigger><SelectValue placeholder="Select a department" /></SelectTrigger>
+                            <SelectContent>{(departmentsQuery.data ?? []).map((department) => <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>)}</SelectContent>
                         </Select>
                     </div>
-
                     <div className="space-y-2">
-                        <Label htmlFor="description">Description</Label>
-                        <Textarea
-                            ref={descRef}
-                            id="description"
-                            placeholder="Provide as much detail as possible... (Paste screenshots with Ctrl+V)"
-                            value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            onPaste={handlePaste}
-                            rows={6}
-                        />
-                    </div>
-
-                    {/* File upload zone */}
-                    <div className="space-y-3">
-                        <Label className="flex items-center gap-1.5">
-                            <Upload className="h-3.5 w-3.5" /> Attachments
-                        </Label>
-                        <div
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            onDrop={handleDrop}
-                            onClick={() => fileInputRef.current?.click()}
-                            className={cn(
-                                'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all',
-                                isDragging
-                                    ? 'border-primary bg-primary/5 scale-[1.02]'
-                                    : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
-                            )}
-                        >
-                            <Upload className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-                            <p className="text-sm text-muted-foreground">
-                                <span className="font-medium text-primary">Click to upload</span> or drag and drop
-                            </p>
-                            <p className="text-xs text-muted-foreground/60 mt-1">
-                                Images, PDFs, documents, spreadsheets · Max 10MB · Up to 5 files
-                            </p>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                multiple
-                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.txt,.csv"
-                                onChange={handleFileSelect}
-                                className="hidden"
-                            />
-                        </div>
-
-                        {/* Attached files list */}
-                        {attachments.length > 0 && (
-                            <div className="space-y-2">
-                                {attachments.map((att, i) => (
-                                    <div key={i} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
-                                        {isImageType(att.mimetype) ? (
-                                            att.url ? (
-                                                <img src={att.url} alt={att.filename} className="h-10 w-10 object-cover rounded" />
-                                            ) : (
-                                                <ImageIcon className="h-10 w-10 text-muted-foreground p-2" />
-                                            )
-                                        ) : (
-                                            <FileIcon className="h-10 w-10 text-muted-foreground p-2" />
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {formatFileSize(att.size)}
-                                                {att.uploading && ' · Uploading...'}
-                                            </p>
-                                        </div>
-                                        {att.uploading ? (
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
-                                        ) : (
-                                            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); removeAttachment(i); }}>
-                                                <X className="h-3.5 w-3.5" />
-                                            </Button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {(tags ?? []).length > 0 ? (
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5">
-                                <Tag className="h-3.5 w-3.5" /> Tags
-                            </Label>
-                            <div className="flex flex-wrap gap-2">
-                                {(tags ?? []).map((tag: any) => {
-                                    const selected = selectedTagIds.includes(tag.id);
-                                    return (
-                                        <Button
-                                            key={tag.id}
-                                            type="button"
-                                            size="sm"
-                                            variant={selected ? 'default' : 'outline'}
-                                            className={cn('h-8 text-xs', selected ? '' : 'bg-transparent')}
-                                            style={
-                                                selected
-                                                    ? {}
-                                                    : {
-                                                        borderColor: tag.color,
-                                                        color: tag.color,
-                                                    }
-                                            }
-                                            onClick={() => toggleTag(tag.id)}
-                                        >
-                                            {tag.name}
-                                        </Button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {formData.queueId && (customFields ?? []).length > 0 ? (
-                        <div className="space-y-4 border-t pt-4">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                                Custom Fields
-                            </p>
-                            {(customFields ?? []).map((field) => {
-                                const value = customFieldValues[field.fieldKey];
-                                const error = customFieldErrors[field.fieldKey];
-
-                                return (
-                                    <div key={field.id} className="space-y-2">
-                                        <Label>
-                                            {field.label}
-                                            {field.required ? ' *' : ''}
-                                        </Label>
-
-                                        {field.type === 'TEXT' ? (
-                                            <Input
-                                                placeholder={field.label}
-                                                value={(value as string) || ''}
-                                                onChange={(e) =>
-                                                    updateCustomFieldValue(field.fieldKey, e.target.value)
-                                                }
-                                            />
-                                        ) : null}
-
-                                        {field.type === 'TEXTAREA' ? (
-                                            <Textarea
-                                                placeholder={field.label}
-                                                rows={3}
-                                                value={(value as string) || ''}
-                                                onChange={(e) =>
-                                                    updateCustomFieldValue(field.fieldKey, e.target.value)
-                                                }
-                                            />
-                                        ) : null}
-
-                                        {field.type === 'DROPDOWN' ? (
-                                            <Select
-                                                value={(value as string) || ''}
-                                                onValueChange={(nextValue) =>
-                                                    updateCustomFieldValue(field.fieldKey, nextValue)
-                                                }
-                                            >
-                                                <SelectTrigger>
-                                                    {typeof value === 'string' && value ? (
-                                                        <TicketValueBadge value={value} />
-                                                    ) : (
-                                                        <SelectValue placeholder={`Select ${field.label}`} />
-                                                    )}
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {(field.options ?? []).map((option: string) => (
-                                                        <SelectItem key={option} value={option}>
-                                                            <TicketValueBadge value={option} />
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        ) : null}
-
-                                        {field.type === 'MULTISELECT' ? (
-                                            <div className="flex flex-wrap gap-2 rounded-md border p-3">
-                                                {(field.options ?? []).map((option: string) => {
-                                                    const selected = Array.isArray(value)
-                                                        ? (value as string[]).includes(option)
-                                                        : false;
-                                                    return (
-                                                        <Button
-                                                            key={option}
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className={cn(
-                                                                'h-7 text-xs',
-                                                                getTicketValueBadgeClass(option),
-                                                                selected && 'ring-2 ring-primary ring-offset-2'
-                                                            )}
-                                                            onClick={() =>
-                                                                toggleMultiSelectOption(field.fieldKey, option)
-                                                            }
-                                                        >
-                                                            {formatTicketValue(option)}
-                                                        </Button>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : null}
-
-                                        {field.type === 'CHECKBOX' ? (
-                                            <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    className="rounded"
-                                                    checked={Boolean(value)}
-                                                    onChange={(e) =>
-                                                        updateCustomFieldValue(field.fieldKey, e.target.checked)
-                                                    }
-                                                />
-                                                {field.label}
-                                            </label>
-                                        ) : null}
-
-                                        {field.type === 'DATE' ? (
-                                            <Input
-                                                type="date"
-                                                value={(value as string) || ''}
-                                                onChange={(e) =>
-                                                    updateCustomFieldValue(field.fieldKey, e.target.value)
-                                                }
-                                            />
-                                        ) : null}
-
-                                        {field.type === 'FILE' ? (
-                                            <Input
-                                                type="file"
-                                                multiple
-                                                onChange={(e) =>
-                                                    updateCustomFieldValue(
-                                                        field.fieldKey,
-                                                        Array.from(e.target.files ?? []).map((file) => file.name)
-                                                    )
-                                                }
-                                            />
-                                        ) : null}
-
-                                        {error ? <p className="text-xs text-destructive">{error}</p> : null}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : null}
-
-                    <div className="flex justify-end gap-3 pt-4">
-                        <Link href="/tickets">
-                            <Button variant="outline">Cancel</Button>
-                        </Link>
-                        <Button
-                            onClick={handleSubmit}
-                            disabled={!formData.title || !formData.queueId || createTicket.isPending}
-                            className="gap-2 shadow-lg shadow-primary/25"
-                        >
-                            {createTicket.isPending ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                            ) : (
-                                <Send className="h-4 w-4" />
-                            )}
-                            Submit Ticket
-                        </Button>
+                        <Label>Category{(categoriesQuery.data?.length ?? 0) > 0 ? <span className="text-destructive"> *</span> : null}</Label>
+                        <Select value={categoryId} onValueChange={changeCategory} disabled={!queueId || categoriesQuery.isLoading || categoriesQuery.data?.length === 0}>
+                            <SelectTrigger><SelectValue placeholder={!queueId ? 'Select a department first' : categoriesQuery.data?.length === 0 ? 'No categories in this department' : 'Select a category'} /></SelectTrigger>
+                            <SelectContent>{(categoriesQuery.data ?? []).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                        {queueId && categoriesQuery.data?.length === 0 ? <p className="text-xs text-muted-foreground">This department has no active categories. Its default ticket form will be used.</p> : null}
                     </div>
                 </CardContent>
             </Card>
+
+            {routeComplete ? (
+                <Card className="border-0 shadow-lg">
+                    <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <CardTitle className="flex items-center gap-2 text-lg"><Sparkles className="h-5 w-5 text-primary" /> 2. Complete the form</CardTitle>
+                            {templateQuery.data ? <Badge variant="outline" className="gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> {templateQuery.data.template.name} · {templateQuery.data.source === 'category' ? 'Category override' : templateQuery.data.source === 'department' ? 'Department default' : 'System default'}</Badge> : null}
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        {templateQuery.isLoading ? <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> Loading ticket form…</div> : null}
+                        {templateQuery.isError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{templateQuery.error.message}</div> : null}
+                        {templateQuery.data ? (
+                            <DynamicTicketForm fields={templateQuery.data.fields} values={values} errors={errors} tags={tagsQuery.data ?? []}
+                                disabled={createTicket.isPending} onUploadingChange={setFilesUploading} onChange={(key, value) => { setValues((current) => ({ ...current, [key]: value })); setErrors((current) => { const next = { ...current }; delete next[key]; return next; }); }} />
+                        ) : null}
+                        <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end">
+                            <Button asChild variant="outline"><Link href="/tickets">Cancel</Link></Button>
+                            <Button onClick={submit} disabled={!templateQuery.data || createTicket.isPending || filesUploading} className="gap-2">
+                                {createTicket.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                Submit Ticket
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            ) : (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Select a department{(categoriesQuery.data?.length ?? 0) > 0 ? ' and category' : ''} to load the correct ticket form.</div>
+            )}
         </div>
     );
 }

@@ -68,7 +68,7 @@ To use another host port, set `POSTGRES_PORT` in `.env` and update the port in `
 npm run setup
 ```
 
-For demo data on a new database only:
+For optional development/demo data (never required for an upgrade):
 
 ```bash
 npm run db:seed
@@ -103,7 +103,7 @@ The database is stored in a named Docker volume and survives container stops. Do
 npm run verify
 ```
 
-This runs TypeScript checking, all tests, and the production build.
+This runs ESLint with zero warnings, TypeScript checking, all tests, and the production build.
 
 ## Restricted corporate network / Prisma download failures
 
@@ -176,3 +176,55 @@ npm ci
 ```
 
 Removing `node_modules` and `.next` does not affect PostgreSQL data.
+## Seed accounts
+
+The seed is idempotent and template-aware, but it intentionally creates demo departments, categories, templates, tickets, tags, and accounts. Do not run it on production unless you explicitly want demo data.
+
+Defaults:
+
+```text
+SEED_ADMIN_EMAIL=admin@example.com
+SEED_DEFAULT_PASSWORD=Password123!
+```
+
+Override them for a private development environment before running `npm run db:seed`.
+
+PowerShell:
+
+```powershell
+$env:SEED_ADMIN_EMAIL = 'admin@your-company.example'
+$env:SEED_DEFAULT_PASSWORD = 'a-long-private-password'
+npm run db:seed
+```
+
+macOS/Linux:
+
+```bash
+SEED_ADMIN_EMAIL='admin@your-company.example' \
+SEED_DEFAULT_PASSWORD='a-long-private-password' \
+npm run db:seed
+```
+
+## Upgrading an existing CompDesk database
+
+Never reset the database. Back it up, then use the production migration command:
+
+```bash
+npm run db:generate
+npm run db:migrate:prod
+npm run verify
+```
+
+The ticket-form migration is transactional. It creates department copies of legacy global categories, remaps each ticket using its actual department, migrates legacy department fields into department templates, snapshots existing ticket schemas/values, and only then removes the obsolete `form_fields` table. A failed migration rolls back rather than requiring a database reset.
+
+Recommended PostgreSQL backup before any production upgrade:
+
+```bash
+pg_dump --format=custom --file=compdesk-before-upgrade.dump "$DATABASE_URL"
+```
+
+For Docker PostgreSQL, use `docker compose exec db pg_dump -U compdesk -d compdesk -Fc` and redirect/copy the output according to your backup procedure.
+
+## Uploaded files
+
+Ticket and branding assets are stored under `public/uploads`. Local development keeps them in the working tree (ignored by Git). The full Docker Compose deployment uses the persistent `compdesk_uploads` named volume. Back up both PostgreSQL and this upload volume. Multiple application replicas must share the same durable upload storage.
