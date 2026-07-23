@@ -122,22 +122,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     });
 
     const { data: categories } = useQuery({
-        queryKey: ['categories'],
+        queryKey: ['categories', ticket?.queueId],
         queryFn: async () => {
-            const res = await fetch('/api/categories');
+            const res = await fetch(`/api/categories?queueId=${ticket.queueId}`);
+            if (!res.ok) throw new Error('Failed to load department categories');
             return res.json();
         },
-        enabled: isAgent,
-    });
-
-    const { data: customFields } = useQuery({
-        queryKey: ['form-fields', ticket?.queueId],
-        queryFn: async () => {
-            const res = await fetch(`/api/form-fields?queueId=${ticket.queueId}`);
-            if (!res.ok) return [];
-            return res.json();
-        },
-        enabled: !!ticket?.queueId,
+        enabled: isAgent && !!ticket?.queueId,
     });
 
     const updateTicket = useMutation({
@@ -830,6 +821,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 <span className="text-muted-foreground">Assignee</span>
                                 <span className="font-medium">{ticket.assignee?.name ?? 'Unassigned'}</span>
                             </div>
+                            {ticket.historicalForm ? (
+                                <div className="flex justify-between gap-4 text-sm">
+                                    <span className="text-muted-foreground">Ticket form</span>
+                                    <span className="text-right font-medium">{ticket.historicalForm.templateName} v{ticket.historicalForm.version}</span>
+                                </div>
+                            ) : null}
                             <Separator />
                             <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">Created</span>
@@ -850,29 +847,32 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         </CardContent>
                     </Card>
 
-                    {/* Custom Fields */}
-                    {ticket.formData && Object.keys(ticket.formData).length > 0 && customFields && customFields.length > 0 && (
+                    {/* Immutable historical form submission */}
+                    {ticket.historicalForm && ticket.historicalForm.fields.some((field: { builtIn: string | null }) => !field.builtIn) ? (
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
-                                <CardTitle className="text-base">Custom Fields</CardTitle>
+                                <CardTitle className="text-base">Submitted form data</CardTitle>
+                                <p className="text-xs text-muted-foreground">{ticket.historicalForm.templateName} · version {ticket.historicalForm.version}</p>
                             </CardHeader>
                             <CardContent className="space-y-3">
-                                {customFields.map((field: any) => {
-                                    const val = ticket.formData[field.fieldKey];
-                                    if (val === undefined || val === null || val === '') return null;
-                                    return (
-                                        <div key={field.id} className="flex justify-between text-sm flex-col">
-                                            <span className="text-muted-foreground text-xs">{field.label}</span>
-                                            <span className="font-medium whitespace-pre-wrap mt-0.5">
-                                                {typeof val === 'boolean' ? (val ? 'Yes' : 'No') : String(val)}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
+                                {ticket.historicalForm.fields
+                                    .filter((field: { builtIn: string | null }) => !field.builtIn)
+                                    .map((field: { id: string; fieldKey: string; label: string }) => {
+                                        const value = ticket.historicalForm.values[field.fieldKey];
+                                        if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) return null;
+                                        const display = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : Array.isArray(value)
+                                            ? value.map((item) => typeof item === 'object' && item && 'filename' in item ? String(item.filename) : String(item)).join(', ')
+                                            : String(value);
+                                        return (
+                                            <div key={field.id} className="flex flex-col text-sm">
+                                                <span className="text-xs text-muted-foreground">{field.label}</span>
+                                                <span className="mt-0.5 whitespace-pre-wrap font-medium">{display}</span>
+                                            </div>
+                                        );
+                                    })}
                             </CardContent>
                         </Card>
-                    )}
-
+                    ) : null}
                     {/* Watchers */}
                     <Card className="border-0 shadow-sm">
                         <CardHeader className="pb-3">

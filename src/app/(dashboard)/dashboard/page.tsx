@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
+import { useBranding } from '@/components/providers/branding-provider';
 import Link from 'next/link';
 import {
     Ticket,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
+    const branding = useBranding();
     const { data, isLoading } = useQuery({
         queryKey: ['dashboard-stats'],
         queryFn: async () => {
@@ -79,7 +81,7 @@ export default function DashboardPage() {
     return (
         <div className="space-y-8">
             {/* Header */}
-            <PageHeader eyebrow="Overview" title="Dashboard" description="A snapshot of your helpdesk activity">
+            <PageHeader eyebrow="Overview" title="Dashboard" description={`A snapshot of activity across ${branding.shortApplicationName}`}>
                 <Link href="/tickets/new">
                     <Button className="gap-2 shadow-lg shadow-primary/25">
                         <Plus className="h-4 w-4" />

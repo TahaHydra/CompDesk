@@ -7,7 +7,7 @@ const logger = winston.createLogger({
         winston.format.errors({ stack: true }),
         winston.format.json()
     ),
-    defaultMeta: { service: 'excodesk' },
+    defaultMeta: { service: 'compdesk' },
     transports: [
         new winston.transports.Console({
             format:

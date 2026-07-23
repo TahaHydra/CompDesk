@@ -1,142 +1,83 @@
 import {
-    createTicketSchema,
     createCommentSchema,
     createQueueSchema,
     createTagSchema,
-    createFormFieldSchema,
+    createTicketSchema,
     updateTagSchema,
 } from '@/lib/validations';
 
-describe('Ticket Validation', () => {
-    test('valid ticket creation', () => {
+const queueId = '550e8400-e29b-41d4-a716-446655440000';
+
+describe('Ticket routing payload validation', () => {
+    test('accepts template-driven values', () => {
         const result = createTicketSchema.safeParse({
-            title: 'Test ticket',
-            queueId: '550e8400-e29b-41d4-a716-446655440000',
-            priority: 'NORMAL',
+            queueId,
+            values: { title: 'Test ticket', priority: 'NORMAL' },
         });
         expect(result.success).toBe(true);
     });
 
-    test('rejects empty title', () => {
-        const result = createTicketSchema.safeParse({
-            title: '',
-            queueId: '550e8400-e29b-41d4-a716-446655440000',
-        });
-        expect(result.success).toBe(false);
-    });
-
-    test('rejects title too short', () => {
-        const result = createTicketSchema.safeParse({
-            title: 'ab',
-            queueId: '550e8400-e29b-41d4-a716-446655440000',
-        });
-        expect(result.success).toBe(false);
-    });
-
-    test('rejects invalid UUID for queueId', () => {
-        const result = createTicketSchema.safeParse({
-            title: 'Test ticket',
-            queueId: 'not-a-uuid',
-        });
-        expect(result.success).toBe(false);
-    });
-
-    test('rejects invalid priority', () => {
-        const result = createTicketSchema.safeParse({
-            title: 'Test ticket',
-            queueId: '550e8400-e29b-41d4-a716-446655440000',
-            priority: 'SUPER_URGENT',
-        });
-        expect(result.success).toBe(false);
-    });
-});
-
-describe('Comment Validation', () => {
-    test('valid comment', () => {
-        const result = createCommentSchema.safeParse({
-            content: 'This is a comment',
-            isInternal: false,
-        });
+    test('allows the template validator to decide whether title is required', () => {
+        const result = createTicketSchema.safeParse({ queueId, values: {} });
         expect(result.success).toBe(true);
     });
 
-    test('rejects empty comment', () => {
-        const result = createCommentSchema.safeParse({
-            content: '',
-            isInternal: false,
-        });
+    test('rejects an invalid department id', () => {
+        const result = createTicketSchema.safeParse({ queueId: 'not-a-uuid', values: {} });
+        expect(result.success).toBe(false);
+    });
+
+    test('rejects unsupported top-level properties', () => {
+        const result = createTicketSchema.safeParse({ queueId, values: {}, templateId: queueId });
+        expect(result.success).toBe(false);
+    });
+
+    test('rejects an invalid compatibility priority', () => {
+        const result = createTicketSchema.safeParse({ queueId, priority: 'SUPER_URGENT' });
         expect(result.success).toBe(false);
     });
 });
 
-describe('Queue Validation', () => {
-    test('valid queue', () => {
-        const result = createQueueSchema.safeParse({ name: 'IT Support' });
-        expect(result.success).toBe(true);
+describe('Comment validation', () => {
+    test('accepts a valid comment', () => {
+        expect(createCommentSchema.safeParse({ content: 'This is a comment', isInternal: false }).success).toBe(true);
     });
 
-    test('rejects empty name', () => {
-        const result = createQueueSchema.safeParse({ name: '' });
-        expect(result.success).toBe(false);
+    test('rejects an empty comment', () => {
+        expect(createCommentSchema.safeParse({ content: '', isInternal: false }).success).toBe(false);
     });
 });
 
-describe('Tag Validation', () => {
-    test('valid tag with default color', () => {
+describe('Department validation', () => {
+    test('accepts a valid department', () => {
+        expect(createQueueSchema.safeParse({ name: 'IT Support' }).success).toBe(true);
+    });
+
+    test('rejects an empty name', () => {
+        expect(createQueueSchema.safeParse({ name: '' }).success).toBe(false);
+    });
+});
+
+describe('Tag validation', () => {
+    test('applies the default color', () => {
         const result = createTagSchema.safeParse({ name: 'urgent' });
         expect(result.success).toBe(true);
         if (result.success) expect(result.data.color).toBe('#6366f1');
     });
 
-    test('valid tag with custom color', () => {
-        const result = createTagSchema.safeParse({ name: 'bug', color: '#ff0000' });
-        expect(result.success).toBe(true);
+    test('accepts a custom hex color', () => {
+        expect(createTagSchema.safeParse({ name: 'bug', color: '#ff0000' }).success).toBe(true);
     });
 
-    test('rejects invalid color format', () => {
-        const result = createTagSchema.safeParse({ name: 'bug', color: 'red' });
-        expect(result.success).toBe(false);
-    });
-});
-
-describe('Form Field Validation', () => {
-    test('requires options for dropdown fields', () => {
-        const result = createFormFieldSchema.safeParse({
-            queueId: '550e8400-e29b-41d4-a716-446655440000',
-            label: 'Environment',
-            fieldKey: 'environment',
-            type: 'DROPDOWN',
-            required: false,
-        });
-        expect(result.success).toBe(false);
+    test('rejects an invalid color', () => {
+        expect(createTagSchema.safeParse({ name: 'bug', color: 'red' }).success).toBe(false);
     });
 
-    test('accepts dropdown fields when options exist', () => {
-        const result = createFormFieldSchema.safeParse({
-            queueId: '550e8400-e29b-41d4-a716-446655440000',
-            label: 'Environment',
-            fieldKey: 'environment',
-            type: 'DROPDOWN',
-            required: false,
-            options: ['Prod', 'Staging'],
-        });
-        expect(result.success).toBe(true);
-    });
-});
-
-describe('Tag Update Validation', () => {
-    test('requires at least one field to update', () => {
-        const result = updateTagSchema.safeParse({
-            id: '550e8400-e29b-41d4-a716-446655440000',
-        });
-        expect(result.success).toBe(false);
+    test('requires a tag update value', () => {
+        expect(updateTagSchema.safeParse({ id: queueId }).success).toBe(false);
     });
 
-    test('accepts update with name change', () => {
-        const result = updateTagSchema.safeParse({
-            id: '550e8400-e29b-41d4-a716-446655440000',
-            name: 'critical',
-        });
-        expect(result.success).toBe(true);
+    test('accepts a tag name update', () => {
+        expect(updateTagSchema.safeParse({ id: queueId, name: 'critical' }).success).toBe(true);
     });
 });

@@ -1,444 +1,299 @@
-import { PrismaClient, Priority, TicketStatus } from '@prisma/client';
+import {
+    BuiltInTicketField,
+    FormFieldType,
+    Prisma,
+    PrismaClient,
+    Priority,
+    Role,
+    TicketStatus,
+} from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
+const SYSTEM_TEMPLATE_ID = '00000000-0000-0000-0000-000000000001';
+const IT_TEMPLATE_ID = '10000000-0000-0000-0000-000000000001';
+const ALL_ROLES = Object.values(Role);
 
-async function main() {
-    console.log('🌱 Seeding database...');
-
-    // Default password for all demo accounts
-    const defaultPassword = 'Password123!';
-    const passwordHash = await bcrypt.hash(defaultPassword, 12);
-
-    // ── Users ──────────────────────────────────────────────────
-    await prisma.user.upsert({
-        where: { email: 'admin@exco.fr' },
-        update: { passwordHash },
-        create: {
-            email: 'admin@exco.fr',
-            name: 'Admin User',
-            role: 'SUPER_ADMIN',
-            passwordHash,
+function defaultFields(templateId: string): Prisma.TicketFormTemplateFieldCreateManyInput[] {
+    return [
+        {
+            id: '00000000-0000-0000-0001-000000000001', templateId, fieldKey: 'title', label: 'Title',
+            type: FormFieldType.TEXT, builtIn: BuiltInTicketField.TITLE, required: true,
+            placeholder: 'Brief summary of your request', validationRules: { minLength: 3, maxLength: 200 },
+            visibleTo: ALL_ROLES, editableBy: ALL_ROLES, sortOrder: 10, width: 12,
         },
-    });
-
-    const agent1 = await prisma.user.upsert({
-        where: { email: 'agent1@exco.fr' },
-        update: { passwordHash },
-        create: {
-            email: 'agent1@exco.fr',
-            name: 'Agent Martin',
-            role: 'AGENT',
-            passwordHash,
+        {
+            id: '00000000-0000-0000-0001-000000000002', templateId, fieldKey: 'description', label: 'Description',
+            type: FormFieldType.TEXTAREA, builtIn: BuiltInTicketField.DESCRIPTION,
+            placeholder: 'Provide as much detail as possible', validationRules: { maxLength: 10000 },
+            visibleTo: ALL_ROLES, editableBy: ALL_ROLES, sortOrder: 20, width: 12,
         },
-    });
-
-    const agent2 = await prisma.user.upsert({
-        where: { email: 'agent2@exco.fr' },
-        update: { passwordHash },
-        create: {
-            email: 'agent2@exco.fr',
-            name: 'Agent Sophie',
-            role: 'AGENT',
-            passwordHash,
+        {
+            id: '00000000-0000-0000-0001-000000000003', templateId, fieldKey: 'priority', label: 'Priority',
+            type: FormFieldType.DROPDOWN, builtIn: BuiltInTicketField.PRIORITY, required: true,
+            defaultValue: 'NORMAL', options: ['LOW', 'NORMAL', 'HIGH', 'URGENT'],
+            visibleTo: ALL_ROLES, editableBy: ALL_ROLES, sortOrder: 30, width: 6,
         },
-    });
-
-    const user1 = await prisma.user.upsert({
-        where: { email: 'user1@exco.fr' },
-        update: { passwordHash },
-        create: {
-            email: 'user1@exco.fr',
-            name: 'Jean Dupont',
-            role: 'USER',
-            passwordHash,
+        {
+            id: '00000000-0000-0000-0001-000000000004', templateId, fieldKey: 'severity', label: 'Severity',
+            type: FormFieldType.DROPDOWN, builtIn: BuiltInTicketField.SEVERITY,
+            options: ['S1', 'S2', 'S3', 'S4'], visibleTo: [Role.AGENT, Role.ADMIN, Role.SUPER_ADMIN],
+            editableBy: [Role.AGENT, Role.ADMIN, Role.SUPER_ADMIN], sortOrder: 40, width: 6,
         },
-    });
-
-    const user2 = await prisma.user.upsert({
-        where: { email: 'user2@exco.fr' },
-        update: { passwordHash },
-        create: {
-            email: 'user2@exco.fr',
-            name: 'Marie Curie',
-            role: 'USER',
-            passwordHash,
+        {
+            id: '00000000-0000-0000-0001-000000000005', templateId, fieldKey: 'attachments', label: 'Attachments',
+            type: FormFieldType.FILE, builtIn: BuiltInTicketField.ATTACHMENTS,
+            helpText: 'Up to five files, 10 MB each.', visibleTo: ALL_ROLES, editableBy: ALL_ROLES,
+            sortOrder: 50, width: 12,
         },
-    });
-
-    // Plain ADMIN (distinct from SUPER_ADMIN) so both admin tiers can be tested
-    await prisma.user.upsert({
-        where: { email: 'admin2@exco.fr' },
-        update: { passwordHash },
-        create: {
-            email: 'admin2@exco.fr',
-            name: 'Nadia Admin',
-            role: 'ADMIN',
-            passwordHash,
+        {
+            id: '00000000-0000-0000-0001-000000000006', templateId, fieldKey: 'tags', label: 'Tags',
+            type: FormFieldType.MULTISELECT, builtIn: BuiltInTicketField.TAGS,
+            visibleTo: ALL_ROLES, editableBy: ALL_ROLES, sortOrder: 60, width: 12,
         },
-    });
+    ];
+}
 
-    console.log('✅ Users created');
-
-    // ── Groups ─────────────────────────────────────────────────
-    const itGroup = await prisma.group.upsert({
-        where: { entraObjectId: 'it-support-group-id' },
-        update: {},
-        create: {
-            name: 'IT Support',
-            entraObjectId: 'it-support-group-id',
-            description: 'IT support team members',
-        },
+function customItFields(templateId: string): Prisma.TicketFormTemplateFieldCreateManyInput[] {
+    return defaultFields(templateId).map((field) => ({
+        ...field,
+        id: field.id!.replace('00000000-0000-0000-0001-', '10000000-0000-0000-0001-'),
+    })).concat({
+        id: '10000000-0000-0000-0001-000000000007', templateId, fieldKey: 'device_type', label: 'Device type',
+        type: FormFieldType.DROPDOWN, required: true, options: ['Laptop', 'Desktop', 'Mobile', 'Printer', 'Other'],
+        helpText: 'Select the device most closely related to your request.', visibleTo: ALL_ROLES,
+        editableBy: ALL_ROLES, sortOrder: 45, width: 6,
     });
+}
 
-    const hrGroup = await prisma.group.upsert({
-        where: { entraObjectId: 'hr-group-id' },
-        update: {},
-        create: {
-            name: 'HR Team',
-            entraObjectId: 'hr-group-id',
-            description: 'Human Resources team',
-        },
+async function upsertTemplate(
+    id: string,
+    name: string,
+    description: string,
+    isSystemDefault: boolean,
+    fields: Prisma.TicketFormTemplateFieldCreateManyInput[]
+) {
+    const template = await prisma.ticketFormTemplate.upsert({
+        where: { id },
+        update: { name, description, isActive: true, archivedAt: null },
+        create: { id, name, description, isSystemDefault, isActive: true },
     });
-
-    // Add agents to groups
-    await prisma.groupMember.upsert({
-        where: { userId_groupId: { userId: agent1.id, groupId: itGroup.id } },
-        update: {},
-        create: { userId: agent1.id, groupId: itGroup.id },
-    });
-    await prisma.groupMember.upsert({
-        where: { userId_groupId: { userId: agent2.id, groupId: itGroup.id } },
-        update: {},
-        create: { userId: agent2.id, groupId: itGroup.id },
-    });
-    await prisma.groupMember.upsert({
-        where: { userId_groupId: { userId: agent2.id, groupId: hrGroup.id } },
-        update: {},
-        create: { userId: agent2.id, groupId: hrGroup.id },
-    });
-
-    console.log('✅ Groups created');
-
-    // ── Queues ─────────────────────────────────────────────────
-    const itQueue = await prisma.queue.upsert({
-        where: { name: 'IT Support' },
-        update: {},
-        create: {
-            name: 'IT Support',
-            description: 'General IT support requests',
-            isPublic: true,
-            autoAssign: true,
-        },
-    });
-
-    const hrQueue = await prisma.queue.upsert({
-        where: { name: 'HR' },
-        update: {},
-        create: {
-            name: 'HR',
-            description: 'Human Resources requests',
-            isPublic: true,
-            autoAssign: false,
-        },
-    });
-
-    const financeQueue = await prisma.queue.upsert({
-        where: { name: 'Finance' },
-        update: {},
-        create: {
-            name: 'Finance',
-            description: 'Finance and billing inquiries',
-            isPublic: false,
-            autoAssign: false,
-        },
-    });
-
-    // Map groups to queues
-    await prisma.queueGroup.upsert({
-        where: { queueId_groupId_role: { queueId: itQueue.id, groupId: itGroup.id, role: 'agent' } },
-        update: {},
-        create: { queueId: itQueue.id, groupId: itGroup.id, role: 'agent' },
-    });
-    await prisma.queueGroup.upsert({
-        where: { queueId_groupId_role: { queueId: hrQueue.id, groupId: hrGroup.id, role: 'agent' } },
-        update: {},
-        create: { queueId: hrQueue.id, groupId: hrGroup.id, role: 'agent' },
-    });
-
-    // Give agent2 direct membership on Finance (no dedicated group needed for a demo queue)
-    await prisma.queueMember.upsert({
-        where: { queueId_userId_role: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' } },
-        update: {},
-        create: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' },
-    });
-
-    console.log('✅ Queues created');
-
-    // ── Categories ─────────────────────────────────────────────
-    const categories = ['Hardware', 'Software', 'Network', 'Access', 'General', 'Onboarding', 'Payroll'];
-    for (const name of categories) {
-        await prisma.category.upsert({
-            where: { name },
-            update: {},
-            create: { name },
+    for (const field of fields) {
+        await prisma.ticketFormTemplateField.upsert({
+            where: { id: field.id },
+            update: { ...field, templateId: id },
+            create: { ...field, templateId: id },
         });
     }
+    return prisma.ticketFormTemplate.findUniqueOrThrow({
+        where: { id: template.id },
+        include: { fields: { orderBy: { sortOrder: 'asc' } } },
+    });
+}
 
-    const hardwareCat = await prisma.category.findUnique({ where: { name: 'Hardware' } });
-    const softwareCat = await prisma.category.findUnique({ where: { name: 'Software' } });
-    const networkCat = await prisma.category.findUnique({ where: { name: 'Network' } });
+function snapshot(template: Awaited<ReturnType<typeof upsertTemplate>>): Prisma.InputJsonValue {
+    return {
+        templateId: template.id,
+        templateName: template.name,
+        version: template.version,
+        fields: template.fields.map((field) => ({
+            id: field.id,
+            fieldKey: field.fieldKey,
+            label: field.label,
+            type: field.type,
+            builtIn: field.builtIn,
+            placeholder: field.placeholder,
+            helpText: field.helpText,
+            required: field.required,
+            defaultValue: field.defaultValue,
+            options: field.options,
+            validationRules: field.validationRules,
+            conditionalRules: field.conditionalRules,
+            visibleTo: field.visibleTo,
+            editableBy: field.editableBy,
+            sortOrder: field.sortOrder,
+            width: field.width,
+            isActive: field.isActive,
+        })),
+    } as Prisma.InputJsonValue;
+}
 
-    console.log('✅ Categories created');
-
-    // ── Tags ───────────────────────────────────────────────────
-    const tagData = [
-        { name: 'urgent', color: '#ef4444' },
-        { name: 'vpn', color: '#f59e0b' },
-        { name: 'email', color: '#3b82f6' },
-        { name: 'printer', color: '#10b981' },
-        { name: 'new-hire', color: '#8b5cf6' },
-        { name: 'password-reset', color: '#ec4899' },
+async function main() {
+    console.log('Seeding CompDesk...');
+    const password = process.env.SEED_DEFAULT_PASSWORD ?? 'Password123!';
+    const passwordHash = await bcrypt.hash(password, 12);
+    const accountSpecs = [
+        { email: process.env.SEED_ADMIN_EMAIL ?? 'admin@example.com', name: 'Admin User', role: Role.SUPER_ADMIN },
+        { email: 'administrator@example.com', name: 'Application Admin', role: Role.ADMIN },
+        { email: 'agent1@example.com', name: 'Agent Martin', role: Role.AGENT },
+        { email: 'agent2@example.com', name: 'Agent Sophie', role: Role.AGENT },
+        { email: 'user1@example.com', name: 'Jean Dupont', role: Role.USER },
+        { email: 'user2@example.com', name: 'Marie Curie', role: Role.USER },
     ];
-    for (const t of tagData) {
-        await prisma.tag.upsert({ where: { name: t.name }, update: {}, create: t });
+    const users = new Map<string, Awaited<ReturnType<typeof prisma.user.upsert>>>();
+    for (const spec of accountSpecs) {
+        const user = await prisma.user.upsert({
+            where: { email: spec.email },
+            update: { name: spec.name, role: spec.role, passwordHash, isActive: true },
+            create: { ...spec, passwordHash },
+        });
+        users.set(spec.email, user);
+    }
+    const agent1 = users.get('agent1@example.com')!;
+    const agent2 = users.get('agent2@example.com')!;
+    const user1 = users.get('user1@example.com')!;
+    const user2 = users.get('user2@example.com')!;
+
+    const systemTemplate = await upsertTemplate(
+        SYSTEM_TEMPLATE_ID,
+        'System Default Ticket Form',
+        'Protected fallback form used when no active assignment exists.',
+        true,
+        defaultFields(SYSTEM_TEMPLATE_ID)
+    );
+    const itTemplate = await upsertTemplate(
+        IT_TEMPLATE_ID,
+        'IT Support Request',
+        'Example department template with an additional required device field.',
+        false,
+        customItFields(IT_TEMPLATE_ID)
+    );
+
+    const itQueue = await prisma.queue.upsert({
+        where: { name: 'IT Support' },
+        update: { description: 'General IT support requests', isPublic: true, isActive: true, autoAssign: true, defaultTemplateId: itTemplate.id },
+        create: { name: 'IT Support', description: 'General IT support requests', isPublic: true, isActive: true, autoAssign: true, defaultTemplateId: itTemplate.id },
+    });
+    const hrQueue = await prisma.queue.upsert({
+        where: { name: 'HR' },
+        update: { description: 'Human Resources requests', isPublic: true, isActive: true, defaultTemplateId: null },
+        create: { name: 'HR', description: 'Human Resources requests', isPublic: true, isActive: true },
+    });
+    const financeQueue = await prisma.queue.upsert({
+        where: { name: 'Finance' },
+        update: { description: 'Finance and billing inquiries', isPublic: false, isActive: true, defaultTemplateId: null },
+        create: { name: 'Finance', description: 'Finance and billing inquiries', isPublic: false, isActive: true },
+    });
+
+    const itGroup = await prisma.group.upsert({
+        where: { entraObjectId: 'it-support-group-id' }, update: { name: 'IT Support' },
+        create: { name: 'IT Support', entraObjectId: 'it-support-group-id', description: 'IT support team members' },
+    });
+    const hrGroup = await prisma.group.upsert({
+        where: { entraObjectId: 'hr-group-id' }, update: { name: 'HR Team' },
+        create: { name: 'HR Team', entraObjectId: 'hr-group-id', description: 'Human Resources team' },
+    });
+    for (const [userId, groupId] of [[agent1.id, itGroup.id], [agent2.id, itGroup.id], [agent2.id, hrGroup.id]]) {
+        await prisma.groupMember.upsert({
+            where: { userId_groupId: { userId, groupId } }, update: {}, create: { userId, groupId },
+        });
+    }
+    for (const [queueId, groupId] of [[itQueue.id, itGroup.id], [hrQueue.id, hrGroup.id]]) {
+        await prisma.queueGroup.upsert({
+            where: { queueId_groupId_role: { queueId, groupId, role: 'agent' } }, update: {},
+            create: { queueId, groupId, role: 'agent' },
+        });
+    }
+    await prisma.queueMember.upsert({
+        where: { queueId_userId_role: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' } },
+        update: {}, create: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' },
+    });
+
+    const categorySpecs = [
+        [itQueue.id, 'Hardware'], [itQueue.id, 'Software'], [itQueue.id, 'Network'], [itQueue.id, 'General'],
+        [hrQueue.id, 'General'], [hrQueue.id, 'Onboarding'], [hrQueue.id, 'Payroll'],
+        [financeQueue.id, 'General'], [financeQueue.id, 'Expense'], [financeQueue.id, 'Vendor'],
+    ] as const;
+    const categories = new Map<string, Awaited<ReturnType<typeof prisma.category.upsert>>>();
+    for (const [queueId, name] of categorySpecs) {
+        const category = await prisma.category.upsert({
+            where: { queueId_name: { queueId, name } },
+            update: { isActive: true, archivedAt: null },
+            create: { queueId, name },
+        });
+        categories.set(`${queueId}:${name}`, category);
     }
 
-    console.log('✅ Tags created');
+    const tagSpecs = [
+        { name: 'urgent', color: '#ef4444' }, { name: 'vpn', color: '#f59e0b' },
+        { name: 'email', color: '#3b82f6' }, { name: 'printer', color: '#10b981' },
+        { name: 'new-hire', color: '#8b5cf6' }, { name: 'password-reset', color: '#ec4899' },
+    ];
+    for (const tag of tagSpecs) await prisma.tag.upsert({ where: { name: tag.name }, update: tag, create: tag });
 
-    // ── SLA Policies ───────────────────────────────────────────
-    const slaPolicies = [
+    const slaSpecs = [
         { queueId: itQueue.id, priority: Priority.URGENT, firstResponseMinutes: 15, resolutionMinutes: 60 },
         { queueId: itQueue.id, priority: Priority.HIGH, firstResponseMinutes: 30, resolutionMinutes: 240 },
         { queueId: itQueue.id, priority: Priority.NORMAL, firstResponseMinutes: 120, resolutionMinutes: 1440 },
         { queueId: itQueue.id, priority: Priority.LOW, firstResponseMinutes: 480, resolutionMinutes: 4320 },
         { queueId: hrQueue.id, priority: Priority.NORMAL, firstResponseMinutes: 240, resolutionMinutes: 2880 },
     ];
-    for (const sla of slaPolicies) {
+    for (const policy of slaSpecs) {
         await prisma.slaPolicy.upsert({
-            where: { queueId_priority: { queueId: sla.queueId, priority: sla.priority } },
-            update: {},
-            create: sla,
+            where: { queueId_priority: { queueId: policy.queueId, priority: policy.priority } }, update: policy, create: policy,
         });
     }
 
-    console.log('✅ SLA Policies created');
-
-    // ── Ticket Counter ─────────────────────────────────────────
-    await prisma.ticketCounter.upsert({
-        where: { id: 'singleton' },
-        update: {},
-        create: { id: 'singleton', year: 2026, count: 0 },
-    });
-
-    // ── Sample Tickets ─────────────────────────────────────────
+    await prisma.ticketCounter.upsert({ where: { id: 'singleton' }, update: {}, create: { id: 'singleton', year: new Date().getFullYear(), count: 0 } });
     const tickets = [
-        {
-            key: 'TCK-2026-000001',
-            title: 'Cannot connect to VPN from home',
-            description: 'I am unable to connect to the company VPN using Cisco AnyConnect. I get a timeout error after entering my credentials.',
-            status: TicketStatus.OPEN,
-            priority: Priority.HIGH,
-            queueId: itQueue.id,
-            categoryId: networkCat?.id,
-            requesterId: user1.id,
-            assigneeId: agent1.id,
-        },
-        {
-            key: 'TCK-2026-000002',
-            title: 'New laptop setup for new hire',
-            description: 'Please set up a laptop with standard software for a new team member starting on March 1st.',
-            status: TicketStatus.NEW,
-            priority: Priority.NORMAL,
-            queueId: itQueue.id,
-            categoryId: hardwareCat?.id,
-            requesterId: user2.id,
-            assigneeId: null,
-        },
-        {
-            key: 'TCK-2026-000003',
-            title: 'Outlook not syncing emails',
-            description: 'My Outlook desktop client stopped syncing about 2 hours ago. Web version works fine.',
-            status: TicketStatus.PENDING_USER,
-            priority: Priority.NORMAL,
-            queueId: itQueue.id,
-            categoryId: softwareCat?.id,
-            requesterId: user1.id,
-            assigneeId: agent2.id,
-        },
-        {
-            key: 'TCK-2026-000004',
-            title: 'Request PTO approval process documentation',
-            description: 'Can you provide the current PTO approval process and any forms needed?',
-            status: TicketStatus.RESOLVED,
-            priority: Priority.LOW,
-            queueId: hrQueue.id,
-            requesterId: user2.id,
-            assigneeId: agent2.id,
-            resolvedAt: new Date(),
-        },
-        {
-            key: 'TCK-2026-000005',
-            title: 'Printer on 3rd floor not working',
-            description: 'The HP printer in the 3rd floor common area is showing an error code E3. Paper tray seems fine.',
-            status: TicketStatus.OPEN,
-            priority: Priority.URGENT,
-            queueId: itQueue.id,
-            categoryId: hardwareCat?.id,
-            requesterId: user2.id,
-            assigneeId: agent1.id,
-        },
-        {
-            // Keys deliberately outside the normal auto-generated sequence range
-            // (see counter-safety note below) to avoid colliding with real tickets
-            // created through the app on a DB that already has organic activity.
-            key: 'TCK-2026-SEED91',
-            title: 'Expense report reimbursement delayed',
-            description: 'I submitted my March expense report three weeks ago and have not received reimbursement yet. Report ID: EXP-4471.',
-            status: TicketStatus.PENDING_AGENT,
-            priority: Priority.NORMAL,
-            queueId: financeQueue.id,
-            requesterId: user1.id,
-            assigneeId: agent2.id,
-        },
-        {
-            key: 'TCK-2026-SEED92',
-            title: 'Need updated W-9 form for vendor onboarding',
-            description: 'Our new vendor needs our company\'s current W-9 to set up payment. Can Finance provide the latest version?',
-            status: TicketStatus.NEW,
-            priority: Priority.LOW,
-            queueId: financeQueue.id,
-            requesterId: user2.id,
-            assigneeId: null,
-        },
+        { key: 'TCK-2026-SEED01', title: 'Cannot connect to VPN from home', description: 'The VPN client times out after authentication.', status: TicketStatus.OPEN, priority: Priority.HIGH, queueId: itQueue.id, categoryId: categories.get(`${itQueue.id}:Network`)!.id, requesterId: user1.id, assigneeId: agent1.id, template: itTemplate, values: { title: 'Cannot connect to VPN from home', description: 'The VPN client times out after authentication.', priority: 'HIGH', device_type: 'Laptop' } },
+        { key: 'TCK-2026-SEED02', title: 'New laptop setup for new hire', description: 'Please prepare a standard laptop before the start date.', status: TicketStatus.NEW, priority: Priority.NORMAL, queueId: itQueue.id, categoryId: categories.get(`${itQueue.id}:Hardware`)!.id, requesterId: user2.id, assigneeId: null, template: itTemplate, values: { title: 'New laptop setup for new hire', description: 'Please prepare a standard laptop before the start date.', priority: 'NORMAL', device_type: 'Laptop' } },
+        { key: 'TCK-2026-SEED03', title: 'PTO process documentation', description: 'Please share the current PTO approval process.', status: TicketStatus.RESOLVED, priority: Priority.LOW, queueId: hrQueue.id, categoryId: categories.get(`${hrQueue.id}:General`)!.id, requesterId: user2.id, assigneeId: agent2.id, template: systemTemplate, values: { title: 'PTO process documentation', description: 'Please share the current PTO approval process.', priority: 'LOW' } },
+        { key: 'TCK-2026-SEED04', title: 'Expense reimbursement status', description: 'My expense report is still awaiting reimbursement.', status: TicketStatus.PENDING_AGENT, priority: Priority.NORMAL, queueId: financeQueue.id, categoryId: categories.get(`${financeQueue.id}:Expense`)!.id, requesterId: user1.id, assigneeId: agent2.id, template: systemTemplate, values: { title: 'Expense reimbursement status', description: 'My expense report is still awaiting reimbursement.', priority: 'NORMAL' } },
     ];
-
-    // Bump the counter forward only if needed — never rewind it. The app's
-    // ticket-key generator reads this counter to mint the *next* real ticket
-    // key, so setting it backwards on a DB that already has organic tickets
-    // would hand out a key that collides with an existing one.
-    const currentCounter = await prisma.ticketCounter.findUnique({ where: { id: 'singleton' } });
-    if ((currentCounter?.count ?? 0) < tickets.length) {
-        await prisma.ticketCounter.update({
-            where: { id: 'singleton' },
-            data: { count: tickets.length },
-        });
-    }
-
-    for (const t of tickets) {
-        const alreadyExisted = await prisma.ticket.findUnique({ where: { key: t.key } });
-
+    for (const item of tickets) {
+        const existing = await prisma.ticket.findUnique({ where: { key: item.key } });
         const ticket = await prisma.ticket.upsert({
-            where: { key: t.key },
-            update: {},
-            create: t as any,
+            where: { key: item.key }, update: {},
+            create: {
+                key: item.key, title: item.title, description: item.description, status: item.status,
+                priority: item.priority, queueId: item.queueId, categoryId: item.categoryId,
+                requesterId: item.requesterId, assigneeId: item.assigneeId,
+                resolvedTemplateId: item.template.id, resolvedTemplateVersion: item.template.version,
+                formSchemaSnapshot: snapshot(item.template), submittedFormValues: item.values,
+                resolvedAt: item.status === TicketStatus.RESOLVED ? new Date() : null,
+            },
         });
-
-        // Add requester as watcher
         await prisma.ticketWatcher.upsert({
-            where: { ticketId_userId: { ticketId: ticket.id, userId: t.requesterId } },
-            update: {},
-            create: { ticketId: ticket.id, userId: t.requesterId },
+            where: { ticketId_userId: { ticketId: ticket.id, userId: item.requesterId } }, update: {},
+            create: { ticketId: ticket.id, userId: item.requesterId },
         });
-
-        // Add created timeline event — only for tickets seeded for the first
-        // time. Re-running this script against an already-seeded DB must not
-        // append another "Ticket created" entry to the timeline.
-        if (!alreadyExisted) {
-            await prisma.timelineEvent.create({
-                data: {
-                    ticketId: ticket.id,
-                    userId: t.requesterId,
-                    type: 'CREATED',
-                    content: `Ticket created: ${t.title}`,
-                },
-            });
-        }
+        if (!existing) await prisma.timelineEvent.create({
+            data: { ticketId: ticket.id, userId: item.requesterId, type: 'CREATED', content: `Ticket created: ${item.title}` },
+        });
     }
 
-    console.log('✅ Sample tickets created');
-
-    // ── Sample Replies / Conversation Threads ───────────────────
-    // Guarded: only seed a ticket's conversation once (skip if it already
-    // has more than the single CREATED event from above).
-    const replyThreads: Record<string, Array<{ userId: string; type: 'COMMENT' | 'INTERNAL_NOTE'; content: string }>> = {
-        'TCK-2026-000001': [
-            { userId: agent1.id, type: 'INTERNAL_NOTE', content: 'Checked VPN concentrator logs — seeing repeated auth timeouts from this user\'s IP range. Might be an MFA push issue.' },
-            { userId: agent1.id, type: 'COMMENT', content: 'Hi Jean, could you confirm whether you\'re getting an MFA prompt on your phone before the timeout happens?' },
-            { userId: user1.id, type: 'COMMENT', content: 'No prompt at all, it just times out after ~10 seconds on the "Connecting..." screen.' },
-            { userId: agent1.id, type: 'COMMENT', content: 'Thanks — that points to a client-side cache issue rather than MFA. Please clear the Cisco AnyConnect profile cache and retry, steps here: %APPDATA%\\Cisco\\Cisco AnyConnect Secure Mobility Client\\Profile — delete the .xml files and reconnect.' },
-        ],
-        'TCK-2026-000003': [
-            { userId: agent2.id, type: 'COMMENT', content: 'Hi Jean, thanks for the report. Can you try Outlook > Account Settings > Repair for the affected profile?' },
-            { userId: user1.id, type: 'COMMENT', content: 'Just tried that, still not syncing. Web version is fine as I mentioned.' },
-            { userId: agent2.id, type: 'INTERNAL_NOTE', content: 'Escalating internally to check if this is the known Exchange cache corruption issue from last week\'s patch.' },
-        ],
-        'TCK-2026-000005': [
-            { userId: agent1.id, type: 'COMMENT', content: 'On it — heading up to the 3rd floor now to check the printer.' },
-            { userId: agent1.id, type: 'COMMENT', content: 'Confirmed E3 is a fuser unit error. Ordering a replacement part, should be resolved by tomorrow morning.' },
-            { userId: user2.id, type: 'COMMENT', content: 'Thanks for the quick update!' },
-        ],
-        'TCK-2026-SEED91': [
-            { userId: agent2.id, type: 'COMMENT', content: 'Hi, thanks for following up. I can see your report in the queue — it\'s pending approval from your manager before payment can be released.' },
-            { userId: user1.id, type: 'COMMENT', content: 'Ah I wasn\'t aware it needed manager approval. I\'ll follow up with them directly, thanks!' },
-        ],
-    };
-
-    for (const [ticketKey, events] of Object.entries(replyThreads)) {
-        const ticket = await prisma.ticket.findUnique({ where: { key: ticketKey } });
-        if (!ticket) continue;
-
-        const existingReplyCount = await prisma.timelineEvent.count({
-            where: { ticketId: ticket.id, type: { in: ['COMMENT', 'INTERNAL_NOTE'] } },
-        });
-        if (existingReplyCount > 0) continue; // conversation already seeded
-
-        for (const event of events) {
-            await prisma.timelineEvent.create({
-                data: {
-                    ticketId: ticket.id,
-                    userId: event.userId,
-                    type: event.type,
-                    content: event.content,
-                },
-            });
-        }
-    }
-
-    console.log('✅ Sample replies created');
-
-    // ── Canned Responses ───────────────────────────────────────
     const cannedResponses = [
-        {
-            title: 'Password Reset Instructions',
-            content: 'To reset your password, please visit https://passwordreset.microsoftonline.com and follow the self-service password reset flow. If you encounter issues, let us know.',
-            category: 'Access',
-        },
-        {
-            title: 'VPN Troubleshooting',
-            content: 'Please try the following steps:\n1. Restart your computer\n2. Disconnect and reconnect to your internet\n3. Clear Cisco AnyConnect cache\n4. Try connecting again\n\nIf the issue persists, let us know your OS version and error message.',
-            category: 'Network',
-        },
-        {
-            title: 'Request Received',
-            content: 'Thank you for your request. We have received it and will get back to you shortly. If your issue is urgent, please don\'t hesitate to follow up.',
-            category: 'General',
-        },
+        { title: 'Password Reset Instructions', content: 'Use your organization password-reset page, then contact support if the issue continues.', category: 'Access' },
+        { title: 'Request Received', content: 'Thank you for your request. We have received it and will follow up shortly.', category: 'General' },
     ];
-
-    for (const cr of cannedResponses) {
-        await prisma.cannedResponse.create({ data: cr });
+    for (const response of cannedResponses) {
+        const existing = await prisma.cannedResponse.findFirst({ where: { title: response.title } });
+        if (existing) await prisma.cannedResponse.update({ where: { id: existing.id }, data: response });
+        else await prisma.cannedResponse.create({ data: response });
     }
 
-    console.log('✅ Canned responses created');
-    console.log('🎉 Seed complete!');
+    const brandingConfig = {
+        applicationName: 'CompDesk', shortApplicationName: 'CompDesk', subtitle: 'Helpdesk',
+        description: 'A secure, customizable helpdesk and ticketing platform.',
+        mainLogoUrl: '', compactLogoUrl: '', lightLogoUrl: '', darkLogoUrl: '', faviconUrl: '',
+        primaryColor: '#4f46e5', accentColor: '#8b5cf6', loginHeading: 'Welcome to CompDesk',
+        loginDescription: 'Sign in to access your helpdesk portal.', loginBackgroundImageUrl: '',
+        supportEmail: 'support@example.com', footerText: 'Powered by CompDesk',
+        showDemoAccounts: false, demoAccountInfo: '', microsoftButtonText: 'Sign in with Microsoft',
+    };
+    const brandingSettings = {
+        branding_config: JSON.stringify(brandingConfig),
+        login_local_enabled: 'true',
+        login_microsoft_enabled: 'true',
+    };
+    for (const [key, value] of Object.entries(brandingSettings)) {
+        await prisma.appSetting.upsert({ where: { key }, update: {}, create: { key, value } });
+    }
+    console.log(`Seed complete. Demo administrator: ${accountSpecs[0].email}`);
+    console.log('Set SEED_DEFAULT_PASSWORD and SEED_ADMIN_EMAIL before production seeding.');
 }
 
 main()
-    .catch((e) => {
-        console.error('❌ Seed failed:', e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+    .catch((error) => { console.error('Seed failed:', error); process.exitCode = 1; })
+    .finally(async () => prisma.$disconnect());

@@ -45,6 +45,8 @@ import {
 import { useState, useCallback, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
+import { BrandLogo } from '@/components/branding/brand-logo';
+import { useBranding } from '@/components/providers/branding-provider';
 import { formatDistanceToNow } from 'date-fns';
 
 const navItems = [
@@ -56,7 +58,7 @@ const navItems = [
 
 const adminItems = [
     { href: '/admin/departments', label: 'Departments', icon: FolderKanban },
-    { href: '/admin/templates', label: 'Templates', icon: FileText },
+    { href: '/admin/templates', label: 'Ticket Form Templates', icon: FileText },
     { href: '/admin/categories', label: 'Categories', icon: Tags },
     { href: '/admin/tags', label: 'Tags', icon: Tag },
     { href: '/admin/users', label: 'Users', icon: Users },
@@ -83,6 +85,7 @@ export default function AppShell({
     initialSession: Session;
 }) {
     const { data: clientSession, status } = useSession();
+    const branding = useBranding();
     const pathname = usePathname();
     const router = useRouter();
     const queryClient = useQueryClient();
@@ -180,12 +183,10 @@ export default function AppShell({
             >
                 {/* Logo */}
                 <Link href="/" className="flex h-16 items-center gap-3 border-b px-4 transition-colors hover:bg-accent/50">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl brand-gradient shadow-md shadow-primary/25">
-                        <Shield className="h-5 w-5 text-white" />
-                    </div>
+                    <BrandLogo compact={collapsed} className="h-9 w-9 shrink-0 rounded-xl shadow-md shadow-primary/25" />
                     <div className={cn('min-w-0', collapsed && 'lg:hidden')}>
-                        <h1 className="font-display text-lg font-bold leading-tight gradient-text">ExcoDesk</h1>
-                        <p className="-mt-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">Helpdesk</p>
+                        <h1 className="truncate font-display text-lg font-bold leading-tight gradient-text">{branding.shortApplicationName}</h1>
+                        <p className="-mt-0.5 truncate text-[10px] uppercase tracking-widest text-muted-foreground">{branding.subtitle}</p>
                     </div>
                 </Link>
 

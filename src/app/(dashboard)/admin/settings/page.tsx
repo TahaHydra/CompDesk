@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette } from 'lucide-react';
+import { BrandingSettings } from '@/components/admin/branding-settings';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
 
@@ -93,7 +94,7 @@ function SmtpSettingsTab() {
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>Username / Email</Label>
-                            <Input placeholder="noreply@exco.fr" value={smtp.smtp_user}
+                            <Input placeholder="noreply@example.com" value={smtp.smtp_user}
                                 onChange={(e) => setSmtp({ ...smtp, smtp_user: e.target.value })} />
                         </div>
                         <div className="space-y-2">
@@ -108,7 +109,7 @@ function SmtpSettingsTab() {
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>From Address</Label>
-                            <Input placeholder="noreply@exco.fr" value={smtp.smtp_from}
+                            <Input placeholder="noreply@example.com" value={smtp.smtp_from}
                                 onChange={(e) => setSmtp({ ...smtp, smtp_from: e.target.value })} />
                         </div>
                         <div className="space-y-2">
@@ -737,8 +738,9 @@ export default function AdminSettingsPage() {
         <div className="space-y-6">
             <PageHeader icon={Settings} title="Settings" description="Application configuration" />
 
-            <Tabs defaultValue="smtp">
+            <Tabs defaultValue="branding">
                 <TabsList className="w-full justify-start overflow-x-auto">
+                    <TabsTrigger value="branding" className="gap-1 min-w-max"><Palette className="h-3.5 w-3.5" /> Branding</TabsTrigger>
                     <TabsTrigger value="smtp" className="gap-1 min-w-max"><Mail className="h-3.5 w-3.5" /> SMTP</TabsTrigger>
                     <TabsTrigger value="emails" className="gap-1 min-w-max"><Send className="h-3.5 w-3.5" /> Email Notifications</TabsTrigger>
                     <TabsTrigger value="entra" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> Entra ID</TabsTrigger>
@@ -747,6 +749,7 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
                     <TabsTrigger value="api" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> API Clients</TabsTrigger>
                 </TabsList>
+                <TabsContent value="branding"><BrandingSettings /></TabsContent>
                 <TabsContent value="smtp"><SmtpSettingsTab /></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
                 <TabsContent value="entra"><EntraSettingsTab /></TabsContent>

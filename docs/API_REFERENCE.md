@@ -1,290 +1,224 @@
-# 📘 ExcoDesk — API Reference
-
-All API endpoints require authentication via session cookie (internal) or `X-API-Key` header (external v1). Responses are JSON.
-
----
-
-## Authentication
-
-All internal endpoints use Auth.js session cookies (set after sign-in). The external API (`/api/v1/*`) uses `X-API-Key` header authentication.
-
----
-
-## Internal API Endpoints
-
-### Dashboard
-
-#### `GET /api/dashboard/stats`
-Returns ticket statistics and recent activity scoped to the user's role.
-
-| Role | Scope |
-|------|-------|
-| USER | Own tickets only |
-| AGENT | Tickets in assigned departments |
-| ADMIN / SUPER_ADMIN | All tickets |
-
-**Response:**
-```json
-{
-  "stats": { "total": 42, "open": 10, "pending": 5, "resolved": 20, "urgent": 2, "escalated": 1 },
-  "recentTickets": [ { "id": "...", "key": "TCK-2026-000001", "title": "...", "status": "OPEN", "priority": "HIGH", ... } ],
-  "customLinks": [ { "title": "SharePoint", "url": "https://..." } ]
-}
-```
-
----
-
-### Notifications
-
-#### `GET /api/notifications`
-Returns recent timeline events for tickets relevant to the current user (excluding their own actions).
-
-**Response:**
-```json
-{
-  "items": [
-    {
-      "id": "...", "type": "COMMENT", "content": "...", "createdAt": "2026-02-24T...",
-      "userName": "Agent Martin", "ticketId": "...", "ticketKey": "TCK-2026-000001", "ticketTitle": "..."
-    }
-  ],
-  "unreadCount": 3
-}
-```
-
-#### `POST /api/notifications`
-Marks all notifications as read for the current user.
-
----
-
-### Tickets
+# CompDesk API reference
 
-#### `GET /api/tickets`
-List tickets with filtering, sorting, and pagination.
+CompDesk exposes authenticated internal routes and an API-key-protected `/api/v1` integration surface. JSON request bodies are validated with Zod. Write routes enforce authorization on the server; hiding a control in the browser is never the security boundary.
 
-**Query Parameters:**
+## Conventions
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `view` | `my` / `queue` / `all` | Filter scope (default: `my`) |
-| `status` | `NEW,OPEN,...` | Comma-separated statuses |
-| `priority` | `LOW,NORMAL,...` | Comma-separated priorities |
-| `queueId` | UUID | Filter by department |
-| `search` | string | Search title/key/description |
-| `assigneeId` | UUID | Filter by assignee |
-| `sortBy` | `createdAt` / `updatedAt` / `priority` | Sort field |
-| `sortOrder` | `asc` / `desc` | Sort direction |
-| `page` | number | Page number (default: 1) |
-| `limit` | number | Items per page (default: 25, max: 100) |
+- Internal authentication: Auth.js session cookie.
+- External authentication: `X-API-Key` with the required client scope.
+- IDs: UUID strings.
+- Validation errors: HTTP `400` with `{ "error": "...", "details": { ... } }`.
+- Authorization failures: `401` when unauthenticated, `403` when authenticated but forbidden.
+- Conflicts that would damage history: `409`.
+- Archived departments, categories, and templates are not offered for new tickets.
 
-**Response:**
-```json
-{
-  "tickets": [ { "id": "...", "key": "TCK-2026-000001", "title": "...", "status": "OPEN", ... } ],
-  "pagination": { "total": 42, "page": 1, "limit": 25, "totalPages": 2 }
-}
-```
+## Branding
 
-#### `POST /api/tickets`
-Create a new ticket. Validates custom form fields per queue.
+### `GET /api/branding`
 
-**Body:**
-```json
-{
-  "title": "VPN not working",
-  "description": "Cannot connect to...",
-  "queueId": "uuid",
-  "categoryId": "uuid (optional)",
-  "priority": "NORMAL",
-  "severity": "S3 (optional)",
-  "tagIds": ["uuid", "uuid"],
-  "formData": { "environment": "production" }
-}
-```
+Public and read-only. Returns only the typed values needed by the login page, metadata, favicon, and application theme. It never returns SMTP credentials, Entra secrets, API keys, or the general settings map.
 
-**Auth:** Any authenticated user.
+### `GET /api/branding/admin`
 
-#### `GET /api/tickets/[id]`
-Get full ticket detail including timeline, watchers, tags, form data, SLA info, and lock status.
+Admin or Super Admin. Returns the complete typed branding configuration.
 
-#### `PATCH /api/tickets/[id]`
-Update ticket fields (status, priority, assignee, tags, etc.). Enforces status transition rules per role.
+### `PATCH /api/branding/admin`
 
-**Body:** (all fields optional)
-```json
-{
-  "title": "Updated title",
-  "status": "RESOLVED",
-  "priority": "HIGH",
-  "assigneeId": "uuid",
-  "categoryId": "uuid",
-  "tagIds": ["uuid"]
-}
-```
+Admin or Super Admin. Replaces the complete branding configuration. Supported values include application names, subtitle, description, asset URLs, primary/accent colors, login copy, support email, footer, demo visibility, local/Microsoft login visibility, and Microsoft button text.
 
-#### `POST /api/tickets/[id]/comments`
-Add a comment or internal note to a ticket.
+Asset URLs cannot be supplied arbitrarily; they must be URLs returned by the branding asset endpoint.
 
-**Body:**
-```json
-{ "content": "Looking into this now", "isInternal": false }
-```
+### `DELETE /api/branding/admin`
 
-#### `POST /api/tickets/[id]/escalate`
-Escalate a ticket (Agent/Admin only).
+Admin or Super Admin. Restores all branding defaults and safely removes branding assets that are no longer referenced.
 
-**Body:**
-```json
-{ "escalatedToId": "uuid", "reason": "Requires network team" }
-```
+### `POST /api/branding/assets`
 
----
+Admin or Super Admin. Multipart body:
 
-### Departments (Queues)
+- `field`: one of `mainLogoUrl`, `compactLogoUrl`, `lightLogoUrl`, `darkLogoUrl`, `faviconUrl`, `loginBackgroundImageUrl`.
+- `file`: PNG, JPEG, WebP, GIF, or ICO; maximum 5 MB. SVG is rejected.
 
-#### `GET /api/queues`
-List all departments with ticket counts and group assignments.
+The server validates the file signature, generates a random UUID filename, updates branding, and removes a replaced unreferenced asset.
 
-#### `POST /api/queues`
-Create a new department. **Admin only.**
+### `DELETE /api/branding/assets?field=mainLogoUrl`
 
-**Body:** `{ "name": "IT Support", "description": "...", "isPublic": false, "autoAssign": false }`
+Resets one branding asset.
 
-#### `PATCH /api/queues`
-Update a department. **Admin only.**
+## Departments and categories
 
-**Body:** `{ "id": "uuid", "name": "New Name", "description": "..." }`
+### `GET /api/queues`
 
-#### `DELETE /api/queues?id=uuid`
-Delete a department. Fails if tickets exist. **Admin only.**
+Returns active departments scoped to the requester: public departments for users, assigned departments for agents, and all departments for administrators. Admins can add `includeInactive=true`.
 
----
+### `POST /api/queues` / `PATCH /api/queues`
 
-### Categories
-
-#### `GET /api/categories`
-List active categories.
-
-#### `POST /api/categories`
-Create a category. **Admin only.**
-
-**Body:** `{ "name": "Hardware", "description": "..." }`
-
-#### `PATCH /api/categories`
-Update a category name. **Admin only.**
-
-**Body:** `{ "id": "uuid", "name": "New Name" }`
-
-#### `DELETE /api/categories?id=uuid`
-Delete a category (detaches from tickets first). **Admin only.**
-
----
-
-### Tags
-
-#### `GET /api/tags`
-List all tags.
-
-#### `POST /api/tags`
-Create a tag. **Admin only.**
-
-**Body:** `{ "name": "urgent", "color": "#ef4444" }`
-
-#### `PATCH /api/tags`
-Update a tag. **Admin only.**
-
-**Body:** `{ "id": "uuid", "name": "critical", "color": "#dc2626" }`
-
-#### `DELETE /api/tags?id=uuid`
-Delete a tag. **Admin only.**
-
----
-
-### Users
-
-#### `GET /api/users`
-List all users with roles and queue memberships. **Authenticated.**
-
-#### `PATCH /api/users`
-Update user role and department assignments. **Admin only.**
-
-**Body:**
-```json
-{ "userId": "uuid", "role": "AGENT", "queueIds": ["uuid1", "uuid2"] }
-```
-
----
-
-### Settings
-
-#### `GET /api/settings`
-Get all app settings as key-value map. **Admin only.**
-
-#### `PATCH /api/settings`
-Update settings. **Admin only.**
-
-**Allowed keys:** `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `smtp_from`, `smtp_secure`, `email_on_ticket_created`, `email_on_ticket_assigned`, `email_on_ticket_updated`, `email_on_new_comment`, `azure_ad_client_id`, `azure_ad_client_secret`, `azure_ad_tenant_id`, `dashboard_links`
-
-#### `POST /api/settings/test-email`
-Send a test email using current SMTP settings. **Admin only.**
-
----
-
-### Other
-
-#### `GET /api/canned-responses` / `POST` / `PATCH` / `DELETE`
-CRUD for canned response templates. **Admin only.**
-
-#### `GET /api/form-fields?queueId=uuid` / `POST` / `PATCH` / `DELETE`
-CRUD for custom form fields per department. **Admin only.**
-
-#### `GET /api/groups` / `POST /api/groups` (sync)
-List and sync Microsoft Entra ID groups. **Admin only.**
-
----
-
-## External API (v1)
-
-Authenticated via `X-API-Key` header.
-
-#### `POST /api/v1/tickets`
-Create a ticket programmatically (e.g., from monitoring tools).
+Admin only. Create or edit a department. Important fields:
 
 ```json
 {
-  "title": "Server down",
-  "description": "Web server is not responding",
-  "queueId": "uuid",
-  "userEmail": "user@yourorg.com",
-  "priority": "URGENT"
+  "name": "IT Support",
+  "description": "Technical support",
+  "isPublic": true,
+  "isActive": true,
+  "autoAssign": false,
+  "defaultTemplateId": "uuid-or-null"
 }
 ```
 
-#### `POST /api/v1/tickets/[id]/notes`
-Append an internal note to a ticket.
+A default template must be active. `null` means inherit the protected system default.
+
+### `DELETE /api/queues?id=uuid`
+
+Admin only. Permanent deletion is allowed only when no categories or tickets reference the department.
+
+### `GET /api/categories?queueId=uuid`
+
+Returns active categories belonging to exactly that department. `queueId` is mandatory for non-admins. Admins may omit it to list all departments and may add `includeInactive=true`.
+
+### `POST /api/categories`
+
+Admin only.
 
 ```json
 {
-  "content": "Investigated: disk full",
-  "authorEmail": "agent@yourorg.com"
+  "queueId": "department-uuid",
+  "name": "New Account",
+  "description": "Optional",
+  "templateId": null,
+  "isActive": true
 }
 ```
 
----
+Names are unique within one department, so different departments may both use `New Account`.
 
-## Error Responses
+### `PATCH /api/categories`
 
-All errors follow this format:
+Admin only. Supports rename, activation/archive, a template override, and moving an unused category. Moving is rejected when tickets already reference the category.
+
+### `DELETE /api/categories?id=uuid`
+
+Archives by default. Add `mode=hard` only for an unreferenced category. Referenced categories are never detached from historical tickets.
+
+## Ticket Form Templates
+
+Ticket Form Templates are not canned responses. Canned responses remain reply macros under `/api/canned-responses`.
+
+### `GET /api/ticket-form-templates?includeArchived=true`
+
+Admin only. Lists the protected system default first, all fields, version/status, department assignments, category overrides, historical ticket count, and update time.
+
+### `POST /api/ticket-form-templates`
+
+Admin only. Creates a form by cloning the current system default, or duplicates another template when `sourceTemplateId` is supplied.
 
 ```json
-{ "error": "Human-readable error message" }
+{
+  "name": "Employee onboarding",
+  "description": "Requests for new starters",
+  "sourceTemplateId": "optional-template-uuid"
+}
 ```
 
-| HTTP Status | Meaning |
-|-------------|---------|
-| 400 | Validation error or bad request |
-| 401 | Not authenticated |
-| 403 | Insufficient permissions |
-| 404 | Resource not found |
-| 429 | Rate limited |
-| 500 | Internal server error |
+### `GET /api/ticket-form-templates/[id]`
+
+Admin only. Returns a template and usage. `previewRole=USER|AGENT|ADMIN|SUPER_ADMIN` filters its preview fields.
+
+### `PATCH /api/ticket-form-templates/[id]`
+
+Admin only. Replaces the editable definition and increments `version`. Each field contains a stable key, label, type, built-in identifier when applicable, placeholder/help text, required/default/options/validation/condition rules, role visibility/editability, order, width, and active state.
+
+Supported types: `TEXT`, `TEXTAREA`, `DROPDOWN`, `MULTISELECT`, `CHECKBOX`, `DATE`, `FILE`.
+
+### `DELETE /api/ticket-form-templates/[id]`
+
+- Default behavior: archive a non-system template.
+- `mode=hard`: delete only when there are no historical tickets and no assignments.
+- `mode=hard&reassignToId=uuid`: explicitly reassign current department/category usage before deletion; historical usage still prevents deletion.
+
+The system default cannot be archived or deleted. Restore an archived template with `POST /api/ticket-form-templates/[id]?action=restore`.
+
+### `GET /api/ticket-form/resolve?queueId=uuid&categoryId=uuid`
+
+Authenticated. Resolves the effective form using one centralized precedence rule:
+
+1. active category override;
+2. active department default;
+3. protected system default.
+
+The route verifies that the category belongs to the department and returns only fields visible to the requester role. Admins may add `previewRole`.
+
+## Tickets
+
+### `GET /api/tickets`
+
+Lists tickets with role scoping and filters including `view`, `status`, `priority`, `queueId`, `search`, `assigneeId`, `sortBy`, `sortOrder`, `page`, and `limit`.
+
+### `POST /api/tickets`
+
+Creates a ticket from the server-resolved effective form.
+
+```json
+{
+  "idempotencyKey": "uuid",
+  "queueId": "department-uuid",
+  "categoryId": "category-uuid",
+  "values": {
+    "title": "VPN fails after sign-in",
+    "description": "The connection times out.",
+    "priority": "HIGH",
+    "device_type": "Laptop"
+  }
+}
+```
+
+Do not send a template ID. The server independently resolves it, rejects cross-department categories, unknown/hidden/inaccessible fields, wrong types, invalid options, failed conditions, and missing required values. Compatibility fields (`title`, `description`, `priority`, `severity`, `tagIds`, `formData`, `attachments`) remain accepted for existing API clients but are mapped into the same resolved validation path.
+
+At creation, CompDesk stores the resolved template ID/version, an immutable schema snapshot, and sanitized values. If a visible Title field is absent, the server generates a deterministic internal title from the category or template name.
+
+### `GET /api/tickets/[id]`
+
+Returns the accessible ticket, conversation, category history, SLA/lock data, attachments, and role-filtered `historicalForm`. Raw schema snapshots and inaccessible stored fields are not exposed.
+
+### `PATCH /api/tickets/[id]`
+
+Updates permitted ticket columns. Routing changes independently verify that the category belongs to the target department. End users cannot change routing, assignment, priority, severity, or tags.
+
+### Comments and escalation
+
+- `POST /api/tickets/[id]/comments`
+- `POST /api/tickets/[id]/escalate` (agent/admin)
+
+## Uploads
+
+### `POST /api/upload`
+
+Authenticated multipart upload for ticket form files. Optional `ticketId` attaches directly to an accessible ticket; without it, the file is placed in temporary storage until ticket creation. Maximum 10 MB. Stored extensions are derived from the accepted MIME type, image/PDF signatures are checked, SVG is rejected, paths are randomized, and access is verified before any ticket-directory write.
+
+### `GET` / `DELETE /api/upload/[id]`
+
+Download or remove an attachment subject to ticket authorization.
+
+## Other internal routes
+
+- `/api/dashboard/stats`
+- `/api/notifications`
+- `/api/tags`
+- `/api/canned-responses`
+- `/api/users`
+- `/api/groups`
+- `/api/audit-logs`
+- `/api/settings` and `/api/settings/test-email`
+- `/api/api-clients`
+
+All write operations use server-side role checks. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.
+
+## External API v1
+
+Enable the external API feature flag and create an API client in Admin → Settings → API Clients.
+
+- `GET /api/v1/tickets` requires `tickets:read`.
+- `POST /api/v1/tickets` requires `tickets:write`, accepts `userEmail` plus the same routing/`values` payload, and uses the same template resolver/validator.
+- `POST /api/v1/tickets/[id]/notes` appends an integration note.
+
+Allowed department IDs configured on the API client are independently enforced.

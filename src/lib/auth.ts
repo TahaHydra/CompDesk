@@ -36,10 +36,10 @@ declare module 'next-auth' {
 }
 
 // Check if local login is enabled via app settings
-async function isLocalLoginEnabled(): Promise<boolean> {
+async function isLoginMethodEnabled(key: 'login_local_enabled' | 'login_microsoft_enabled'): Promise<boolean> {
     try {
         const setting = await prisma.appSetting.findUnique({
-            where: { key: 'login_local_enabled' },
+            where: { key },
         });
         // Default to true if setting doesn't exist
         return setting ? setting.value !== 'false' : true;
@@ -83,7 +83,7 @@ export const authConfig: NextAuthConfig = {
         Credentials({
             name: 'Email & Password',
             credentials: {
-                email: { label: 'Email', type: 'email', placeholder: 'you@exco.fr' },
+                email: { label: 'Email', type: 'email', placeholder: 'you@example.com' },
                 password: { label: 'Password', type: 'password' },
             },
             async authorize(credentials) {
@@ -93,7 +93,7 @@ export const authConfig: NextAuthConfig = {
                 const password = credentials.password as string;
 
                 // Check if local login is enabled
-                const localEnabled = await isLocalLoginEnabled();
+                const localEnabled = await isLoginMethodEnabled('login_local_enabled');
                 if (!localEnabled) {
                     return null; // Local login disabled by admin
                 }
@@ -155,6 +155,10 @@ export const authConfig: NextAuthConfig = {
     ],
     callbacks: {
         async signIn({ user, account }) {
+            if (account?.provider === 'microsoft-entra-id' && !(await isLoginMethodEnabled('login_microsoft_enabled'))) {
+                auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: user.email, reason: 'microsoft_login_disabled', method: 'sso' } });
+                return false;
+            }
             if (account?.provider === 'microsoft-entra-id' && user.email) {
                 // Upsert user with Entra Object ID
                 const existingUser = await prisma.user.findUnique({

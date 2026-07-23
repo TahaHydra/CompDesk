@@ -48,6 +48,9 @@ public/uploads/*
 # Coverage
 coverage/
 .nyc_output/
+# TypeScript build cache
+*.tsbuildinfo
+
 # Local tooling metadata
 .claude/
 .codex/

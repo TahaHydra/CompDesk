@@ -16,7 +16,7 @@ import { Ticket, Plus, Search, AlertTriangle, SlidersHorizontal, X } from 'lucid
 
 const DEFAULT_LIMIT = 20;
 const PAGE_LIMITS = [10, 20, 50] as const;
-const TICKET_PAGE_SIZE_KEY = 'excodesk-ticket-page-size';
+const TICKET_PAGE_SIZE_KEY = 'compdesk-ticket-page-size';
 
 const STATUS_VALUES = ['all', 'NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'] as const;
 const PRIORITY_VALUES = ['all', 'LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;

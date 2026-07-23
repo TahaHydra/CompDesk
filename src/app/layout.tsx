@@ -1,20 +1,34 @@
+import type { CSSProperties } from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { ThemeProvider } from '@/components/providers/theme-provider';
+import { BrandingProvider } from '@/components/providers/branding-provider';
+import { getBrandingStyleVariables, getPublicBranding } from '@/lib/branding';
 
-export const metadata: Metadata = {
-    title: 'ExcoDesk - Helpdesk & Ticketing',
-    description: 'Lightweight ticketing system for IT support',
-    icons: { icon: '/favicon.ico' },
-};
+export const dynamic = 'force-dynamic';
+
+export async function generateMetadata(): Promise<Metadata> {
+    const branding = await getPublicBranding();
+    return {
+        title: {
+            default: `${branding.applicationName} — ${branding.subtitle}`,
+            template: `%s — ${branding.shortApplicationName}`,
+        },
+        applicationName: branding.applicationName,
+        description: branding.description,
+        icons: { icon: branding.faviconUrl || '/favicon.ico' },
+    };
+}
 
 const themeInitScript = `
 (() => {
   try {
-    const key = 'excodesk-theme';
-    const saved = localStorage.getItem(key) || 'system';
+    const key = 'compdesk-theme';
+    const legacyKey = 'excodesk-theme';
+    const saved = localStorage.getItem(key) || localStorage.getItem(legacyKey) || 'system';
+    if (!localStorage.getItem(key) && localStorage.getItem(legacyKey)) localStorage.setItem(key, saved);
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const resolved = saved === 'system' ? (prefersDark ? 'dark' : 'light') : saved;
     document.documentElement.classList.toggle('dark', resolved === 'dark');
@@ -23,13 +37,11 @@ const themeInitScript = `
 })();
 `;
 
-export default function RootLayout({
-    children,
-}: {
-    children: React.ReactNode;
-}) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+    const branding = await getPublicBranding();
+    const brandStyles = getBrandingStyleVariables(branding) as CSSProperties;
     return (
-        <html lang="en" suppressHydrationWarning>
+        <html lang="en" suppressHydrationWarning style={brandStyles}>
             <head>
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -40,12 +52,14 @@ export default function RootLayout({
                 <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
             </head>
             <body className="min-h-screen transition-theme">
-                <ThemeProvider>
-                    <QueryProvider>
-                        {children}
-                        <Toaster />
-                    </QueryProvider>
-                </ThemeProvider>
+                <BrandingProvider branding={branding}>
+                    <ThemeProvider>
+                        <QueryProvider>
+                            {children}
+                            <Toaster />
+                        </QueryProvider>
+                    </ThemeProvider>
+                </BrandingProvider>
             </body>
         </html>
     );

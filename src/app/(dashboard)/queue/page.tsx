@@ -13,7 +13,7 @@ import { Inbox, Search, AlertTriangle, SlidersHorizontal, X } from 'lucide-react
 
 const DEFAULT_LIMIT = 20;
 const PAGE_LIMITS = [10, 20, 50] as const;
-const PAGE_SIZE_KEY = 'excodesk-queue-page-size';
+const PAGE_SIZE_KEY = 'compdesk-queue-page-size';
 
 export default function QueueInboxPage() {
     const router = useRouter();

@@ -1,6 +1,6 @@
-# 🚀 ExcoDesk — Deployment Guide
+# 🚀 CompDesk — Deployment Guide
 
-This guide covers every way to deploy ExcoDesk: from a quick local test to a full production setup behind Nginx or Apache with SSL.
+This guide covers every way to deploy CompDesk: from a quick local test to a full production setup behind Nginx or Apache with SSL.
 
 ---
 
@@ -15,7 +15,7 @@ This guide covers every way to deploy ExcoDesk: from a quick local test to a ful
 7. [Database Setup](#database-setup)
 8. [IP Tracking & Proxy Headers](#ip-tracking--proxy-headers)
 9. [SSL/HTTPS Setup](#sslhttps-setup)
-10. [Updating ExcoDesk](#updating-excodesk)
+10. [Updating CompDesk](#updating-excodesk)
 11. [Troubleshooting](#troubleshooting)
 
 ---
@@ -24,7 +24,7 @@ This guide covers every way to deploy ExcoDesk: from a quick local test to a ful
 
 | Requirement | Version | Purpose |
 |-------------|---------|---------|
-| **Node.js** | 20+ | Runtime |
+| **Node.js** | 22.12+ (24 LTS recommended) | Runtime |
 | **npm** | 10+ | Package manager |
 | **PostgreSQL** | 16+ | Database (via Docker or standalone) |
 | **Docker** + Docker Compose | Latest | Container deployment (optional) |
@@ -33,9 +33,9 @@ This guide covers every way to deploy ExcoDesk: from a quick local test to a ful
 ### Install Node.js (Linux/Ubuntu)
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
-node -v    # Should show v20.x
+node -v    # Should show v24.x
 npm -v     # Should show 10.x
 ```
 
@@ -67,7 +67,7 @@ nano .env
 DATABASE_URL="postgresql://excodesk:YOUR_STRONG_PASSWORD@localhost:5432/excodesk?schema=public"
 
 # ── Auth ─────────────────────────────────────────────────────────
-AUTH_URL="https://excodesk.yourorg.com"
+AUTH_URL="https://compdesk.yourorg.com"
 AUTH_SECRET="$(openssl rand -base64 32)"           # Generate with this command
 
 # ── Microsoft Entra ID (SSO) ────────────────────────────────────
@@ -95,7 +95,7 @@ SMTP_PORT="587"
 SMTP_SECURE="false"
 SMTP_USER="noreply@yourorg.com"
 SMTP_PASS="your-smtp-password"
-SMTP_FROM="ExcoDesk <noreply@yourorg.com>"
+SMTP_FROM="CompDesk <noreply@yourorg.com>"
 
 # ── External API ────────────────────────────────────────────────
 API_KEY="generate-a-strong-api-key"
@@ -111,6 +111,23 @@ LOG_LEVEL="info"
 
 ---
 
+## Production upgrade and persistence rules
+
+Before every upgrade, back up both PostgreSQL and uploaded files. Never run `prisma migrate reset`, `npm run db:reset`, or `docker compose down -v` against production.
+
+```bash
+pg_dump --format=custom --file=compdesk-before-upgrade.dump "$DATABASE_URL"
+npm ci
+npm run db:generate
+npm run db:migrate:prod
+npm run verify
+```
+
+The department-category/template migration is transactional and preserves existing users, tickets, categories, submitted values, and queue-owned fields. It does not require seed execution.
+
+Ticket attachments and branding assets live in `public/uploads`. Docker Compose mounts the persistent `compdesk_uploads` named volume at `/app/public/uploads`; include it in backups. A standalone or multi-replica deployment must provide equivalent durable shared storage with write access for the application user.
+
+Do not run `npm run db:seed` in production unless you explicitly want demo data. A clean demo install can override `SEED_ADMIN_EMAIL` and `SEED_DEFAULT_PASSWORD`.
 ## Option A: Docker Compose (Recommended)
 
 The easiest way to deploy. One command starts both the database and the app.
@@ -118,8 +135,8 @@ The easiest way to deploy. One command starts both the database and the app.
 ### Step 1: Clone and Configure
 
 ```bash
-git clone https://github.com/your-org/excodesk.git
-cd excodesk
+git clone https://github.com/TahaHydra/CompDesk.git
+cd CompDesk
 cp .env.example .env
 nano .env    # Edit all values
 ```
@@ -132,7 +149,7 @@ docker compose up --build -d
 
 This starts:
 - **PostgreSQL 16** on port 5432 (internal)
-- **ExcoDesk app** on port 3000
+- **CompDesk app** on port 3000
 
 ### Step 3: Seed the Database (First-Time Only)
 
@@ -176,8 +193,8 @@ Deploy without Docker — just Node.js + a PostgreSQL server.
 ### Step 1: Install Dependencies
 
 ```bash
-git clone https://github.com/your-org/excodesk.git
-cd excodesk
+git clone https://github.com/TahaHydra/CompDesk.git
+cd CompDesk
 npm ci --production=false
 ```
 
@@ -219,18 +236,18 @@ node .next/standalone/server.js
 
 ### Step 6: Keep it Running (systemd)
 
-Create `/etc/systemd/system/excodesk.service`:
+Create `/etc/systemd/system/compdesk.service`:
 
 ```ini
 [Unit]
-Description=ExcoDesk Application
+Description=CompDesk Application
 After=network.target postgresql.service
 
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/excodesk
-EnvironmentFile=/opt/excodesk/.env
+WorkingDirectory=/opt/compdesk
+EnvironmentFile=/opt/compdesk/.env
 ExecStart=/usr/bin/node .next/standalone/server.js
 Restart=always
 RestartSec=10
@@ -243,9 +260,9 @@ Then enable and start:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable excodesk
-sudo systemctl start excodesk
-sudo systemctl status excodesk
+sudo systemctl enable compdesk
+sudo systemctl start compdesk
+sudo systemctl status compdesk
 ```
 
 ---
@@ -263,24 +280,24 @@ sudo apt-get install -y nginx
 
 ### Step 2: Configure Nginx
 
-Create `/etc/nginx/sites-available/excodesk`:
+Create `/etc/nginx/sites-available/compdesk`:
 
 ```nginx
 # HTTP → HTTPS redirect
 server {
     listen 80;
-    server_name excodesk.yourorg.com;
+    server_name compdesk.yourorg.com;
     return 301 https://$host$request_uri;
 }
 
 # HTTPS
 server {
     listen 443 ssl http2;
-    server_name excodesk.yourorg.com;
+    server_name compdesk.yourorg.com;
 
     # SSL certificates (use Let's Encrypt or your own)
-    ssl_certificate /etc/letsencrypt/live/excodesk.yourorg.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/excodesk.yourorg.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/compdesk.yourorg.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/compdesk.yourorg.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -304,7 +321,7 @@ server {
         proxy_read_timeout 86400;
     }
 
-    # File upload size (match ExcoDesk's limit)
+    # File upload size (match CompDesk's limit)
     client_max_body_size 10M;
 
     # Gzip compression
@@ -317,7 +334,7 @@ server {
 ### Step 3: Enable the Site
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/excodesk /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/compdesk /etc/nginx/sites-enabled/
 sudo nginx -t           # Test config syntax
 sudo systemctl reload nginx
 ```
@@ -326,7 +343,7 @@ sudo systemctl reload nginx
 
 ```bash
 sudo apt-get install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d excodesk.yourorg.com
+sudo certbot --nginx -d compdesk.yourorg.com
 # Follow prompts, certbot auto-renews
 ```
 
@@ -347,22 +364,22 @@ sudo systemctl restart apache2
 
 ### Step 2: Configure Apache
 
-Create `/etc/apache2/sites-available/excodesk.conf`:
+Create `/etc/apache2/sites-available/compdesk.conf`:
 
 ```apache
 <VirtualHost *:80>
-    ServerName excodesk.yourorg.com
+    ServerName compdesk.yourorg.com
     RewriteEngine On
     RewriteRule ^(.*)$ https://%{HTTP_HOST}$1 [R=301,L]
 </VirtualHost>
 
 <VirtualHost *:443>
-    ServerName excodesk.yourorg.com
+    ServerName compdesk.yourorg.com
 
     # SSL
     SSLEngine On
-    SSLCertificateFile /etc/letsencrypt/live/excodesk.yourorg.com/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/excodesk.yourorg.com/privkey.pem
+    SSLCertificateFile /etc/letsencrypt/live/compdesk.yourorg.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/compdesk.yourorg.com/privkey.pem
 
     # ⚠️ CRITICAL FOR IP TRACKING — forward real client IP
     ProxyPreserveHost On
@@ -392,7 +409,7 @@ Create `/etc/apache2/sites-available/excodesk.conf`:
 ### Step 3: Enable and Restart
 
 ```bash
-sudo a2ensite excodesk.conf
+sudo a2ensite compdesk.conf
 sudo apache2ctl configtest   # Should say "Syntax OK"
 sudo systemctl reload apache2
 ```
@@ -401,7 +418,7 @@ sudo systemctl reload apache2
 
 ```bash
 sudo apt-get install -y certbot python3-certbot-apache
-sudo certbot --apache -d excodesk.yourorg.com
+sudo certbot --apache -d compdesk.yourorg.com
 ```
 
 ---
@@ -446,11 +463,11 @@ npm run db:seed              # Seed initial data (first-time only)
 
 ## IP Tracking & Proxy Headers
 
-ExcoDesk tracks IP addresses in audit logs for security. **This works correctly with all deployment methods**, but you must ensure your reverse proxy forwards the real client IP.
+CompDesk tracks IP addresses in audit logs for security. **This works correctly with all deployment methods**, but you must ensure your reverse proxy forwards the real client IP.
 
 ### How It Works
 
-ExcoDesk reads the client IP from these headers (in order):
+CompDesk reads the client IP from these headers (in order):
 1. `X-Forwarded-For` — Set by Nginx/Apache/Docker
 2. `X-Real-IP` — Set by Nginx
 3. Falls back to the connection IP
@@ -477,9 +494,9 @@ After deploying, log in and check the **Admin → Logs** page. You should see yo
 ```bash
 sudo apt-get install -y certbot
 # For Nginx:
-sudo certbot --nginx -d excodesk.yourorg.com
+sudo certbot --nginx -d compdesk.yourorg.com
 # For Apache:
-sudo certbot --apache -d excodesk.yourorg.com
+sudo certbot --apache -d compdesk.yourorg.com
 # Auto-renewal is configured automatically
 ```
 
@@ -490,17 +507,17 @@ sudo openssl req -x509 -nodes -days 365 \
     -newkey rsa:2048 \
     -keyout /etc/ssl/private/excodesk.key \
     -out /etc/ssl/certs/excodesk.crt \
-    -subj "/CN=excodesk.yourorg.com"
+    -subj "/CN=compdesk.yourorg.com"
 ```
 
 ---
 
-## Updating ExcoDesk
+## Updating CompDesk
 
 ### With Docker
 
 ```bash
-cd /opt/excodesk
+cd /opt/compdesk
 git pull origin main
 docker compose up --build -d
 # Migrations run automatically on startup (Dockerfile CMD)
@@ -509,13 +526,13 @@ docker compose up --build -d
 ### Without Docker
 
 ```bash
-cd /opt/excodesk
+cd /opt/compdesk
 git pull origin main
 npm ci
 npx prisma migrate deploy
 npx prisma generate
 npm run build
-sudo systemctl restart excodesk
+sudo systemctl restart compdesk
 ```
 
 ---
@@ -553,7 +570,7 @@ Make sure `.next/static` is accessible. If using standalone mode, both `server.j
 ### SSO callback error
 
 - Verify `AUTH_URL` matches your actual URL exactly (no trailing slash)
-- Verify the Azure redirect URI matches: `https://excodesk.yourorg.com/api/auth/callback/microsoft-entra-id`
+- Verify the Azure redirect URI matches: `https://compdesk.yourorg.com/api/auth/callback/microsoft-entra-id`
 - Ensure admin consent is granted in Azure Portal
 
 ### Audit logs show wrong IP addresses
@@ -579,7 +596,7 @@ sudo kill -9 <PID>
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/excodesk.git && cd excodesk
+git clone https://github.com/TahaHydra/CompDesk.git && cd CompDesk
 
 # 2. Configure
 cp .env.example .env && nano .env
@@ -592,5 +609,5 @@ docker compose exec app npx prisma db seed
 
 # 5. Open browser
 open http://localhost:3000
-# Login: admin@exco.fr / Password123!
+# Login: the SEED_ADMIN_EMAIL / SEED_DEFAULT_PASSWORD values
 ```

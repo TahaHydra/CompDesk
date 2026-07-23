@@ -17,7 +17,8 @@ interface ThemeContextValue {
     setTheme: (theme: Theme) => void;
 }
 
-const THEME_STORAGE_KEY = 'excodesk-theme';
+const THEME_STORAGE_KEY = 'compdesk-theme';
+const LEGACY_THEME_STORAGE_KEY = 'excodesk-theme';
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -45,8 +46,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     useEffect(() => {
-        const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+        const storedTheme = (localStorage.getItem(THEME_STORAGE_KEY) ?? localStorage.getItem(LEGACY_THEME_STORAGE_KEY)) as Theme | null;
         const initialTheme = storedTheme ?? 'system';
+        if (!localStorage.getItem(THEME_STORAGE_KEY) && storedTheme) localStorage.setItem(THEME_STORAGE_KEY, storedTheme);
         setThemeState(initialTheme);
         applyThemeClass(initialTheme);
         setResolvedTheme(initialTheme === 'system' ? getSystemTheme() : initialTheme);

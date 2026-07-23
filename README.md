@@ -1,4 +1,4 @@
-# 🎫 ExcoDesk — Lightweight IT Helpdesk & Ticketing System
+# 🎫 CompDesk — Lightweight IT Helpdesk & Ticketing System
 
 A **production-ready**, modern ticketing system built for small organizations (2–3 agents, ~20 end users). Simpler than GLPI, powered by Microsoft Entra ID SSO.
 
@@ -31,24 +31,44 @@ A **production-ready**, modern ticketing system built for small organizations (2
 ## ✨ Features
 
 - **Ticket Management** — Create, assign, prioritize, and resolve tickets with full timeline history
-- **Department Routing** — Organize tickets by department (IT, HR, Finance) with agent assignments
+- **Department Routing** — Department-owned categories, department defaults, category form overrides, and agent assignments
 - **Role-Based Access** — Four roles: End User, Agent, Admin, Super Admin with granular permissions
 - **Microsoft SSO** — Sign in with Microsoft Entra ID (Azure AD) + local email/password fallback
 - **Real-time Notifications** — Bell icon shows recent activity on your tickets, auto-refreshes every 30s
 - **Profile Page** — View your account details, department access, and lifetime ticket statistics
 - **Dashboard Quick Links** — Admins can add custom external links visible to all users on the dashboard
 - **SLA Policies** — Per-department, per-priority response and resolution time targets
-- **Custom Form Fields** — Configure per-department ticket submission forms (dropdowns, text, checkboxes)
+- **Ticket Form Templates** — Versioned role-aware forms with built-ins, custom fields, conditions, validation, previews, and historical snapshots
 - **Escalation** — Agents can escalate tickets to higher-level support
 - **Canned Responses** — Pre-written reply templates for common issues
 - **Email Notifications** — Configurable SMTP with per-event toggles
 - **Audit Logging** — All admin and ticket changes are logged
 - **External API** — REST API for programmatic ticket creation and note appending
+- **Complete Branding** — Runtime names, copy, logos, favicon, colors, login methods/background, support address, metadata, and branded email
 - **Dark Mode** — Full dark/light theme support
 - **Webhooks** — HTTP callbacks on ticket events
 
 ---
 
+## Branding and ticket-form architecture
+
+Branding is read through one typed service. The public `/api/branding` response contains only safe pre-authentication values; admin changes and asset uploads use separate protected endpoints. Primary/accent colors are applied through root CSS variables, while runtime metadata controls the title, description, application name, and favicon.
+
+Every category belongs to one department (`Category.queueId`) and is unique by `(queueId, name)`. Ticket Form Template resolution is centralized and always uses category override → department default → protected system default. Browser-supplied template IDs are ignored. The server resolves and validates every submitted field, then stores the template ID/version, immutable schema snapshot, and sanitized values on the ticket.
+
+Historical tickets therefore keep their original labels and values after templates/categories are changed or archived.
+
+## Safe upgrades
+
+For an existing installation, back up PostgreSQL and `public/uploads`, then run:
+
+```bash
+npm run db:generate
+npm run db:migrate:prod
+npm run verify
+```
+
+Do not reset the database. The migration is transactional and remaps legacy global categories according to each ticket's real department before removing old rows. See [SETUP.md](SETUP.md) for rehearsal, seed, and backup details.
 ## 🏗 Architecture
 
 ```
@@ -113,7 +133,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open **http://localhost:3000** — you'll be redirected to the Microsoft sign-in page.
+Open **http://localhost:3000**. The configured local and/or Microsoft sign-in sections are shown.
 
 ### 5. Full Docker Deployment
 
@@ -129,10 +149,10 @@ docker compose up --build -d
 ### Step 1: Create App Registration
 
 1. Go to **Azure Portal** → **Microsoft Entra ID** → **App registrations** → **New registration**
-2. Name: `ExcoDesk`
+2. Name: `CompDesk`
 3. Supported account types: **Single tenant**
 4. Redirect URI: `http://localhost:3000/api/auth/callback/microsoft-entra-id`
-   - Production: `https://excodesk.yourorg.com/api/auth/callback/microsoft-entra-id`
+   - Production: `https://compdesk.yourorg.com/api/auth/callback/microsoft-entra-id`
 
 ### Step 2: Configure
 
@@ -167,7 +187,7 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=noreply@yourorg.com
 SMTP_PASS=your-password
-SMTP_FROM="ExcoDesk <noreply@yourorg.com>"
+SMTP_FROM="CompDesk <noreply@yourorg.com>"
 ```
 
 Emails are sent for:
@@ -194,7 +214,6 @@ Email sending **fails gracefully** — errors are logged but never crash the req
 | JWT-only sessions (lightweight) | ✅ |
 | Audit Logging | ✅ All admin/ticket changes |
 | File Upload Size Limits | ✅ 10MB default |
-| Antivirus Hook | ✅ Interface placeholder (Attachment model) |
 
 ---
 
@@ -343,7 +362,7 @@ Tests cover:
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `AUTH_SECRET` | Yes | Random 32+ char secret |
-| `AUTH_URL` | Yes | App URL (e.g., `https://excodesk.yourorg.com`) |
+| `AUTH_URL` | Yes | App URL (e.g., `https://compdesk.yourorg.com`) |
 | `AZURE_AD_CLIENT_ID` | Yes | Entra app client ID |
 | `AZURE_AD_CLIENT_SECRET` | Yes | Entra app client secret |
 | `AZURE_AD_TENANT_ID` | Yes | Entra tenant ID |
