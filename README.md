@@ -20,6 +20,7 @@ A **production-ready**, modern ticketing system built for small organizations (2
 
 | Document | Description |
 |----------|-------------|
+| [SETUP.md](SETUP.md) | Reliable Windows, macOS, and Linux local setup |
 | [README.md](README.md) | Developer setup, architecture, and configuration |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Full deployment guide (Docker, Nginx, Apache, standalone) |
 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Complete API reference for all endpoints |
@@ -76,30 +77,33 @@ A **production-ready**, modern ticketing system built for small organizations (2
 
 ## 🚀 Quick Start
 
+The canonical local-development instructions are in **[SETUP.md](SETUP.md)**.
+Docker is only required for PostgreSQL; Next.js runs directly in Node.js.
+
 ### Prerequisites
 
-- **Node.js** 20+
+- **Node.js** 24 LTS (22.12+ is supported)
 - **Docker** & Docker Compose (for PostgreSQL)
 - **Azure AD App Registration** (for SSO — see below)
 
 ### 1. Clone & Install
 
 ```bash
-cd compdesk-app
-cp .env.example .env     # Edit with your values
-npm install
+cd CompDesk
+cp .env.example .env     # PowerShell: Copy-Item .env.example .env
+npm ci
 ```
 
 ### 2. Start PostgreSQL
 
 ```bash
-docker compose up db -d
+npm run db:up
 ```
 
 ### 3. Run Migrations & Seed
 
 ```bash
-npx prisma migrate dev --name init
+npm run setup
 npm run db:seed
 ```
 

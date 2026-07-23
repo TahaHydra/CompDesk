@@ -2,6 +2,8 @@
 const nextConfig = {
     output: 'standalone',
     poweredByHeader: false,
+    // npm run verify lints first with ESLint 9; skip Next 15's deprecated lint wrapper.
+    eslint: { ignoreDuringBuilds: true },
     async headers() {
         return [
             {
