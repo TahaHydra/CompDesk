@@ -441,14 +441,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 items-start gap-2 sm:gap-3">
                     <Link href="/tickets">
-                        <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="shrink-0"><ArrowLeft className="h-4 w-4" /></Button>
                     </Link>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-sm font-mono text-muted-foreground">{ticket.key}</span>
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-sm text-muted-foreground">{ticket.key}</span>
                             <StatusBadge value={ticket.status} />
                             <PriorityBadge value={ticket.priority} />
                             {ticket.escalationLevel > 0 && (
@@ -458,11 +458,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> SLA Breached</Badge>
                             )}
                         </div>
-                        <h1 className="text-2xl font-bold mt-1">{ticket.title}</h1>
+                        <h1 className="mt-1.5 text-xl font-bold sm:text-2xl">{ticket.title}</h1>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2 pl-11 sm:pl-0">
                     {/* Claim button for agents when unassigned */}
                     {isAgent && !ticket.assigneeId && (
                         <Button

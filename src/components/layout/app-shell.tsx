@@ -41,7 +41,7 @@ import {
     CheckCircle2,
     AlertTriangle,
 } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { formatDistanceToNow } from 'date-fns';
@@ -79,13 +79,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
     const queryClient = useQueryClient();
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    // collapsed = desktop rail collapse; mobileOpen = off-canvas drawer on phones/tablets
+    const [collapsed, setCollapsed] = useState(false);
+    const [mobileOpen, setMobileOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [notifOpen, setNotifOpen] = useState(false);
 
     const userRole = session?.user?.role ?? 'USER';
     const isAdminUser = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
     const initials = session?.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
+
+    // Close the mobile drawer whenever the route changes
+    useEffect(() => {
+        setMobileOpen(false);
+    }, [pathname]);
+
+    // Lock body scroll while the mobile drawer is open
+    useEffect(() => {
+        if (mobileOpen) {
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = ''; };
+        }
+    }, [mobileOpen]);
 
     const { data: notifications } = useQuery({
         queryKey: ['notifications'],
@@ -105,26 +120,56 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     const unreadCount = notifications?.unreadCount ?? 0;
 
+    const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+
+    const NavLink = ({ item, active }: { item: { href: string; label: string; icon: any }; active: boolean }) => (
+        <Link
+            href={item.href}
+            title={item.label}
+            className={cn(
+                'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200',
+                active
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+        >
+            {active && (
+                <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+            )}
+            <item.icon className={cn('h-5 w-5 shrink-0 transition-transform group-hover:scale-110', collapsed && 'lg:mx-auto')} />
+            <span className={cn('truncate', collapsed && 'lg:hidden')}>{item.label}</span>
+        </Link>
+    );
+
     return (
         <div className="flex h-screen overflow-hidden bg-background">
-            {/* Sidebar */}
+            {/* Backdrop for mobile drawer */}
+            {mobileOpen && (
+                <div
+                    className="fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm lg:hidden animate-fade-in"
+                    onClick={() => setMobileOpen(false)}
+                    aria-hidden="true"
+                />
+            )}
+
+            {/* Sidebar — off-canvas drawer on mobile, collapsible rail on desktop */}
             <aside
                 className={cn(
-                    'relative flex flex-col border-r bg-card transition-all duration-300 ease-in-out',
-                    sidebarOpen ? 'w-64' : 'w-16'
+                    'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-card transition-transform duration-300 ease-in-out',
+                    'lg:static lg:z-auto lg:translate-x-0 lg:transition-[width]',
+                    mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
+                    collapsed ? 'lg:w-16' : 'lg:w-64'
                 )}
             >
                 {/* Logo */}
-                <Link href="/" className="flex h-16 items-center gap-3 border-b px-4 hover:bg-accent/50 transition-colors">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
+                <Link href="/" className="flex h-16 items-center gap-3 border-b px-4 transition-colors hover:bg-accent/50">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl brand-gradient shadow-md shadow-primary/25">
                         <Shield className="h-5 w-5 text-white" />
                     </div>
-                    {sidebarOpen && (
-                        <div className="animate-fade-in">
-                            <h1 className="text-lg font-bold gradient-text">ExcoDesk</h1>
-                            <p className="text-[10px] text-muted-foreground -mt-0.5">Helpdesk</p>
-                        </div>
-                    )}
+                    <div className={cn('min-w-0', collapsed && 'lg:hidden')}>
+                        <h1 className="font-display text-lg font-bold leading-tight gradient-text">ExcoDesk</h1>
+                        <p className="-mt-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">Helpdesk</p>
+                    </div>
                 </Link>
 
                 {/* Nav */}
@@ -133,76 +178,57 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         {navItems
                             .filter((item) => item.roles.includes(userRole))
                             .map((item) => (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    className={cn(
-                                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                                        pathname === item.href || pathname.startsWith(item.href + '/')
-                                            ? 'bg-primary/10 text-primary shadow-sm'
-                                            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                                    )}
-                                >
-                                    <item.icon className={cn('h-4.5 w-4.5 shrink-0', !sidebarOpen && 'mx-auto')} />
-                                    {sidebarOpen && <span className="animate-fade-in">{item.label}</span>}
-                                </Link>
+                                <NavLink key={item.href} item={item} active={isActive(item.href)} />
                             ))}
                     </nav>
 
-                    {isAdminUser && sidebarOpen && (
+                    {isAdminUser && (
                         <>
                             <Separator className="my-4" />
-                            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            <p className={cn(
+                                'mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground',
+                                collapsed && 'lg:hidden'
+                            )}>
                                 Admin
                             </p>
                             <nav className="space-y-1">
                                 {adminItems.map((item) => (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        className={cn(
-                                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                                            pathname.startsWith(item.href)
-                                                ? 'bg-primary/10 text-primary shadow-sm'
-                                                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                                        )}
-                                    >
-                                        <item.icon className="h-4.5 w-4.5 shrink-0" />
-                                        <span>{item.label}</span>
-                                    </Link>
+                                    <NavLink key={item.href} item={item} active={isActive(item.href)} />
                                 ))}
                             </nav>
                         </>
                     )}
                 </ScrollArea>
 
-                {/* Collapse button */}
+                {/* Collapse button — desktop only */}
                 <button
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full border bg-background shadow-sm hover:bg-accent transition-transform"
+                    onClick={() => setCollapsed(!collapsed)}
+                    aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    className="absolute -right-3 top-20 hidden h-6 w-6 items-center justify-center rounded-full border bg-background shadow-sm transition-colors hover:bg-accent lg:flex"
                 >
-                    <ChevronLeft className={cn('h-3 w-3 transition-transform', !sidebarOpen && 'rotate-180')} />
+                    <ChevronLeft className={cn('h-3 w-3 transition-transform', collapsed && 'rotate-180')} />
                 </button>
             </aside>
 
             {/* Main content */}
             <div className="flex flex-1 flex-col overflow-hidden">
                 {/* Top bar */}
-                <header className="flex h-16 items-center justify-between border-b bg-card/50 backdrop-blur-sm px-6">
-                    <div className="flex items-center gap-4">
+                <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b bg-card/70 px-3 backdrop-blur-md sm:px-6">
+                    <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
                         <button
-                            className="lg:hidden"
-                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
+                            onClick={() => setMobileOpen(true)}
+                            aria-label="Open menu"
                         >
                             <Menu className="h-5 w-5" />
                         </button>
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <div className="relative w-full max-w-xs sm:max-w-sm">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <Input
                                 placeholder="Search tickets..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-80 pl-9 h-9 bg-muted/50"
+                                className="h-9 w-full bg-muted/60 pl-9"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && searchQuery.trim()) {
                                         router.push(`/tickets?search=${encodeURIComponent(searchQuery.trim())}`);
@@ -212,22 +238,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                         <ThemeToggle />
                         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
                             <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon" className="relative">
-                                    <Bell className="h-4.5 w-4.5" />
+                                <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+                                    <Bell className="h-5 w-5" />
                                     {unreadCount > 0 && (
-                                        <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 animate-pulse-dot" />
+                                        <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
+                                            <span className="absolute inline-flex h-full w-full animate-pulse-dot rounded-full bg-red-500" />
+                                            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                                        </span>
                                     )}
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent align="end" className="w-96 p-0">
-                                <div className="flex items-center justify-between px-4 py-3 border-b">
-                                    <h3 className="font-semibold text-sm">Notifications</h3>
+                            <PopoverContent align="end" className="w-[calc(100vw-2rem)] max-w-96 p-0">
+                                <div className="flex items-center justify-between border-b px-4 py-3">
+                                    <h3 className="text-sm font-semibold">Notifications</h3>
                                     {unreadCount > 0 && (
-                                        <Button variant="ghost" size="sm" className="text-xs h-7 text-primary" onClick={markAllRead}>
+                                        <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={markAllRead}>
                                             Mark all read
                                         </Button>
                                     )}
@@ -235,9 +264,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                 <ScrollArea className="max-h-80">
                                     {(!notifications?.items || notifications.items.length === 0) ? (
                                         <div className="flex flex-col items-center justify-center py-10 text-center">
-                                            <Bell className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                                            <Bell className="mb-2 h-8 w-8 text-muted-foreground/40" />
                                             <p className="text-sm text-muted-foreground">No notifications yet</p>
-                                            <p className="text-xs text-muted-foreground/70 mt-1">Activity on your tickets will show up here</p>
+                                            <p className="mt-1 text-xs text-muted-foreground/70">Activity on your tickets will show up here</p>
                                         </div>
                                     ) : (
                                         <div className="divide-y">
@@ -246,13 +275,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                                     key={n.id}
                                                     href={`/tickets/${n.ticketId}`}
                                                     onClick={() => setNotifOpen(false)}
-                                                    className="flex items-start gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
+                                                    className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
                                                 >
                                                     <div className="mt-0.5 shrink-0">{notificationIcon(n.type)}</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium truncate">{n.ticketKey}: {n.ticketTitle}</p>
-                                                        <p className="text-xs text-muted-foreground truncate">{n.content || n.type.replace(/_/g, ' ').toLowerCase()}</p>
-                                                        <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-medium">{n.ticketKey}: {n.ticketTitle}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{n.content || n.type.replace(/_/g, ' ').toLowerCase()}</p>
+                                                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">
                                                             {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
                                                         </p>
                                                     </div>
@@ -266,31 +295,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="flex items-center gap-2 h-auto p-1.5">
+                                <Button variant="ghost" className="flex h-auto items-center gap-2 p-1.5">
                                     <Avatar className="h-8 w-8">
-                                        <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-xs">
+                                        <AvatarFallback className="brand-gradient text-xs text-white">
                                             {initials}
                                         </AvatarFallback>
                                     </Avatar>
-                                    {sidebarOpen && (
-                                        <div className="text-left hidden sm:block">
-                                            <p className="text-sm font-medium">{session?.user?.name}</p>
-                                            <p className="text-xs text-muted-foreground">{userRole}</p>
-                                        </div>
-                                    )}
+                                    <div className="hidden text-left sm:block">
+                                        <p className="max-w-[140px] truncate text-sm font-medium leading-tight">{session?.user?.name}</p>
+                                        <p className="text-xs text-muted-foreground">{userRole.replace('_', ' ')}</p>
+                                    </div>
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuLabel>{session?.user?.email}</DropdownMenuLabel>
+                            <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel className="truncate font-normal text-muted-foreground">{session?.user?.email}</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem asChild className="cursor-pointer">
-                                    <Link href="/profile" className="flex items-center w-full">
+                                    <Link href="/profile" className="flex w-full items-center">
                                         <Shield className="mr-2 h-4 w-4" /> Profile
                                     </Link>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer">
-                                    <LogOut className="mr-2 h-4 w-4 text-red-500" />
-                                    <span className="text-red-500">Sign out</span>
+                                <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer text-red-500 focus:text-red-500">
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    <span>Sign out</span>
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
@@ -299,7 +326,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                 {/* Page content */}
                 <main className="flex-1 overflow-y-auto">
-                    <div className="container py-6 max-w-7xl animate-slide-in">
+                    <div className="container max-w-7xl py-6 md:py-8">
                         {children}
                     </div>
                 </main>

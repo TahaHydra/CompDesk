@@ -14,6 +14,7 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/layout/page-header';
 import { Plus, Tag, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -109,12 +110,7 @@ export default function AdminTagsPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <Tag className="h-8 w-8 text-primary" /> Tags
-                </h1>
-                <p className="text-muted-foreground mt-1">Manage reusable ticket tags</p>
-            </div>
+            <PageHeader icon={Tag} title="Tags" description="Manage reusable ticket tags" />
 
             <Card className="border shadow-sm pt-4">
                 <CardContent className="space-y-4">

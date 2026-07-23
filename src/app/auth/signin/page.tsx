@@ -45,7 +45,7 @@ function SignInForm() {
         <Card className="w-full max-w-md mx-4 border-0 shadow-2xl backdrop-blur-sm bg-card/90 relative z-10">
             <CardHeader className="text-center pb-2">
                 <div className="flex justify-center mb-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl brand-gradient shadow-lg shadow-primary/30">
                         <Shield className="h-8 w-8 text-white" />
                     </div>
                 </div>

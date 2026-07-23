@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/layout/page-header';
 import { Tags, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -88,12 +89,11 @@ export default function AdminCategoriesPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <Tags className="h-8 w-8 text-primary" /> Categories
-                </h1>
-                <p className="text-muted-foreground mt-1">Manage ticket categories globally</p>
-            </div>
+            <PageHeader
+                icon={Tags}
+                title="Categories"
+                description="Manage ticket categories globally"
+            />
 
             <Card className="border shadow-sm pt-4">
                 <CardContent className="space-y-4">
@@ -105,7 +105,7 @@ export default function AdminCategoriesPage() {
                             </DialogTrigger>
                             <DialogContent>
                                 <DialogHeader><DialogTitle>New Category</DialogTitle></DialogHeader>
-                                <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+                                <div className="space-y-2 py-2"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
                                 <DialogFooter><Button onClick={() => createCategory.mutate()} disabled={!name}>Create</Button></DialogFooter>
                             </DialogContent>
                         </Dialog>
@@ -114,9 +114,9 @@ export default function AdminCategoriesPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {(categories ?? []).map((c: any) => (
                             <Card key={c.id} className="border shadow-none">
-                                <CardContent className="p-4 py-3 flex items-center justify-between">
-                                    <span className="font-medium text-sm">{c.name}</span>
-                                    <div className="flex gap-1">
+                                <CardContent className="p-4 py-3 flex items-center justify-between gap-2">
+                                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.name}</span>
+                                    <div className="flex shrink-0 gap-1">
                                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEditClick(c)}>
                                             <Pencil className="h-4 w-4" />
                                         </Button>
@@ -138,7 +138,7 @@ export default function AdminCategoriesPage() {
                     <Dialog open={editOpen} onOpenChange={setEditOpen}>
                         <DialogContent>
                             <DialogHeader><DialogTitle>Edit Category</DialogTitle></DialogHeader>
-                            <div><Label>Name</Label><Input value={editName} onChange={(e) => setEditName(e.target.value)} /></div>
+                            <div className="space-y-2 py-2"><Label>Name</Label><Input value={editName} onChange={(e) => setEditName(e.target.value)} /></div>
                             <DialogFooter><Button onClick={() => updateCategory.mutate()} disabled={!editName || editName === categories?.find((c: any) => c.id === editId)?.name}>Save changes</Button></DialogFooter>
                         </DialogContent>
                     </Dialog>

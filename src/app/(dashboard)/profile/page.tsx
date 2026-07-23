@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { PageHeader } from '@/components/layout/page-header';
+import { cn } from '@/lib/utils';
 import { Shield, Mail, Calendar, CheckCircle2, Ticket, AlertTriangle } from 'lucide-react';
 
 export default async function ProfilePage() {
@@ -45,27 +47,25 @@ export default async function ProfilePage() {
         where: { assigneeId: user.id, status: { notIn: ['CLOSED', 'RESOLVED'] } }
     });
 
-    const initials = user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
+    const isAgentRole = user.role === 'AGENT' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN';
+    const initials = (user.name ?? user.email ?? '?').split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
 
     return (
         <div className="space-y-6 max-w-4xl mx-auto">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight">My Profile</h1>
-                <p className="text-muted-foreground mt-1">View your account details and statistics.</p>
-            </div>
+            <PageHeader title="My Profile" description="View your account details and statistics." />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
                 {/* User Card */}
                 <Card className="col-span-1 md:col-span-1 border shadow-sm flex flex-col items-center p-6 text-center space-y-4">
                     <Avatar className="h-24 w-24 border-4 border-background shadow-lg">
-                        <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-3xl font-bold">
+                        <AvatarFallback className="brand-gradient text-white text-3xl font-bold">
                             {initials}
                         </AvatarFallback>
                     </Avatar>
 
                     <div>
-                        <h2 className="text-xl font-bold text-foreground">{user.name}</h2>
+                        <h2 className="text-xl font-bold text-foreground">{user.name ?? 'Unnamed user'}</h2>
                         <div className="flex items-center justify-center gap-2 mt-1 text-muted-foreground text-sm">
                             <Mail className="h-3.5 w-3.5" />
                             {user.email}
@@ -92,12 +92,12 @@ export default async function ProfilePage() {
                             <CardTitle className="text-lg">Lifetime Ticket Statistics</CardTitle>
                             <CardDescription>An overview of your helpdesk activity.</CardDescription>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 text-center">
+                        <CardContent className={cn('grid gap-4 p-4 text-center', isAgentRole ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1')}>
                             <div className="space-y-1 p-3 bg-accent rounded-lg">
                                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Submitted</p>
                                 <p className="text-3xl font-bold text-primary">{ticketsSubmitted}</p>
                             </div>
-                            {(user.role === 'AGENT' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
+                            {isAgentRole && (
                                 <>
                                     <div className="space-y-1 p-3 bg-accent rounded-lg">
                                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-center gap-1"><Ticket className="h-3.5 w-3.5" /> Active</p>

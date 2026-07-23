@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
-import { Plus, Tag } from 'lucide-react';
+import { PageHeader } from '@/components/layout/page-header';
+import { Plus, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getTicketValueBadgeClass } from '@/lib/ticket-display';
@@ -98,16 +99,15 @@ export default function AdminTemplatesPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <Tag className="h-8 w-8 text-primary" /> Ticket Templates & Form Fields
-                </h1>
-                <p className="text-muted-foreground mt-1">Manage custom fields per department</p>
-            </div>
+            <PageHeader
+                icon={FileText}
+                title="Ticket Templates & Form Fields"
+                description="Manage custom fields per department"
+            />
 
             <Card className="border shadow-sm pt-4">
                 <CardContent className="space-y-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <Select value={selectedQueue} onValueChange={setSelectedQueue}>
                             <SelectTrigger className="w-56 h-9"><SelectValue placeholder="Select department" /></SelectTrigger>
                             <SelectContent>
@@ -124,11 +124,11 @@ export default function AdminTemplatesPage() {
                                 <DialogContent>
                                     <DialogHeader><DialogTitle>New Custom Field</DialogTitle></DialogHeader>
                                     <div className="space-y-4">
-                                        <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                             <div><Label>Label</Label><Input value={fieldLabel} onChange={(e) => { setFieldLabel(e.target.value); setFieldKey(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')); }} placeholder="e.g. Asset Tag" /></div>
                                             <div><Label>Key</Label><Input value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} placeholder="auto-generated" /></div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                             <div>
                                                 <Label>Type</Label>
                                                 <Select value={fieldType} onValueChange={setFieldType}>
@@ -175,14 +175,14 @@ export default function AdminTemplatesPage() {
                             ) : (
                                 (fields ?? []).map((f: any) => (
                                     <Card key={f.id} className="border shadow-none">
-                                        <CardContent className="p-3 flex items-center justify-between">
-                                            <div>
-                                                <div className="flex items-center gap-2">
+                                        <CardContent className="p-3 flex items-center justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2">
                                                     <span className="text-sm font-medium">{f.label}</span>
                                                     <Badge variant="secondary" className="text-xs">{f.type}</Badge>
                                                     {f.required && <Badge variant="outline" className="text-xs text-red-600">Required</Badge>}
                                                 </div>
-                                                <p className="text-xs text-muted-foreground mt-0.5">Key: {f.fieldKey} · Visible to: {f.visibleTo?.join(', ') || 'All'}</p>
+                                                <p className="mt-0.5 truncate text-xs text-muted-foreground">Key: {f.fieldKey} · Visible to: {f.visibleTo?.join(', ') || 'All'}</p>
                                                 {Array.isArray(f.options) && f.options.length > 0 ? (
                                                     <div className="mt-2 flex flex-wrap gap-1.5">
                                                         {f.options.map((option: string) => (
@@ -191,7 +191,7 @@ export default function AdminTemplatesPage() {
                                                     </div>
                                                 ) : null}
                                             </div>
-                                            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                            <Button variant="ghost" size="sm" className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                                 onClick={() => deleteField.mutate(f.id)}>Delete</Button>
                                         </CardContent>
                                     </Card>
