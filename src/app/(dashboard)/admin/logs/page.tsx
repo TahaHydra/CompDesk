@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/layout/page-header';
 
 type AuditLog = {
     id: string;
@@ -52,14 +53,11 @@ export default function AdminLogsPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                    <FileText className="h-8 w-8 text-primary" /> Audit Logs
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                    Review authentication and administrative activity.
-                </p>
-            </div>
+            <PageHeader
+                icon={FileText}
+                title="Audit Logs"
+                description="Review authentication and administrative activity."
+            />
 
             <form onSubmit={submitSearch} className="flex max-w-xl gap-2">
                 <div className="relative flex-1">

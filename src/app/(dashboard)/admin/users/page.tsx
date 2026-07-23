@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/layout/page-header';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Shield, Plus, Search, Copy, Check, RotateCcw, Trash2, Pencil, UserPlus, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -160,17 +161,15 @@ export default function AdminUsersPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                        <Shield className="h-8 w-8 text-primary" /> User Management
-                    </h1>
-                    <p className="text-muted-foreground mt-1">{filteredUsers.length} users · Create, edit, and manage user accounts</p>
-                </div>
+            <PageHeader
+                icon={Shield}
+                title="User Management"
+                description={`${filteredUsers.length} users · Create, edit, and manage user accounts`}
+            >
                 <Button onClick={() => setCreateOpen(true)} className="gap-2">
                     <UserPlus className="h-4 w-4" /> Create User
                 </Button>
-            </div>
+            </PageHeader>
 
             {/* Search */}
             <div className="relative max-w-md">
@@ -191,7 +190,7 @@ export default function AdminUsersPage() {
                         <Card key={u.id} className={`border shadow-sm transition-colors ${!u.isActive ? 'opacity-60 border-dashed' : ''}`}>
                             <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <p className="font-semibold text-base truncate">{u.name}</p>
                                         {roleBadge(u.role)}
                                         {!u.isActive && <Badge variant="outline" className="text-xs text-red-500 border-red-300">Deactivated</Badge>}
@@ -210,7 +209,7 @@ export default function AdminUsersPage() {
                                     )}
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                                     {/* Quick role change */}
                                     <Select
                                         value={u.role}

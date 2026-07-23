@@ -2,52 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    /* Neutrals — a faint cool tint on the canvas so white cards lift off it */
+    --background: 220 33% 98%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 239 84% 67%;
+    /* Brand — a single confident indigo, deep enough for AA text on white */
+    --primary: 243 75% 59%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
+    --secondary: 220 20% 94%;
     --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
+    --muted: 220 20% 95%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 243 80% 96%;
+    --accent-foreground: 243 75% 40%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 239 84% 67%;
+    --border: 220 20% 89%;
+    --input: 220 20% 88%;
+    --ring: 243 75% 59%;
     --radius: 0.75rem;
+
+    --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   }
 
   .dark {
-    --background: 224 71% 4%;
-    --foreground: 213 31% 91%;
-    --card: 224 71% 4%;
-    --card-foreground: 213 31% 91%;
-    --popover: 224 71% 4%;
-    --popover-foreground: 213 31% 91%;
-    --primary: 239 84% 67%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 222 47% 11%;
-    --secondary-foreground: 213 31% 91%;
-    --muted: 223 47% 11%;
-    --muted-foreground: 215 16% 57%;
-    --accent: 216 34% 17%;
-    --accent-foreground: 213 31% 91%;
-    --destructive: 0 63% 31%;
+    /* Layered darks: canvas is darkest, cards lift above it for real depth */
+    --background: 222 47% 5%;
+    --foreground: 213 31% 93%;
+    --card: 222 40% 9%;
+    --card-foreground: 213 31% 93%;
+    --popover: 222 44% 8%;
+    --popover-foreground: 213 31% 93%;
+    --primary: 243 82% 70%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 222 32% 15%;
+    --secondary-foreground: 213 31% 93%;
+    --muted: 222 32% 14%;
+    --muted-foreground: 217 18% 62%;
+    --accent: 243 45% 20%;
+    --accent-foreground: 243 80% 88%;
+    --destructive: 0 63% 45%;
     --destructive-foreground: 0 0% 100%;
-    --border: 216 34% 17%;
-    --input: 216 34% 17%;
-    --ring: 239 84% 67%;
+    --border: 222 28% 18%;
+    --input: 222 28% 20%;
+    --ring: 243 82% 70%;
   }
 }
 
@@ -58,14 +62,25 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
   }
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -73,27 +88,40 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/20 rounded-full;
+  @apply bg-muted-foreground/25 rounded-full;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/40;
+  @apply bg-muted-foreground/45;
+  background-clip: padding-box;
 }
 
 /* Smooth transitions */
 .transition-theme {
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+/* Display face utility */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 /* Glow effects */
 .glow-primary {
-  box-shadow: 0 0 20px -5px hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 24px -6px hsl(var(--primary) / 0.35);
 }
 
-/* Gradient text */
+/* Gradient text — reserved for the brand mark */
 .gradient-text {
   @apply bg-clip-text text-transparent;
-  background-image: linear-gradient(135deg, hsl(239, 84%, 67%), hsl(280, 80%, 65%));
+  background-image: linear-gradient(120deg, hsl(243 75% 62%), hsl(276 74% 62%));
+}
+
+.brand-gradient {
+  background-image: linear-gradient(135deg, hsl(243 75% 60%), hsl(276 72% 58%));
 }
 
 /* Status colors */
@@ -138,11 +166,11 @@
   @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300;
 }
 
-/* Animation */
+/* Animations */
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
 
   to {
@@ -152,7 +180,7 @@
 }
 
 .animate-slide-in {
-  animation: slideIn 0.3s ease-out;
+  animation: slideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes fadeIn {
@@ -169,18 +197,56 @@
   animation: fadeIn 0.2s ease-out;
 }
 
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Staggered entrance for grids/lists — set --i on the item */
+.animate-rise {
+  opacity: 0;
+  animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
 @keyframes pulse-dot {
 
   0%,
   100% {
     opacity: 1;
+    transform: scale(1);
   }
 
   50% {
-    opacity: 0.4;
+    opacity: 0.35;
+    transform: scale(0.85);
   }
 }
 
 .animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-rise {
+    opacity: 1;
+  }
 }
