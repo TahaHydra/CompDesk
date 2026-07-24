@@ -19,3 +19,20 @@ describe('shared button interaction contract', () => {
         expect(source).not.toContain('event.preventDefault()');
     });
 });
+const appShellSource = fs.readFileSync(
+    path.join(process.cwd(), 'src/components/layout/app-shell.tsx'),
+    'utf8'
+);
+
+describe('sidebar navigation interaction contract', () => {
+    it('uses browser-native anchors for primary and administration navigation', () => {
+        const navLinkStart = appShellSource.indexOf('const NavLink =');
+        const navLinkEnd = appShellSource.indexOf('return (', navLinkStart);
+        const navLinkSource = appShellSource.slice(navLinkStart, navLinkEnd);
+        expect(navLinkSource).toContain('<a');
+        expect(navLinkSource).toContain('href={item.href}');
+        expect(navLinkSource).toContain("aria-current={active ? 'page' : undefined}");
+        expect(navLinkSource).not.toContain('<Link');
+        expect(navLinkSource).not.toContain('preventDefault');
+    });
+});

@@ -182,10 +182,16 @@ export default function AppShell({
 
     const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
+    // Primary navigation deliberately uses native anchors. The App Router can be
+    // left in a stale client state after a standalone rebuild or Edge back/forward
+    // restore; a native navigation always requests the current server document and
+    // still preserves modifier-click and open-in-new-tab browser behavior.
     const NavLink = ({ item, active }: { item: NavigationItem; active: boolean }) => (
-        <Link
+        <a
             href={item.href}
             title={item.label}
+            onClick={() => setMobileOpen(false)}
+            aria-current={active ? 'page' : undefined}
             className={cn(
                 'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200',
                 active
@@ -198,9 +204,8 @@ export default function AppShell({
             )}
             <item.icon className={cn('h-5 w-5 shrink-0', collapsed && 'lg:mx-auto')} />
             <span className={cn('truncate', collapsed && 'lg:hidden')}>{item.label}</span>
-        </Link>
+        </a>
     );
-
     return (
         <div className="flex h-screen overflow-hidden bg-background">
             {/* Backdrop for mobile drawer */}
