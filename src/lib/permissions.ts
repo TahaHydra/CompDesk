@@ -32,6 +32,35 @@ export async function getAgentAccessibleQueueIds(userId: string): Promise<string
     ];
 }
 
+export async function getAdministeredQueueIds(userId: string): Promise<string[]> {
+    const [groupQueues, directQueues] = await Promise.all([
+        prisma.queueGroup.findMany({
+            where: {
+                group: { members: { some: { userId } } },
+                role: 'admin',
+            },
+            select: { queueId: true },
+        }),
+        prisma.queueMember.findMany({
+            where: { userId, role: 'admin' },
+            select: { queueId: true },
+        }),
+    ]);
+
+    return [
+        ...new Set([
+            ...groupQueues.map((queue) => queue.queueId),
+            ...directQueues.map((queue) => queue.queueId),
+        ]),
+    ];
+}
+
+export async function canAdministerQueue(userId: string, role: Role, queueId: string): Promise<boolean> {
+    if (role === 'SUPER_ADMIN') return true;
+    if (role !== 'ADMIN') return false;
+    const queueIds = await getAdministeredQueueIds(userId);
+    return queueIds.includes(queueId);
+}
 export async function canAccessQueue(userId: string, role: Role, queueId: string): Promise<boolean> {
     if (isAdminRole(role)) return true;
     if (role !== 'AGENT') return false;

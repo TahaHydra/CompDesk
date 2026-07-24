@@ -201,7 +201,7 @@ model QueueGroup {
   id      String @id @default(uuid())
   queueId String @map("queue_id")
   groupId String @map("group_id")
-  role    String @default("agent") // "agent" | "requester"
+  role    String @default("agent") // "agent" | "requester" | "admin"
 
   queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -214,7 +214,7 @@ model QueueMember {
   id      String @id @default(uuid())
   queueId String @map("queue_id")
   userId  String @map("user_id")
-  role    String @default("agent") // "agent" | "requester"
+  role    String @default("agent") // "agent" | "requester" | "admin"
 
   queue Queue @relation(fields: [queueId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
