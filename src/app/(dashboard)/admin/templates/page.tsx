@@ -36,7 +36,7 @@ export default function AdminTemplatesPage() {
         queryKey: ['ticket-form-templates', 'all'],
         queryFn: async () => {
             const response = await fetch('/api/ticket-form-templates?includeArchived=true');
-            if (!response.ok) throw new Error('Failed to load ticket form templates');
+            if (!response.ok) throw new Error('Failed to load ticket templates');
             return response.json();
         },
     });
@@ -76,13 +76,13 @@ export default function AdminTemplatesPage() {
     const templates = templatesQuery.data ?? [];
     return (
         <div className="space-y-6">
-            <PageHeader icon={FileText} title="Ticket Form Templates" description="Build reusable forms and assign them to departments or category overrides.">
+            <PageHeader icon={FileText} title="Ticket Templates" description="Build reusable forms and assign them to departments or category overrides.">
                 <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New template</Button>
             </PageHeader>
 
             {templatesQuery.isLoading ? <div className="rounded-lg border p-10 text-center text-muted-foreground">Loading templates…</div> : null}
             {templatesQuery.isError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-destructive">{templatesQuery.error.message}</div> : null}
-            {!templatesQuery.isLoading && templates.length === 0 ? <div className="rounded-lg border border-dashed p-10 text-center text-muted-foreground">No ticket form templates are available.</div> : null}
+            {!templatesQuery.isLoading && templates.length === 0 ? <div className="rounded-lg border border-dashed p-10 text-center text-muted-foreground">No ticket templates are available yet.</div> : null}
 
             <div className="grid gap-4 lg:grid-cols-2">{templates.map((template) => {
                 const assigned = template.usage.departments.length + template.usage.categories.length;
@@ -110,7 +110,7 @@ export default function AdminTemplatesPage() {
             })}</div>
 
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                <DialogContent><DialogHeader><DialogTitle>Create Ticket Form Template</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Name</Label><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></div><div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} /></div><p className="text-sm text-muted-foreground">The new template will clone the current protected system default and can then be customized.</p></div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createTemplate.isPending} onClick={() => createTemplate.mutate({ name, description: description || null })}>Create and edit</Button></DialogFooter></DialogContent>
+                <DialogContent><DialogHeader><DialogTitle>Create Ticket Template</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Name</Label><Input value={name} onChange={(event) => setName(event.target.value)} autoFocus /></div><div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} /></div><p className="text-sm text-muted-foreground">The new template will clone the current protected system default and can then be customized.</p></div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createTemplate.isPending} onClick={() => createTemplate.mutate({ name, description: description || null })}>Create and edit</Button></DialogFooter></DialogContent>
             </Dialog>
             <TemplateEditor template={editing} open={Boolean(editing)} onOpenChange={(open) => { if (!open) setEditing(null); }} onSaved={() => void refresh()} />
         </div>

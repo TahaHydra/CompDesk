@@ -9,6 +9,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTheme } from '@/components/providers/theme-provider';
+import { useLanguage } from '@/components/providers/language-provider';
 
 const options = [
     { value: 'light', label: 'Light', icon: Sun },
@@ -18,11 +19,12 @@ const options = [
 
 export function ThemeToggle() {
     const { theme, resolvedTheme, setTheme } = useTheme();
+    const { t } = useLanguage();
 
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Toggle theme">
+                <Button variant="ghost" size="icon" aria-label={t('Theme')}>
                     {resolvedTheme === 'dark' ? (
                         <Moon className="h-5 w-5" />
                     ) : (
@@ -38,7 +40,7 @@ export function ThemeToggle() {
                         className="cursor-pointer"
                     >
                         <option.icon className="mr-2 h-4 w-4" />
-                        <span>{option.label}</span>
+                        <span>{t(option.label)}</span>
                         {theme === option.value ? <span className="ml-auto text-xs">✓</span> : null}
                     </DropdownMenuItem>
                 ))}

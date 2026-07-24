@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import type { Session } from 'next-auth';
+import type { LucideIcon } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -41,27 +42,39 @@ import {
     UserCheck,
     CheckCircle2,
     AlertTriangle,
+    BookOpen,
 } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { useBranding } from '@/components/providers/branding-provider';
+import { useLanguage } from '@/components/providers/language-provider';
 import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
-const navItems = [
+interface NavigationItem {
+    href: string;
+    label: string;
+    icon: LucideIcon;
+    roles?: string[];
+}
+
+const navItems: NavigationItem[] = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'] },
     { href: '/tickets', label: 'My Tickets', icon: Ticket, roles: ['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'] },
     { href: '/tickets/new', label: 'New Ticket', icon: Plus, roles: ['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'] },
     { href: '/queue', label: 'Department Inbox', icon: Inbox, roles: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] },
+    { href: '/help', label: 'Help Center', icon: BookOpen, roles: ['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'] },
 ];
 
-const adminItems = [
+const adminItems: NavigationItem[] = [
     { href: '/admin/departments', label: 'Departments', icon: FolderKanban },
-    { href: '/admin/templates', label: 'Ticket Form Templates', icon: FileText },
     { href: '/admin/categories', label: 'Categories', icon: Tags },
+    { href: '/admin/templates', label: 'Ticket Templates', icon: FileText },
     { href: '/admin/tags', label: 'Tags', icon: Tag },
     { href: '/admin/users', label: 'Users', icon: Users },
+    { href: '/admin/help', label: 'Help Content', icon: BookOpen },
     { href: '/admin/logs', label: 'Logs', icon: FileText },
     { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
@@ -86,6 +99,7 @@ export default function AppShell({
 }) {
     const { data: clientSession, status } = useSession();
     const branding = useBranding();
+    const { t, language } = useLanguage();
     const pathname = usePathname();
     const router = useRouter();
     const queryClient = useQueryClient();
@@ -142,7 +156,7 @@ export default function AppShell({
 
     const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
-    const NavLink = ({ item, active }: { item: { href: string; label: string; icon: any }; active: boolean }) => (
+    const NavLink = ({ item, active }: { item: NavigationItem; active: boolean }) => (
         <Link
             href={item.href}
             title={item.label}
@@ -194,9 +208,9 @@ export default function AppShell({
                 <ScrollArea className="flex-1 px-3 py-4">
                     <nav className="space-y-1">
                         {navItems
-                            .filter((item) => item.roles.includes(userRole))
+                            .filter((item) => item.roles?.includes(userRole))
                             .map((item) => (
-                                <NavLink key={item.href} item={item} active={isActive(item.href)} />
+                                <NavLink key={item.href} item={{ ...item, label: t(item.label) }} active={isActive(item.href)} />
                             ))}
                     </nav>
 
@@ -207,11 +221,11 @@ export default function AppShell({
                                 'mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground',
                                 collapsed && 'lg:hidden'
                             )}>
-                                Admin
+                                {t('Administration')}
                             </p>
                             <nav className="space-y-1">
                                 {adminItems.map((item) => (
-                                    <NavLink key={item.href} item={item} active={isActive(item.href)} />
+                                    <NavLink key={item.href} item={{ ...item, label: t(item.label) }} active={isActive(item.href)} />
                                 ))}
                             </nav>
                         </>
@@ -221,7 +235,7 @@ export default function AppShell({
                 {/* Collapse button — desktop only */}
                 <button
                     onClick={() => setCollapsed(!collapsed)}
-                    aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
                     className="absolute -right-3 top-20 hidden h-6 w-6 items-center justify-center rounded-full border bg-background shadow-sm transition-colors hover:bg-accent lg:flex"
                 >
                     <ChevronLeft className={cn('h-3 w-3 transition-transform', collapsed && 'rotate-180')} />
@@ -236,14 +250,14 @@ export default function AppShell({
                         <button
                             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
                             onClick={() => setMobileOpen(true)}
-                            aria-label="Open menu"
+                            aria-label={t('Open menu')}
                         >
                             <Menu className="h-5 w-5" />
                         </button>
                         <div className="relative w-full max-w-xs sm:max-w-sm">
                             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <Input
-                                placeholder="Search tickets..."
+                                placeholder={t('Search tickets...')}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="h-9 w-full bg-muted/60 pl-9"
@@ -260,7 +274,7 @@ export default function AppShell({
                         <ThemeToggle />
                         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
                             <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+                                <Button variant="ghost" size="icon" className="relative" aria-label={t('Notifications')}>
                                     <Bell className="h-5 w-5" />
                                     {unreadCount > 0 && (
                                         <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
@@ -272,10 +286,10 @@ export default function AppShell({
                             </PopoverTrigger>
                             <PopoverContent align="end" className="w-[calc(100vw-2rem)] max-w-96 p-0">
                                 <div className="flex items-center justify-between border-b px-4 py-3">
-                                    <h3 className="text-sm font-semibold">Notifications</h3>
+                                    <h3 className="text-sm font-semibold">{t('Notifications')}</h3>
                                     {unreadCount > 0 && (
                                         <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={markAllRead}>
-                                            Mark all read
+                                            {t('Mark all as read')}
                                         </Button>
                                     )}
                                 </div>
@@ -283,8 +297,8 @@ export default function AppShell({
                                     {(!notifications?.items || notifications.items.length === 0) ? (
                                         <div className="flex flex-col items-center justify-center py-10 text-center">
                                             <Bell className="mb-2 h-8 w-8 text-muted-foreground/40" />
-                                            <p className="text-sm text-muted-foreground">No notifications yet</p>
-                                            <p className="mt-1 text-xs text-muted-foreground/70">Activity on your tickets will show up here</p>
+                                            <p className="text-sm text-muted-foreground">{t('No notifications yet')}</p>
+                                            <p className="mt-1 text-xs text-muted-foreground/70">{t('Activity on your tickets will show up here')}</p>
                                         </div>
                                     ) : (
                                         <div className="divide-y">
@@ -300,7 +314,7 @@ export default function AppShell({
                                                         <p className="truncate text-sm font-medium">{n.ticketKey}: {n.ticketTitle}</p>
                                                         <p className="truncate text-xs text-muted-foreground">{n.content || n.type.replace(/_/g, ' ').toLowerCase()}</p>
                                                         <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                                                            {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+                                                            {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: language === 'fr' ? fr : undefined })}
                                                         </p>
                                                     </div>
                                                 </Link>
@@ -330,12 +344,12 @@ export default function AppShell({
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem asChild className="cursor-pointer">
                                     <Link href="/profile" className="flex w-full items-center">
-                                        <Shield className="mr-2 h-4 w-4" /> Profile
+                                        <Shield className="mr-2 h-4 w-4" /> {t('Profile')}
                                     </Link>
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer text-red-500 focus:text-red-500">
                                     <LogOut className="mr-2 h-4 w-4" />
-                                    <span>Sign out</span>
+                                    <span>{t('Sign out')}</span>
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>

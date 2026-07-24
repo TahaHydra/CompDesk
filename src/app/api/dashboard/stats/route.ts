@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
+import { parseDashboardLinks } from '@/lib/dashboard-links';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -13,7 +15,7 @@ export async function GET() {
         const userId = session.user.id;
         const role = session.user.role;
 
-        let whereClause: Record<string, unknown> = {};
+        let whereClause: Prisma.TicketWhereInput = {};
 
         if (role === 'USER') {
             // End users see only their own tickets
@@ -56,7 +58,7 @@ export async function GET() {
             prisma.ticket.count({ where: { ...whereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
             prisma.ticket.count({ where: { ...whereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
             prisma.ticket.findMany({
-                where: whereClause as any,
+                where: whereClause,
                 include: {
                     queue: { select: { name: true } },
                     requester: { select: { name: true } },
@@ -71,23 +73,18 @@ export async function GET() {
                     ...whereClause,
                     escalationLevel: { gt: 0 },
                     status: { notIn: ['CLOSED', 'RESOLVED'] },
-                } as any,
+                },
             }).catch(() => 0), // Field doesn't exist yet — graceful fallback
             dashboardLinksEnabled
                 ? prisma.appSetting.findUnique({ where: { key: 'dashboard_links' } })
                 : Promise.resolve(null)
         ]);
 
-        let customLinks = [];
-        try {
-            if (dashboardLinksEnabled && dashboardLinksSetting?.value) {
-                customLinks = JSON.parse(dashboardLinksSetting.value);
-            }
-        } catch {
-            logger.warn('Failed to parse dashboard_links JSON');
-        }
+        const customLinks = dashboardLinksEnabled
+            ? parseDashboardLinks(dashboardLinksSetting?.value)
+            : [];
 
-        return NextResponse.json({
+return NextResponse.json({
             stats: { total, open, pending, resolved, urgent, escalated },
             recentTickets,
             customLinks,
