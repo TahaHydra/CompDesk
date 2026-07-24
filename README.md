@@ -63,7 +63,7 @@ The authenticated Help Center stores English and French collections/articles, fo
 
 ## Safe upgrades
 
-For an existing installation, back up PostgreSQL and `public/uploads`, then run:
+For an existing installation, back up PostgreSQL, `public/uploads` (branding and quick-link assets), and `storage/attachments` (private ticket files), then run:
 
 ```bash
 npm run db:generate

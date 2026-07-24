@@ -6,6 +6,12 @@ import { sendTicketUpdatedEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
+import { z } from 'zod';
+
+const escalationSchema = z.object({
+    escalateToId: z.string().uuid().nullable().optional(),
+    reason: z.string().trim().max(2_000).optional(),
+}).strict();
 
 // POST /api/tickets/[id]/escalate — escalate a ticket
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -16,8 +22,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
 
         const { id: ticketId } = await params;
-        const body = await req.json();
-        const { escalateToId, reason } = body;
+        const parsed = escalationSchema.safeParse(await req.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: 'Escalation validation failed', details: parsed.error.flatten() }, { status: 400 });
+        }
+        const { escalateToId, reason } = parsed.data;
 
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
@@ -36,12 +45,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (ticket.status === 'CLOSED' || ticket.status === 'RESOLVED') {
             return NextResponse.json({ error: 'Cannot escalate a closed/resolved ticket' }, { status: 400 });
         }
-        if (session.user.role === 'AGENT' && escalateToId) {
+        if (escalateToId) {
             const target = await prisma.user.findUnique({
                 where: { id: escalateToId },
-                select: { id: true, role: true },
+                select: { id: true, role: true, isActive: true },
             });
-            if (!target || !isAgentOrAbove(target.role)) {
+            if (!target || !target.isActive || !isAgentOrAbove(target.role)) {
                 return NextResponse.json({ error: 'Escalation target must be an agent or admin' }, { status: 400 });
             }
             const targetHasAccess = await canAccessQueue(target.id, target.role, ticket.queueId);
@@ -50,7 +59,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             }
         }
 
-        const newLevel = (ticket as any).escalationLevel + 1;
+        const newLevel = ticket.escalationLevel + 1;
 
         // Update ticket with escalation
         const updated = await prisma.ticket.update({
@@ -63,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 assigneeId: escalateToId || ticket.assigneeId,
                 priority: newLevel >= 2 ? 'URGENT' : ticket.priority === 'NORMAL' ? 'HIGH' : ticket.priority,
                 status: 'OPEN',
-            } as any,
+            },
             include: {
                 assignee: true,
                 escalatedTo: true,
@@ -81,14 +90,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     level: newLevel,
                     escalatedToId: escalateToId,
                     previousAssigneeId: ticket.assigneeId,
-                } as any,
+                },
             },
         });
 
         // Notify the person it's escalated to
-        if (escalateToId && (updated as any).escalatedTo) {
+        if (escalateToId && updated.escalatedTo) {
             sendTicketUpdatedEmail(
-                [(updated as any).escalatedTo.email],
+                [updated.escalatedTo.email],
                 ticket.key,
                 ticket.title,
                 'Ticket Escalated',

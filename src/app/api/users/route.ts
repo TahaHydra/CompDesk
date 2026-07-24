@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { isAdmin } from '@/lib/utils';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { getAgentAccessibleQueueIds, isAgentRole } from '@/lib/permissions';
+import { getAgentAccessibleQueueIds, getQueueInboxQueueIds, isAgentRole } from '@/lib/permissions';
 
 // Generate a secure random password
 function generatePassword(length = 16): string {
@@ -41,13 +40,15 @@ export async function GET() {
         } as const;
 
         let users;
-        if (isAdmin(session.user.role)) {
+        if (session.user.role === 'SUPER_ADMIN') {
             users = await prisma.user.findMany({
                 select: userSelect,
                 orderBy: { name: 'asc' },
             });
         } else {
-            const accessibleQueueIds = await getAgentAccessibleQueueIds(session.user.id);
+            const accessibleQueueIds = session.user.role === 'ADMIN'
+                ? await getQueueInboxQueueIds(session.user.id, session.user.role) ?? []
+                : await getAgentAccessibleQueueIds(session.user.id);
             users = await prisma.user.findMany({
                 where: {
                     OR: [
@@ -56,10 +57,22 @@ export async function GET() {
                             queueMemberships: {
                                 some: {
                                     queueId: { in: accessibleQueueIds },
-                                    role: 'agent',
+                                    role: { in: ['agent', 'admin'] },
                                 },
                             },
                         },
+                        {
+                            groupMemberships: {
+                                some: {
+                                    group: {
+                                        queueAssignments: {
+                                            some: { queueId: { in: accessibleQueueIds }, role: { in: ['agent', 'admin'] } },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        { role: 'SUPER_ADMIN', isActive: true },
                     ],
                 },
                 select: userSelect,
@@ -84,11 +97,15 @@ export async function GET() {
 export async function POST(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only super administrators can manage users' }, { status: 403 });
         }
 
         const { name, email, role, password: providedPassword } = await req.json();
+
+        if (role === 'SUPER_ADMIN' && session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only a super administrator can grant the super administrator role' }, { status: 403 });
+        }
 
         if (!name || !email) {
             return NextResponse.json({ error: 'Name and email are required' }, { status: 400 });
@@ -144,8 +161,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only super administrators can manage users' }, { status: 403 });
         }
 
         const { userId, role, name, email, isActive, queueIds, resetPassword } = await req.json();
@@ -153,7 +170,44 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
         }
 
-        const updateData: any = {};
+        const targetUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, role: true, isActive: true },
+        });
+        if (!targetUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        if (session.user.role !== 'SUPER_ADMIN' && targetUser.role === 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only a super administrator can modify a super administrator' }, { status: 403 });
+        }
+        if (role === 'SUPER_ADMIN' && session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only a super administrator can grant the super administrator role' }, { status: 403 });
+        }
+        const validRoles = ['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'];
+        if (role !== undefined && !validRoles.includes(role)) {
+            return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+        }
+        if (userId === session.user.id && ((role && role !== targetUser.role) || isActive === false)) {
+            return NextResponse.json({ error: 'You cannot demote or deactivate your own account' }, { status: 400 });
+        }
+        if (targetUser.role === 'SUPER_ADMIN' && ((role && role !== 'SUPER_ADMIN') || isActive === false)) {
+            const otherActiveSuperAdmins = await prisma.user.count({
+                where: { role: 'SUPER_ADMIN', isActive: true, id: { not: userId } },
+            });
+            if (otherActiveSuperAdmins === 0) {
+                return NextResponse.json({ error: 'At least one active super administrator is required' }, { status: 409 });
+            }
+        }
+        if (Array.isArray(queueIds)) {
+            const uniqueQueueIds = [...new Set(queueIds.filter((id: unknown): id is string => typeof id === 'string'))];
+            if (uniqueQueueIds.length !== queueIds.length) {
+                return NextResponse.json({ error: 'Department assignments contain invalid or duplicate IDs' }, { status: 400 });
+            }
+            const existingQueueCount = await prisma.queue.count({ where: { id: { in: uniqueQueueIds } } });
+            if (existingQueueCount !== uniqueQueueIds.length) {
+                return NextResponse.json({ error: 'One or more departments do not exist' }, { status: 400 });
+            }
+        }
+
+        const updateData: Record<string, unknown> = {};
         if (role) updateData.role = role;
         if (name !== undefined) updateData.name = name;
         if (email !== undefined) updateData.email = email.toLowerCase().trim();
@@ -174,7 +228,7 @@ export async function PATCH(req: NextRequest) {
 
         // Handle department assignments
         if (Array.isArray(queueIds)) {
-            await prisma.queueMember.deleteMany({ where: { userId } });
+            await prisma.queueMember.deleteMany({ where: { userId, role: 'agent' } });
             if (queueIds.length > 0) {
                 await prisma.queueMember.createMany({
                     data: queueIds.map((queueId: string) => ({
@@ -215,8 +269,8 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only super administrators can manage users' }, { status: 403 });
         }
 
         const { searchParams } = new URL(req.url);
@@ -226,6 +280,23 @@ export async function DELETE(req: NextRequest) {
         // Prevent self-deletion
         if (id === session.user.id) {
             return NextResponse.json({ error: 'You cannot delete your own account' }, { status: 400 });
+        }
+
+        const targetUser = await prisma.user.findUnique({
+            where: { id },
+            select: { role: true, isActive: true },
+        });
+        if (!targetUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        if (session.user.role !== 'SUPER_ADMIN' && targetUser.role === 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only a super administrator can remove a super administrator' }, { status: 403 });
+        }
+        if (targetUser.role === 'SUPER_ADMIN' && targetUser.isActive) {
+            const otherActiveSuperAdmins = await prisma.user.count({
+                where: { role: 'SUPER_ADMIN', isActive: true, id: { not: id } },
+            });
+            if (otherActiveSuperAdmins === 0) {
+                return NextResponse.json({ error: 'At least one active super administrator is required' }, { status: 409 });
+            }
         }
 
         // Check if user has tickets — if so, deactivate instead of hard delete

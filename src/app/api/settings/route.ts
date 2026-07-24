@@ -7,7 +7,6 @@ import { dashboardLinksSchema, parseDashboardLinks } from '@/lib/dashboard-links
 import logger from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
-import { isAdmin } from '@/lib/utils';
 
 const SECRET_KEYS = new Set(['smtp_password', 'azure_ad_client_secret']);
 const ENV_ONLY_KEYS = new Set(['azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id']);
@@ -60,8 +59,10 @@ function mergeSettingSources(dbSettings: Record<string, string>): Record<string,
 export async function GET() {
     try {
         const session = await auth();
-        if (!session || !isAdmin(session.user.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-        const settings = await prisma.appSetting.findMany();
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        const settings = await prisma.appSetting.findMany({
+            where: { key: { in: [...ALLOWED_KEYS] } },
+        });
         return NextResponse.json(mergeSettingSources(Object.fromEntries(settings.map((setting) => [setting.key, setting.value]))));
     } catch (error) {
         logger.error('Failed to load settings', { error });
@@ -72,11 +73,15 @@ export async function GET() {
 export async function PATCH(request: Request) {
     try {
         const session = await auth();
-        if (!session || !isAdmin(session.user.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         const body: unknown = await request.json();
         if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Settings payload must be an object' }, { status: 400 });
 
-        const entries = Object.entries(body).filter(([key]) => ALLOWED_KEYS.has(key));
+        const unknownKeys = Object.keys(body).filter((key) => !ALLOWED_KEYS.has(key));
+        if (unknownKeys.length > 0) {
+            return NextResponse.json({ error: `Unknown settings: ${unknownKeys.join(', ')}` }, { status: 400 });
+        }
+        const entries = Object.entries(body);
         const normalizedEntries: [string, string][] = [];
         let previousIcons = new Set<string>();
         let nextIcons = new Set<string>();

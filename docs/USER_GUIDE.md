@@ -54,9 +54,9 @@ A five-minute lock warning helps prevent two agents editing the same ticket simu
 
 ## Administrators
 
-Admin and Super Admin roles have server-authorized access to administration pages.
+Department Admins have server-authorized access to their assigned Departments and Categories, the shared Ticket Templates library, and Help Content. Super Admins additionally manage global Tags, Users, Logs, Branding, integrations, and Settings. Ticket, inbox, dashboard, and assignee data for a Department Admin is limited to departments they administer or where they are assigned as an agent.
 
-### Branding: Admin → Settings → Branding
+### Branding: Super Admin → Settings → Branding
 
 Configure:
 
@@ -137,7 +137,7 @@ Branding, template lifecycle, department assignment, category lifecycle/override
 
 ## Operational notes
 
-- Ticket, branding, and dashboard quick-link assets are stored under `public/uploads`. Back up this directory and persist it as a shared volume in production.
+- Branding and dashboard quick-link assets are stored under `public/uploads`. Ticket attachments are private and stored under `storage/attachments`; downloads always pass through authenticated ticket authorization. Back up and persist both directories in production.
 - The database preserves ticket template ID/version, immutable schema snapshot, sanitized values, and category relationships.
 - Do not use destructive database resets for upgrades. Run `npm run db:migrate:prod`.
 - Use the [setup guide](../SETUP.md), [deployment guide](DEPLOYMENT.md), and [API reference](API_REFERENCE.md) for operator details.

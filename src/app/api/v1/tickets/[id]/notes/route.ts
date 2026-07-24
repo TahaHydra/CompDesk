@@ -4,6 +4,13 @@ import { sanitizeHtml } from '@/lib/utils';
 import logger from '@/lib/logger';
 import { authenticateApiRequest } from '@/lib/api-clients';
 import { getFeatureFlag } from '@/lib/feature-flags';
+import { canAccessQueue, isAgentRole } from '@/lib/permissions';
+import { z } from 'zod';
+
+const externalNoteSchema = z.object({
+    content: z.string().trim().min(1).max(10_000),
+    authorEmail: z.string().email().optional(),
+}).strict();
 
 // POST /api/v1/tickets/[id]/notes - Append internal note
 export async function POST(
@@ -21,11 +28,11 @@ export async function POST(
 
     try {
         const { id } = await params;
-        const { content, authorEmail } = await req.json();
-
-        if (!content) {
-            return NextResponse.json({ error: 'content is required' }, { status: 400 });
+        const parsed = externalNoteSchema.safeParse(await req.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: 'Note validation failed', details: parsed.error.flatten() }, { status: 400 });
         }
+        const { content, authorEmail } = parsed.data;
 
         const ticket = await prisma.ticket.findUnique({ where: { id } });
         if (!ticket) {
@@ -39,19 +46,39 @@ export async function POST(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        // Find author or use system
-        let userId = ticket.requesterId;
-        if (authorEmail) {
-            const author = await prisma.user.findUnique({ where: { email: authorEmail } });
-            if (author) userId = author.id;
+        // Attribute integration notes only to an active agent/admin who can see
+        // the ticket. Never allow an API client to impersonate an end user.
+        let author = authorEmail
+            ? await prisma.user.findUnique({ where: { email: authorEmail.toLowerCase() } })
+            : await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN', isActive: true }, orderBy: { createdAt: 'asc' } });
+        if (authorEmail && (!author || !author.isActive || !isAgentRole(author.role))) {
+            return NextResponse.json({ error: 'authorEmail must identify an active agent or administrator' }, { status: 400 });
         }
+        if (!author && !authorEmail) {
+            const administrators = await prisma.user.findMany({
+                where: { role: 'ADMIN', isActive: true },
+                orderBy: { createdAt: 'asc' },
+            });
+            for (const candidate of administrators) {
+                if (await canAccessQueue(candidate.id, candidate.role, ticket.queueId)) {
+                    author = candidate;
+                    break;
+                }
+            }
+        }
+        if (author && !(await canAccessQueue(author.id, author.role, ticket.queueId))) {
+            return NextResponse.json({ error: 'The note author cannot access this department' }, { status: 400 });
+        }
+        if (!author) return NextResponse.json({ error: 'No active administrator is available to attribute this integration note' }, { status: 409 });
+
 
         const event = await prisma.timelineEvent.create({
             data: {
                 ticketId: id,
-                userId,
+                userId: author.id,
                 type: 'INTERNAL_NOTE',
                 content: sanitizeHtml(content),
+                metadata: { source: 'external_api', apiClientId: authResult.source === 'client' ? authResult.client.id : 'legacy' },
             },
         });
 

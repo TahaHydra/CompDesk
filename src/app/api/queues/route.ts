@@ -6,6 +6,7 @@ import {
     canAdministerQueue,
     getAdministeredQueueIds,
     getAgentAccessibleQueueIds,
+    getQueueInboxQueueIds,
     isAdminRole,
 } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -36,12 +37,16 @@ export async function GET(req: NextRequest) {
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const url = new URL(req.url);
         const includeInactive = url.searchParams.get('includeInactive') === 'true';
+        const accessible = url.searchParams.get('accessible') === 'true';
         const where: Prisma.QueueWhereInput = {};
 
         if (session.user.role === 'SUPER_ADMIN') {
             if (!includeInactive) where.isActive = true;
         } else if (session.user.role === 'ADMIN') {
-            where.id = { in: await getAdministeredQueueIds(session.user.id) };
+            const queueIds = accessible
+                ? await getQueueInboxQueueIds(session.user.id, session.user.role) ?? []
+                : await getAdministeredQueueIds(session.user.id);
+            where.id = { in: queueIds };
             if (!includeInactive) where.isActive = true;
         } else if (session.user.role === 'AGENT') {
             where.id = { in: await getAgentAccessibleQueueIds(session.user.id) };
@@ -52,7 +57,16 @@ export async function GET(req: NextRequest) {
         }
 
         const queues = await prisma.queue.findMany({ where, include: queueInclude, orderBy: { name: 'asc' } });
-        return NextResponse.json(queues);
+        const administrativeView = session.user.role === 'SUPER_ADMIN'
+            || (session.user.role === 'ADMIN' && !accessible);
+        if (administrativeView) return NextResponse.json(queues);
+        return NextResponse.json(queues.map((queue) => ({
+            id: queue.id,
+            name: queue.name,
+            description: queue.description,
+            isActive: queue.isActive,
+            isPublic: queue.isPublic,
+        })));
     } catch (error) {
         logger.error('Failed to fetch departments', { error });
         return NextResponse.json({ error: 'Failed to load departments' }, { status: 500 });

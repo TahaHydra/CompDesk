@@ -20,13 +20,21 @@ import type { DashboardLink } from '@/lib/dashboard-links';
 
 type SettingsMap = Record<string, string>;
 
+async function loadSettings(): Promise<SettingsMap> {
+    const response = await fetch('/api/settings');
+    const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+    if (!response.ok) throw new Error(payload.error || 'Failed to load settings');
+    return payload;
+}
+
 function SmtpSettingsTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
-        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+        queryFn: loadSettings,
+        throwOnError: true,
     });
 
     const [smtp, setSmtp] = useState({
@@ -146,7 +154,8 @@ function EmailTogglesTab() {
 
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
-        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+        queryFn: loadSettings,
+        throwOnError: true,
     });
 
     const toggles = [
@@ -214,7 +223,8 @@ function EntraSettingsTab() {
 
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
-        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+        queryFn: loadSettings,
+        throwOnError: true,
     });
 
     const [entra, setEntra] = useState({
@@ -306,7 +316,8 @@ function DashboardLinksTab() {
     const queryClient = useQueryClient();
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
-        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+        queryFn: loadSettings,
+        throwOnError: true,
     });
     const [links, setLinks] = useState<DashboardLink[]>([]);
     const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
@@ -422,7 +433,8 @@ function SecuritySettingsTab() {
     const queryClient = useQueryClient();
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
-        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+        queryFn: loadSettings,
+        throwOnError: true,
     });
 
     const localEnabled = settings?.login_local_enabled !== 'false';
@@ -479,7 +491,8 @@ function FeatureFlagsTab() {
     const queryClient = useQueryClient();
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
-        queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
+        queryFn: loadSettings,
+        throwOnError: true,
     });
 
     const flags = [

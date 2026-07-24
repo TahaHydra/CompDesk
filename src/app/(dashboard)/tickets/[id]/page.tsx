@@ -101,6 +101,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
+    const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
     const { data: ticket, isLoading } = useQuery({
         queryKey: ['ticket', id],
@@ -301,18 +302,22 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
     const isConversationEvent = (event: any) => CONVERSATION_EVENT_TYPES.includes(event.type);
 
-    // Agents/admins can clean up timeline history; users can still edit their own recent comments.
+    // Administrators can moderate conversation history. Agents and users can
+    // modify only their own entries; users can never modify internal notes.
     const canEditTimelineEvent = (event: any) => {
-        if (!event.content) return false;
-        if (isAgent) return true;
-        if (event.userId !== session?.user?.id || !isConversationEvent(event)) return false;
+        if (!event.content || !isConversationEvent(event)) return false;
+        if (isAdministrator) return true;
+        if (event.userId !== session?.user?.id) return false;
+        if (session?.user?.role === 'USER' && event.type !== 'COMMENT') return false;
         const hours = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
         return hours <= 24;
     };
 
     const canDeleteTimelineEvent = (event: any) => {
-        if (isAgent) return true;
-        return isConversationEvent(event) && event.userId === session?.user?.id;
+        if (!isConversationEvent(event)) return false;
+        if (isAdministrator) return true;
+        return event.userId === session?.user?.id
+            && !(session?.user?.role === 'USER' && event.type === 'INTERNAL_NOTE');
     };
 
     if (isLoading) {
@@ -328,7 +333,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <XCircle className="h-12 w-12 text-destructive mb-4" />
                 <h2 className="text-xl font-bold">Ticket not found</h2>
-                <Link href="/tickets" className="mt-4"><Button variant="outline">Back to tickets</Button></Link>
+                <Button asChild variant="outline" className="mt-4"><Link href="/tickets">Back to tickets</Link></Button>
             </div>
         );
     }
@@ -434,9 +439,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 items-start gap-2 sm:gap-3">
-                    <Link href="/tickets">
-                        <Button variant="ghost" size="icon" className="shrink-0"><ArrowLeft className="h-4 w-4" /></Button>
-                    </Link>
+<Button asChild variant="ghost" size="icon" className="shrink-0"><Link href="/tickets" aria-label="Back to tickets"><ArrowLeft className="h-4 w-4" /></Link></Button>
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono text-sm text-muted-foreground">{ticket.key}</span>
@@ -526,9 +529,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                     <img src={att.path} alt={att.filename} className="w-full h-32 object-cover" />
                                                 </a>
                                                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                    <a href={att.path} download={att.filename}>
-                                                        <Button size="icon" variant="ghost" className="text-white h-8 w-8"><Download className="h-4 w-4" /></Button>
-                                                    </a>
+                                                    <Button asChild size="icon" variant="ghost" className="h-8 w-8 text-white"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-4 w-4" /></a></Button>
                                                     <Button size="icon" variant="ghost" className="text-white h-8 w-8" onClick={() => deleteAttachment(att.id)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
@@ -547,9 +548,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
                                             <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
                                         </div>
-                                        <a href={att.path} download={att.filename}>
-                                            <Button size="icon" variant="ghost" className="h-8 w-8"><Download className="h-3.5 w-3.5" /></Button>
-                                        </a>
+                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
                                         <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteAttachment(att.id)}>
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </Button>

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { canAccessTicket } from '@/lib/permissions';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import logger from '@/lib/logger';
+import { authenticatedAttachmentUrl, privateAttachmentLocation, temporaryAttachmentLocation } from '@/lib/attachment-storage';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -66,27 +67,34 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'The uploaded file content does not match its declared type' }, { status: 400 });
         }
         const uniqueName = `${crypto.randomBytes(16).toString('hex')}${extension}`;
-        const uploadsRoot = path.resolve(process.cwd(), 'public', 'uploads');
-        const subdirectory = ticket?.id ?? 'temp';
-        const uploadDirectory = path.resolve(uploadsRoot, subdirectory);
-        const filePath = path.resolve(uploadDirectory, uniqueName);
-        if (!uploadDirectory.startsWith(`${uploadsRoot}${path.sep}`) || !filePath.startsWith(`${uploadDirectory}${path.sep}`)) {
-            return NextResponse.json({ error: 'Invalid upload path' }, { status: 400 });
+        let uploadDirectory: string;
+        let filePath: string;
+        let storedPath: string;
+        if (ticket) {
+            const location = privateAttachmentLocation(ticket.id, uniqueName);
+            uploadDirectory = location.directory;
+            filePath = location.absolutePath;
+            storedPath = location.reference;
+        } else {
+            const location = temporaryAttachmentLocation(session.user.id, uniqueName);
+            uploadDirectory = location.directory;
+            filePath = location.absolutePath;
+            storedPath = location.reference;
         }
         await mkdir(uploadDirectory, { recursive: true });
         await writeFile(filePath, buffer, { flag: 'wx' });
-        const relativePath = `/uploads/${subdirectory}/${uniqueName}`;
         const safeOriginalName = path.basename(fileValue.name).slice(0, 255) || `attachment${extension}`;
         const attachment = ticket ? await prisma.attachment.create({
-            data: { ticketId: ticket.id, filename: safeOriginalName, mimetype: fileValue.type, size: fileValue.size, path: relativePath },
+            data: { ticketId: ticket.id, filename: safeOriginalName, mimetype: fileValue.type, size: fileValue.size, path: storedPath },
         }) : null;
+        const accessUrl = attachment ? authenticatedAttachmentUrl(attachment.id) : storedPath;
         return NextResponse.json({
             id: attachment?.id ?? null,
             filename: safeOriginalName,
             mimetype: fileValue.type,
             size: fileValue.size,
-            url: relativePath,
-            path: relativePath,
+            url: accessUrl,
+            path: accessUrl,
         });
     } catch (error) {
         logger.error('Upload failed', { error });

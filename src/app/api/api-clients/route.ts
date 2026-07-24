@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { isAdmin } from '@/lib/utils';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { buildStoredApiClient, loadApiClients, saveApiClients, serializeApiClient, type ApiClientScope } from '@/lib/api-clients';
@@ -10,7 +9,7 @@ const VALID_SCOPES: ApiClientScope[] = ['tickets:read', 'tickets:write'];
 export async function GET() {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -25,7 +24,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -70,7 +69,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -127,7 +126,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

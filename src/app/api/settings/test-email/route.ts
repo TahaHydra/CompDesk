@@ -3,12 +3,11 @@ import nodemailer from 'nodemailer';
 import { auth } from '@/lib/auth';
 import { getBrandingConfig } from '@/lib/branding';
 import { prisma } from '@/lib/prisma';
-import { isAdmin } from '@/lib/utils';
 
 export async function POST() {
     try {
         const session = await auth();
-        if (!session || !isAdmin(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         const branding = await getBrandingConfig();

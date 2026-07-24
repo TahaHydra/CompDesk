@@ -16,6 +16,7 @@ import { NextRequest } from 'next/server';
 import { GET as getCategories, POST as createCategory } from '@/app/api/categories/route';
 import { PATCH as updateBranding } from '@/app/api/branding/admin/route';
 import { PATCH as updateTemplate } from '@/app/api/ticket-form-templates/[id]/route';
+import { GET as getSettings } from '@/app/api/settings/route';
 
 const userSession = {
     user: { id: 'user-id', email: 'user@example.com', name: 'User', role: 'USER', groupIds: [] },
@@ -65,6 +66,23 @@ describe('API authorization and category filtering', () => {
             method: 'PATCH', body: '{}', headers: { 'Content-Type': 'application/json' },
         }));
         expect(response.status).toBe(403);
+    });
+
+    it('blocks department administrators from global settings', async () => {
+        mockAuth.mockResolvedValue({ user: { ...userSession.user, role: 'ADMIN' } });
+        const response = await getSettings();
+        expect(response.status).toBe(403);
+        expect(mockPrisma.appSetting.findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns only allowlisted settings to a super administrator', async () => {
+        mockAuth.mockResolvedValue({ user: { ...userSession.user, role: 'SUPER_ADMIN' } });
+        mockPrisma.appSetting.findMany.mockResolvedValue([]);
+        const response = await getSettings();
+        expect(response.status).toBe(200);
+        const query = mockPrisma.appSetting.findMany.mock.calls[0][0];
+        expect(query.where.key.in).not.toContain('api_clients');
+        expect(query.where.key.in).not.toContain('notifications_read_user-id');
     });
 
     it('blocks non-admin ticket form template changes', async () => {

@@ -20,21 +20,21 @@ Public and read-only. Returns only the typed values needed by the login page, me
 
 ### `GET /api/branding/admin`
 
-Admin or Super Admin. Returns the complete typed branding configuration.
+Super Admin only. Returns the complete typed branding configuration.
 
 ### `PATCH /api/branding/admin`
 
-Admin or Super Admin. Replaces the complete branding configuration. Supported values include application names, subtitle, description, asset URLs, primary/accent colors, login copy, support email, footer, demo visibility, local/Microsoft login visibility, and Microsoft button text.
+Super Admin only. Replaces the complete branding configuration. Supported values include application names, subtitle, description, asset URLs, primary/accent colors, login copy, support email, footer, demo visibility, local/Microsoft login visibility, and Microsoft button text.
 
 Asset URLs cannot be supplied arbitrarily; they must be URLs returned by the branding asset endpoint.
 
 ### `DELETE /api/branding/admin`
 
-Admin or Super Admin. Restores all branding defaults and safely removes branding assets that are no longer referenced.
+Super Admin only. Restores all branding defaults and safely removes branding assets that are no longer referenced.
 
 ### `POST /api/branding/assets`
 
-Admin or Super Admin. Multipart body:
+Super Admin only. Multipart body:
 
 - `field`: one of `mainLogoUrl`, `compactLogoUrl`, `lightLogoUrl`, `darkLogoUrl`, `faviconUrl`, `loginBackgroundImageUrl`.
 - `file`: PNG, JPEG, WebP, GIF, or ICO; maximum 5 MB. SVG is rejected.
@@ -89,11 +89,11 @@ Dashboard links are stored through `PATCH /api/settings` in the `dashboard_links
 
 ### `POST /api/settings/quick-link-icons`
 
-Admin only. Multipart `file` upload, maximum 5 MB. PNG, JPEG, WebP, GIF, and ICO signatures are accepted; SVG is rejected. The server enforces a 20-megapixel decode limit and an aspect ratio between 1:2 and 2:1, strips metadata, preserves proportions, resizes inside 128×128 without enlargement, and stores a randomized WebP. The response contains the local `url`, optimized width/height, and byte size.
+Super Admin only. Multipart `file` upload, maximum 5 MB. PNG, JPEG, WebP, GIF, and ICO signatures are accepted; SVG is rejected. The server enforces a 20-megapixel decode limit and an aspect ratio between 1:2 and 2:1, strips metadata, preserves proportions, resizes inside 128×128 without enlargement, and stores a randomized WebP. The response contains the local `url`, optimized width/height, and byte size.
 
 ### `DELETE /api/settings/quick-link-icons?url=...`
 
-Admin only. Removes an unreferenced uploaded icon. Deletion returns `409` while a saved dashboard link still uses the file; remove or replace the icon in Settings first.
+Super Admin only. Removes an unreferenced uploaded icon. Deletion returns `409` while a saved dashboard link still uses the file; remove or replace the icon in Settings first.
 ## Departments and categories
 
 ### `GET /api/queues`
@@ -268,7 +268,7 @@ Download or remove an attachment subject to ticket authorization.
 - `/api/settings`, `/api/settings/test-email`, and `/api/settings/quick-link-icons`
 - `/api/api-clients`
 
-All write operations use server-side role checks. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.
+All write operations use server-side role checks. Global settings, branding, API clients, groups, audit logs, tags, and user management require Super Admin. Department Admin ticket data is restricted to administered or agent-assigned departments. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.
 
 ## External API v1
 

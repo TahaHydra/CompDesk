@@ -69,14 +69,14 @@ const navItems: NavigationItem[] = [
 ];
 
 const adminItems: NavigationItem[] = [
-    { href: '/admin/departments', label: 'Departments', icon: FolderKanban },
-    { href: '/admin/categories', label: 'Categories', icon: Tags },
-    { href: '/admin/templates', label: 'Ticket Templates', icon: FileText },
-    { href: '/admin/tags', label: 'Tags', icon: Tag },
-    { href: '/admin/users', label: 'Users', icon: Users },
-    { href: '/admin/help', label: 'Help Content', icon: BookOpen },
-    { href: '/admin/logs', label: 'Logs', icon: FileText },
-    { href: '/admin/settings', label: 'Settings', icon: Settings },
+    { href: '/admin/departments', label: 'Departments', icon: FolderKanban, roles: ['ADMIN', 'SUPER_ADMIN'] },
+    { href: '/admin/categories', label: 'Categories', icon: Tags, roles: ['ADMIN', 'SUPER_ADMIN'] },
+    { href: '/admin/templates', label: 'Ticket Templates', icon: FileText, roles: ['ADMIN', 'SUPER_ADMIN'] },
+    { href: '/admin/tags', label: 'Tags', icon: Tag, roles: ['SUPER_ADMIN'] },
+    { href: '/admin/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN'] },
+    { href: '/admin/help', label: 'Help Content', icon: BookOpen, roles: ['ADMIN', 'SUPER_ADMIN'] },
+    { href: '/admin/logs', label: 'Logs', icon: FileText, roles: ['SUPER_ADMIN'] },
+    { href: '/admin/settings', label: 'Settings', icon: Settings, roles: ['SUPER_ADMIN'] },
 ];
 
 const notificationIcon = (type: string) => {
@@ -97,7 +97,7 @@ export default function AppShell({
     children: React.ReactNode;
     initialSession: Session;
 }) {
-    const { data: clientSession, status } = useSession();
+    const { data: clientSession, status, update: refreshSession } = useSession();
     const branding = useBranding();
     const { t, language } = useLanguage();
     const pathname = usePathname();
@@ -120,7 +120,8 @@ export default function AppShell({
     // Close the mobile drawer whenever the route changes
     useEffect(() => {
         setMobileOpen(false);
-    }, [pathname]);
+        void refreshSession();
+    }, [pathname, refreshSession]);
 
     useEffect(() => {
         if (status === 'unauthenticated') {
@@ -224,7 +225,7 @@ export default function AppShell({
                                 {t('Administration')}
                             </p>
                             <nav className="space-y-1">
-                                {adminItems.map((item) => (
+                                {adminItems.filter((item) => item.roles?.includes(userRole)).map((item) => (
                                     <NavLink key={item.href} item={{ ...item, label: t(item.label) }} active={isActive(item.href)} />
                                 ))}
                             </nav>

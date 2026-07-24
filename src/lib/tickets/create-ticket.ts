@@ -1,4 +1,3 @@
-import path from 'path';
 import { mkdir, rename, stat } from 'fs/promises';
 import { Prisma, Role, type User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -18,6 +17,7 @@ import {
 } from '@/lib/ticket-form/validation';
 import type { TicketFormFieldDefinition, UploadedFieldFile } from '@/lib/ticket-form/types';
 import logger from '@/lib/logger';
+import { authenticatedAttachmentUrl, privateAttachmentLocation, resolveTemporaryAttachmentPath } from '@/lib/attachment-storage';
 
 export interface TicketCreationActor {
     id: string;
@@ -72,18 +72,16 @@ function fileValuesForFields(values: Record<string, unknown>, fields: TicketForm
     return [...new Map(files.map((file) => [file.url, file])).values()];
 }
 
-function safeTempSource(url: string): { absolutePath: string; filename: string } | null {
-    const match = /^\/uploads\/temp\/([a-zA-Z0-9-]+\.[a-zA-Z0-9]+)$/.exec(url);
+function safeTempSource(url: string, userId: string): { absolutePath: string; filename: string } | null {
+    const match = /^temporary\/[a-zA-Z0-9-]+\/([a-zA-Z0-9-]+\.[a-zA-Z0-9]+)$/.exec(url);
     if (!match) return null;
-    const tempRoot = path.resolve(process.cwd(), 'public', 'uploads', 'temp');
-    const absolutePath = path.resolve(tempRoot, match[1]);
-    if (!absolutePath.startsWith(`${tempRoot}${path.sep}`)) return null;
-    return { absolutePath, filename: match[1] };
+    const absolutePath = resolveTemporaryAttachmentPath(url, userId);
+    return absolutePath ? { absolutePath, filename: match[1] } : null;
 }
 
-async function verifyTempFiles(files: UploadedFieldFile[]) {
+async function verifyTempFiles(files: UploadedFieldFile[], userId: string) {
     for (const file of files) {
-        const source = safeTempSource(file.url);
+        const source = safeTempSource(file.url, userId);
         if (!source) throw new TicketFormValidationError({ attachments: 'An uploaded file reference is invalid or expired' });
         const info = await stat(source.absolutePath).catch(() => null);
         if (!info?.isFile() || info.size !== file.size) {
@@ -108,27 +106,25 @@ function replaceUploadedUrls(
     return next;
 }
 
-async function persistUploadedFiles(ticketId: string, files: UploadedFieldFile[]): Promise<Map<string, string>> {
-    const destinationRoot = path.resolve(process.cwd(), 'public', 'uploads', ticketId);
-    await mkdir(destinationRoot, { recursive: true });
+async function persistUploadedFiles(ticketId: string, files: UploadedFieldFile[], userId: string): Promise<Map<string, string>> {
     const urlMap = new Map<string, string>();
     for (const file of files) {
-        const source = safeTempSource(file.url);
+        const source = safeTempSource(file.url, userId);
         if (!source) continue;
-        const destination = path.resolve(destinationRoot, source.filename);
-        if (!destination.startsWith(`${destinationRoot}${path.sep}`)) continue;
-        await rename(source.absolutePath, destination);
-        const newUrl = `/uploads/${ticketId}/${source.filename}`;
-        urlMap.set(file.url, newUrl);
-        await prisma.attachment.create({
+        const location = privateAttachmentLocation(ticketId, source.filename);
+        await mkdir(location.directory, { recursive: true });
+        await rename(source.absolutePath, location.absolutePath);
+        const attachment = await prisma.attachment.create({
             data: {
                 ticketId,
                 filename: file.filename,
                 mimetype: file.mimetype,
                 size: file.size,
-                path: newUrl,
+                path: location.reference,
             },
+            select: { id: true },
         });
+        urlMap.set(file.url, authenticatedAttachmentUrl(attachment.id));
     }
     return urlMap;
 }
@@ -136,7 +132,8 @@ async function persistUploadedFiles(ticketId: string, files: UploadedFieldFile[]
 export async function createTicketFromResolvedTemplate(options: CreateTicketOptions) {
     const { actor, requester, input, source } = options;
     if (source === 'web') {
-        if (actor.role === Role.AGENT && !(await canAccessQueue(actor.id, actor.role, input.queueId))) {
+        if ((actor.role === Role.AGENT || actor.role === Role.ADMIN)
+            && !(await canAccessQueue(actor.id, actor.role, input.queueId))) {
             throw new Error('FORBIDDEN_QUEUE');
         }
         if (actor.role === Role.USER) {
@@ -166,7 +163,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
     }
 
     const uploadedFiles = fileValuesForFields(validated.submittedValues, resolved.allFields);
-    await verifyTempFiles(uploadedFiles);
+    await verifyTempFiles(uploadedFiles, actor.id);
 
     const year = new Date().getFullYear();
     const ticketKey = generateTicketKey(year, await reserveNextTicketCount(year));
@@ -206,7 +203,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
     }
 
     if (uploadedFiles.length > 0) {
-        const urlMap = await persistUploadedFiles(ticket.id, uploadedFiles);
+        const urlMap = await persistUploadedFiles(ticket.id, uploadedFiles, actor.id);
         if (urlMap.size > 0) {
             const movedValues = replaceUploadedUrls(validated.submittedValues, resolved.allFields, urlMap);
             await prisma.ticket.update({
