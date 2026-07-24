@@ -152,7 +152,7 @@ export default function AdminDepartmentsPage() {
                 icon={FolderKanban}
                 title="Departments"
                 description={isSuperAdmin
-                    ? 'Manage departments, their administrators, and default ticket form templates.'
+                    ? 'Manage departments, their administrators, and default ticket templates.'
                     : 'Assign the default ticket form for departments you administer.'}
             >
                 {isSuperAdmin ? <Button onClick={openCreate}><Plus className="mr-1 h-4 w-4" /> Add department</Button> : null}
@@ -244,7 +244,7 @@ export default function AdminDepartmentsPage() {
                                 {editing ? (
                                     <div className="space-y-2">
                                         <Label>Department administrators</Label>
-                                        <p className="text-xs text-muted-foreground">These ADMIN users can assign this department and its categories to any active ticket form template.</p>
+                                        <p className="text-xs text-muted-foreground">These ADMIN users can assign this department and its categories to any active ticket template.</p>
                                         <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
                                             {(administratorsQuery.data ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No active ADMIN users are available.</p> : null}
                                             {(administratorsQuery.data ?? []).map((administrator) => (

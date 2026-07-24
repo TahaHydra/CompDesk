@@ -187,6 +187,18 @@ function hexToHsl(hex: string): string {
     return `${Math.round(hue * 360)} ${Math.round(saturation * 100)}% ${Math.round(lightness * 100)}%`;
 }
 
+function darkBrandVariant(hex: string): string {
+    const [hue, saturation] = hexToHsl(hex).replaceAll('%', '').split(' ').map(Number);
+    return `${hue} ${Math.min(saturation, 58)}% 64%`;
+}
+
+function softBrandSurface(hex: string, dark: boolean): string {
+    const [hue, saturation] = hexToHsl(hex).replaceAll('%', '').split(' ').map(Number);
+    return dark
+        ? `${hue} ${Math.min(saturation, 20)}% 17%`
+        : `${hue} ${Math.min(saturation, 28)}% 95%`;
+}
+
 function readableForeground(hex: string): string {
     const red = Number.parseInt(hex.slice(1, 3), 16);
     const green = Number.parseInt(hex.slice(3, 5), 16);
@@ -199,12 +211,13 @@ export function getBrandingStyleVariables(branding: BrandingConfig): Record<stri
     const primary = hexToHsl(branding.primaryColor);
     const accent = hexToHsl(branding.accentColor);
     return {
-        '--primary': primary,
-        '--ring': primary,
-        '--primary-foreground': readableForeground(branding.primaryColor),
-        '--accent': accent,
-        '--accent-foreground': readableForeground(branding.accentColor),
+        '--brand-primary': primary,
+        '--brand-primary-dark': darkBrandVariant(branding.primaryColor),
+        '--brand-primary-foreground': readableForeground(branding.primaryColor),
         '--brand-accent': accent,
+        '--brand-accent-dark': darkBrandVariant(branding.accentColor),
+        '--brand-accent-surface': softBrandSurface(branding.accentColor, false),
+        '--brand-accent-surface-dark': softBrandSurface(branding.accentColor, true),
         '--brand-primary-hex': branding.primaryColor,
         '--brand-accent-hex': branding.accentColor,
         '--brand-login-background-image': branding.loginBackgroundImageUrl

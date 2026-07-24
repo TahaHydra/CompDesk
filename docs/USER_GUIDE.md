@@ -8,6 +8,13 @@ Open your organization’s CompDesk URL (or <http://localhost:3000> in developme
 
 Demo credentials are hidden by default. For a clean development database, `npm run db:seed` creates accounts under `example.com`; the administrator email and password can be set with `SEED_ADMIN_EMAIL` and `SEED_DEFAULT_PASSWORD`. Never enable demo-account information in production.
 
+## Personal language
+
+Open **Profile**, choose **English** or **Français**, and save. The preference belongs to your account, not the browser, so it follows you to another device. It changes the application shell, dashboard, profile, ticket-creation flow, and Help Center. User-entered department, category, template, ticket, and article names remain exactly as administrators wrote them.
+
+## Help Center
+
+Select **Help Center** in the sidebar. Search looks through the current language's article title, summary, and content. Open a collection to browse related articles, or open an article for a documentation layout with collection navigation and an on-page contents list. Draft collections and articles are hidden from normal users.
 ## End users
 
 ### Create a ticket
@@ -15,7 +22,7 @@ Demo credentials are hidden by default. For a clean development database, `npm r
 1. Select **New Ticket**.
 2. Select a **Department** first.
 3. Select one of that department’s active **Categories**, when categories exist.
-4. CompDesk resolves the effective **Ticket Form Template**.
+4. CompDesk resolves the effective **Ticket Template**.
 5. Complete the visible fields and submit.
 
 Changing department always clears an incompatible category. If the resulting template changes after you entered data, CompDesk warns you. Values are retained only when the same stable field key and compatible type exist in the new form.
@@ -67,7 +74,7 @@ Disabling a login method is enforced by the authentication server, not only hidd
 
 ### Departments
 
-Each department has active/public/auto-assignment settings and an optional default Ticket Form Template. An empty assignment inherits the protected system default. Users see public departments; agents see their assigned departments; department administrators see departments they administer; super administrators see all.
+Each department has active/public/auto-assignment settings and an optional default Ticket Template. An empty assignment inherits the protected system default. Users see public departments; agents see their assigned departments; department administrators see departments they administer; super administrators see all.
 
 A super administrator assigns active ADMIN users in the department editor. A department administrator can choose any active shared template as that department's default, but cannot rename, delete, deactivate, or change the membership of the department.
 
@@ -79,9 +86,9 @@ Every category belongs to exactly one department. Different departments may reus
 
 Super administrators can rename, move, archive/restore, or delete categories where history permits. Department administrators can choose any active shared template as an override for categories in departments they administer, or restore inheritance from the department default. They cannot modify categories in another department. A category with tickets cannot be moved or hard-deleted; archive it to preserve historical ticket relationships.
 
-### Ticket Form Templates
+### Ticket Templates
 
-**Ticket Form Templates** are ticket-creation forms. They are separate from **Canned Responses**, which are reply macros.
+**Ticket Templates** are ticket-creation forms. They are separate from **Canned Responses**, which are reply macros.
 
 The first list item is the protected system default. It cannot be archived or deleted, and departments without an explicit assignment inherit it.
 
@@ -107,16 +114,19 @@ Template precedence is always:
 2. department default;
 3. system default.
 
+### Help content
+
+**Admin → Help Content** manages the shared bilingual documentation library. Administrators can create, reorder, publish, draft, edit, and delete articles and collections. Each article requires meaningful English and French content so changing a profile language never produces an empty document. Article content supports headings, paragraphs, lists, links, emphasis, inline code, code blocks, and blockquotes. Preview both languages before publishing. A collection must be emptied before it can be deleted.
 ### Canned responses
 
-Canned responses remain reusable comment text for agents. They do not define ticket fields and are not managed on the Ticket Form Templates page.
+Canned responses remain reusable comment text for agents. They do not define ticket fields and are not managed on the Ticket Templates page.
 
 ### Other settings
 
 - **SMTP**: outgoing server credentials and test mail.
 - **Email Notifications**: per-event delivery controls.
 - **Entra ID**: Microsoft OIDC credentials; restart after environment changes.
-- **Quick Links**: dashboard links.
+- **Quick Links**: up to 16 validated HTTP/HTTPS dashboard links with optional PNG, JPEG, WebP, GIF, or ICO images. Icons render at 32 px on the dashboard and are limited to 512 KB.
 - **Security**: local login control (also reflected in Branding).
 - **Features**: attachments, quick links, external API, and webhooks.
 - **API Clients**: scoped API keys and optional department restrictions.
@@ -127,7 +137,7 @@ Branding, template lifecycle, department assignment, category lifecycle/override
 
 ## Operational notes
 
-- Ticket and branding assets are stored under `public/uploads`. Back up this directory and persist it as a shared volume in production.
+- Ticket, branding, and dashboard quick-link assets are stored under `public/uploads`. Back up this directory and persist it as a shared volume in production.
 - The database preserves ticket template ID/version, immutable schema snapshot, sanitized values, and category relationships.
 - Do not use destructive database resets for upgrades. Run `npm run db:migrate:prod`.
 - Use the [setup guide](../SETUP.md), [deployment guide](DEPLOYMENT.md), and [API reference](API_REFERENCE.md) for operator details.

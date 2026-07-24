@@ -73,17 +73,18 @@ enum BuiltInTicketField {
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(uuid())
-  entraObjectId String?   @unique @map("entra_object_id")
-  email         String    @unique
-  emailVerified DateTime? @map("email_verified")
-  name          String
-  image         String?
-  passwordHash  String?   @map("password_hash")
-  role          Role      @default(USER)
-  isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid())
+  entraObjectId     String?   @unique @map("entra_object_id")
+  email             String    @unique
+  emailVerified     DateTime? @map("email_verified")
+  name              String
+  image             String?
+  passwordHash      String?   @map("password_hash")
+  role              Role      @default(USER)
+  isActive          Boolean   @default(true) @map("is_active")
+  preferredLanguage String    @default("en") @map("preferred_language")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   // Relations
   requestedTickets   Ticket[]        @relation("TicketRequester")
@@ -302,13 +303,13 @@ model Ticket {
   escalatedById   String?   @map("escalated_by_id")
   escalatedToId   String?   @map("escalated_to_id")
 
-  queue            Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
-  category         Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  resolvedTemplate TicketFormTemplate  @relation(fields: [resolvedTemplateId], references: [id], onDelete: Restrict)
-  requester        User                @relation("TicketRequester", fields: [requesterId], references: [id])
-  assignee         User?               @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  escalatedBy      User?               @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
-  escalatedTo      User?               @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
+  queue            Queue              @relation(fields: [queueId], references: [id], onDelete: Restrict)
+  category         Category?          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  resolvedTemplate TicketFormTemplate @relation(fields: [resolvedTemplateId], references: [id], onDelete: Restrict)
+  requester        User               @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  escalatedBy      User?              @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
+  escalatedTo      User?              @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
   tags             TicketTag[]
   watchers         TicketWatcher[]
   timeline         TimelineEvent[]
@@ -486,6 +487,48 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ── Help Center ────────────────────────────────────────────────
+
+model HelpCollection {
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  titleEn       String   @map("title_en")
+  titleFr       String   @map("title_fr")
+  descriptionEn String?  @map("description_en")
+  descriptionFr String?  @map("description_fr")
+  icon          String?
+  sortOrder     Int      @default(0) @map("sort_order")
+  isPublished   Boolean  @default(true) @map("is_published")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  articles HelpArticle[]
+
+  @@index([isPublished, sortOrder])
+  @@map("help_collections")
+}
+
+model HelpArticle {
+  id           String   @id @default(uuid())
+  collectionId String   @map("collection_id")
+  slug         String   @unique
+  titleEn      String   @map("title_en")
+  titleFr      String   @map("title_fr")
+  summaryEn    String?  @map("summary_en")
+  summaryFr    String?  @map("summary_fr")
+  contentEn    String   @map("content_en") @db.Text
+  contentFr    String   @map("content_fr") @db.Text
+  sortOrder    Int      @default(0) @map("sort_order")
+  isPublished  Boolean  @default(true) @map("is_published")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  collection HelpCollection @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+
+  @@index([collectionId, isPublished, sortOrder])
+  @@map("help_articles")
 }
 
 // ── App Settings ───────────────────────────────────────────────

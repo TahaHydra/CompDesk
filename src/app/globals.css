@@ -4,57 +4,55 @@
 
 @layer base {
   :root {
-    /* Neutrals — a faint cool tint on the canvas so white cards lift off it */
-    --background: 220 33% 98%;
-    --foreground: 222 47% 11%;
+    /* Neutral surfaces keep custom branding focused on actions, not large panels. */
+    --background: 220 25% 98%;
+    --foreground: 222 32% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 222 32% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    /* Brand — a single confident indigo, deep enough for AA text on white */
-    --primary: 243 75% 59%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 20% 94%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 220 20% 95%;
-    --muted-foreground: 215 16% 42%;
-    --accent: 243 80% 96%;
-    --accent-foreground: 243 75% 40%;
-    --destructive: 0 72% 51%;
+    --popover-foreground: 222 32% 12%;
+    --primary: var(--brand-primary, 243 75% 59%);
+    --primary-foreground: var(--brand-primary-foreground, 0 0% 100%);
+    --secondary: 220 16% 94%;
+    --secondary-foreground: 222 28% 15%;
+    --muted: 220 16% 95%;
+    --muted-foreground: 215 14% 42%;
+    --accent: var(--brand-accent-surface, 243 28% 95%);
+    --accent-foreground: 222 28% 18%;
+    --destructive: 0 68% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 20% 89%;
-    --input: 220 20% 88%;
-    --ring: 243 75% 59%;
-    --radius: 0.75rem;
+    --border: 220 15% 87%;
+    --input: 220 15% 84%;
+    --ring: var(--brand-primary, 243 75% 59%);
+    --radius: 0.7rem;
 
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   }
 
   .dark {
-    /* Layered darks: canvas is darkest, cards lift above it for real depth */
-    --background: 222 47% 5%;
-    --foreground: 213 31% 93%;
-    --card: 222 40% 9%;
-    --card-foreground: 213 31% 93%;
-    --popover: 222 44% 8%;
-    --popover-foreground: 213 31% 93%;
-    --primary: 243 82% 70%;
-    --primary-foreground: 222 47% 8%;
-    --secondary: 222 32% 15%;
-    --secondary-foreground: 213 31% 93%;
-    --muted: 222 32% 14%;
-    --muted-foreground: 217 18% 62%;
-    --accent: 243 45% 20%;
-    --accent-foreground: 243 80% 88%;
-    --destructive: 0 63% 45%;
+    /* Graphite layers with visible borders; brand colors are deliberately subdued. */
+    --background: 220 12% 8%;
+    --foreground: 210 18% 94%;
+    --card: 220 10% 11%;
+    --card-foreground: 210 18% 94%;
+    --popover: 220 11% 10%;
+    --popover-foreground: 210 18% 94%;
+    --primary: var(--brand-primary-dark, 243 58% 64%);
+    --primary-foreground: 220 18% 8%;
+    --secondary: 220 9% 17%;
+    --secondary-foreground: 210 16% 92%;
+    --muted: 220 9% 15%;
+    --muted-foreground: 215 12% 68%;
+    --accent: var(--brand-accent-surface-dark, 243 20% 17%);
+    --accent-foreground: 210 18% 94%;
+    --destructive: 0 58% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 222 28% 18%;
-    --input: 222 28% 20%;
-    --ring: 243 82% 70%;
+    --border: 220 8% 24%;
+    --input: 220 9% 20%;
+    --ring: var(--brand-primary-dark, 243 58% 64%);
   }
 }
-
 @layer base {
   * {
     @apply border-border;
@@ -111,17 +109,20 @@
 
 /* Glow effects */
 .glow-primary {
-  box-shadow: 0 0 24px -6px hsl(var(--primary) / 0.35);
+  box-shadow: 0 0 18px -8px hsl(var(--primary) / 0.22);
 }
 
 /* Gradient text — reserved for the brand mark */
 .gradient-text {
-  @apply bg-clip-text text-transparent;
-  background-image: linear-gradient(120deg, hsl(243 75% 62%), hsl(276 74% 62%));
+  color: hsl(var(--primary));
 }
 
 .brand-gradient {
-  background-image: linear-gradient(135deg, hsl(243 75% 60%), hsl(276 72% 58%));
+  background-image: linear-gradient(135deg, hsl(var(--brand-primary, 243 75% 59%)), hsl(var(--brand-accent, 276 72% 58%)));
+}
+
+.dark .brand-gradient {
+  background-image: linear-gradient(135deg, hsl(var(--brand-primary-dark, 243 58% 64%)), hsl(var(--brand-accent-dark, 276 58% 64%)));
 }
 
 /* Status colors */

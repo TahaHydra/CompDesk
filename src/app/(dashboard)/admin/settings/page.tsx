@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,10 +12,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2 } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
+import type { DashboardLink } from '@/lib/dashboard-links';
 
 type SettingsMap = Record<string, string>;
 
@@ -301,102 +304,107 @@ function EntraSettingsTab() {
 function DashboardLinksTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
-
     const { data: settings } = useQuery<SettingsMap>({
         queryKey: ['settings'],
         queryFn: async () => { const res = await fetch('/api/settings'); return res.json(); },
     });
-
-    const [links, setLinks] = useState<{ title: string, url: string }[]>([]);
+    const [links, setLinks] = useState<DashboardLink[]>([]);
+    const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
 
     useEffect(() => {
-        if (settings?.dashboard_links) {
-            try {
-                setLinks(JSON.parse(settings.dashboard_links));
-            } catch {
-                setLinks([]);
-            }
+        if (!settings?.dashboard_links) return;
+        try {
+            const parsed = JSON.parse(settings.dashboard_links) as Array<Partial<DashboardLink>>;
+            setLinks(parsed.map((link) => ({ title: link.title ?? '', url: link.url ?? '', iconUrl: link.iconUrl ?? '' })));
+        } catch {
+            setLinks([]);
         }
     }, [settings]);
 
     const saveMutation = useMutation({
         mutationFn: async () => {
-            // Normalize URLs — prepend https:// if no protocol is specified
-            const normalizedLinks = links.map(link => ({
-                ...link,
-                url: link.url && !/^https?:\/\//i.test(link.url) ? `https://${link.url}` : link.url,
-            }));
-            const res = await fetch('/api/settings', {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dashboard_links: JSON.stringify(normalizedLinks) }),
+            const response = await fetch('/api/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dashboard_links: links }),
             });
-            if (!res.ok) throw new Error('Failed');
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to save dashboard links');
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['settings'] });
+        onSuccess: async () => {
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['settings'] }),
+                queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] }),
+            ]);
             toast({ title: 'Dashboard links saved' });
         },
+        onError: (error: Error) => toast({ title: 'Links could not be saved', description: error.message, variant: 'destructive' }),
     });
 
-    const addLink = () => setLinks([...links, { title: '', url: '' }]);
-    const removeLink = (index: number) => setLinks(links.filter((_, i) => i !== index));
-    const updateLink = (index: number, field: 'title' | 'url', val: string) => {
-        const newLinks = [...links];
-        newLinks[index][field] = val;
-        setLinks(newLinks);
+    const addLink = () => setLinks((current) => [...current, { title: '', url: '', iconUrl: '' }]);
+    const removeLink = (index: number) => setLinks((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    const updateLink = (index: number, field: keyof DashboardLink, value: string) => {
+        setLinks((current) => current.map((link, itemIndex) => itemIndex === index ? { ...link, [field]: value } : link));
+    };
+    const uploadIcon = async (index: number, file?: File) => {
+        if (!file) return;
+        setUploadingIndex(index);
+        try {
+            const form = new FormData();
+            form.set('file', file);
+            const response = await fetch('/api/settings/quick-link-icons', { method: 'POST', body: form });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Icon upload failed');
+            updateLink(index, 'iconUrl', payload.url);
+        } catch (error) {
+            toast({ title: 'Icon could not be uploaded', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+        } finally {
+            setUploadingIndex(null);
+        }
     };
 
     return (
         <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                    <LinkIcon className="h-4 w-4" /> Custom Dashboard Links
-                </CardTitle>
-                <Button variant="outline" size="sm" onClick={addLink} className="gap-1 h-8">
-                    <Plus className="h-3.5 w-3.5" /> Add Link
-                </Button>
+                <CardTitle className="flex items-center gap-2 text-base"><LinkIcon className="h-4 w-4" /> Custom Dashboard Links</CardTitle>
+                <Button variant="outline" size="sm" onClick={addLink} className="h-8 gap-1"><Plus className="h-3.5 w-3.5" /> Add Link</Button>
             </CardHeader>
             <CardContent className="space-y-4">
-                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 mb-4 flex items-start gap-2">
-                    <p className="text-sm text-blue-800 dark:text-blue-200">
-                        These links will appear as clickable cards on the main dashboard for all users. Useful for pointing to external resources like SharePoint, HR tools, or Intranet pages.
-                    </p>
-                </div>
-
-                {links.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground border rounded-lg border-dashed">
-                        No custom links added yet.
-                    </div>
+                <p className="rounded-lg border bg-muted/35 p-3 text-sm text-muted-foreground">
+                    Add up to 16 useful resources. A small square icon is optional; 32×32 or 64×64 PNG/WebP files give the cleanest result.
+                </p>
+                {!links.length ? (
+                    <div className="rounded-lg border border-dashed py-8 text-center text-muted-foreground">No custom links added yet.</div>
                 ) : (
                     <div className="space-y-3">
-                        {links.map((link, i) => (
-                            <div key={i} className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-3 sm:flex-row sm:items-end">
-                                <div className="flex-1 space-y-1">
-                                    <Label className="text-xs text-muted-foreground">Title</Label>
-                                    <Input placeholder="e.g. Leave Request Form" value={link.title} onChange={(e) => updateLink(i, 'title', e.target.value)} />
+                        {links.map((link, index) => (
+                            <div key={index} className="grid gap-3 rounded-lg border bg-muted/25 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_220px_auto] lg:items-end">
+                                <div className="space-y-1"><Label className="text-xs text-muted-foreground">Title</Label><Input placeholder="Leave request" value={link.title} onChange={(event) => updateLink(index, 'title', event.target.value)} /></div>
+                                <div className="space-y-1"><Label className="text-xs text-muted-foreground">URL</Label><Input placeholder="https://intranet.example.com" value={link.url} onChange={(event) => updateLink(index, 'url', event.target.value)} /></div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Small icon (optional)</Label>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-card">
+                                            {link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}
+                                        </div>
+                                        <label className="inline-flex h-9 cursor-pointer items-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-accent">
+                                            {uploadingIndex === index ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+                                            Upload
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon" className="sr-only" disabled={uploadingIndex !== null} onChange={(event) => uploadIcon(index, event.target.files?.[0])} />
+                                        </label>
+                                        {link.iconUrl ? <Button type="button" variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateLink(index, 'iconUrl', '')} aria-label="Remove icon"><X className="h-4 w-4" /></Button> : null}
+                                    </div>
                                 </div>
-                                <div className="space-y-1 sm:flex-[2]">
-                                    <Label className="text-xs text-muted-foreground">URL</Label>
-                                    <Input placeholder="https://..." value={link.url} onChange={(e) => updateLink(i, 'url', e.target.value)} />
-                                </div>
-                                <Button variant="ghost" size="icon" className="shrink-0 self-end text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeLink(i)}>
-                                    <X className="h-4 w-4" />
-                                </Button>
+                                <Button variant="ghost" size="icon" className="self-end text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeLink(index)} aria-label="Remove link"><X className="h-4 w-4" /></Button>
                             </div>
                         ))}
                     </div>
                 )}
-
-                <div className="pt-4">
-                    <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="gap-2">
-                        <Save className="h-4 w-4" /> Save Links
-                    </Button>
-                </div>
+                <div className="pt-2"><Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || links.some((link) => !link.title.trim() || !link.url.trim())} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button></div>
             </CardContent>
         </Card>
     );
 }
-
 function SecuritySettingsTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();

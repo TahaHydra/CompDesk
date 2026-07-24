@@ -44,6 +44,7 @@ public/uploads/*
 # Logs
 /logs/
 *.log
+*-errors.txt
 
 # Coverage
 coverage/
