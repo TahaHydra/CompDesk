@@ -29,10 +29,9 @@ jobs:
       DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/compdesk_ci?schema=public
       AUTH_URL: http://localhost:3000
       AUTH_SECRET: ci-only-stable-auth-secret-32-characters
-      NODE_ENV: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
