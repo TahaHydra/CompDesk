@@ -67,7 +67,9 @@ Disabling a login method is enforced by the authentication server, not only hidd
 
 ### Departments
 
-Each department has active/public/auto-assignment settings and an optional default Ticket Form Template. An empty assignment inherits the protected system default. Users see public departments; agents see their assigned departments; admins see all.
+Each department has active/public/auto-assignment settings and an optional default Ticket Form Template. An empty assignment inherits the protected system default. Users see public departments; agents see their assigned departments; department administrators see departments they administer; super administrators see all.
+
+A super administrator assigns active ADMIN users in the department editor. A department administrator can choose any active shared template as that department's default, but cannot rename, delete, deactivate, or change the membership of the department.
 
 A department with categories or historical tickets cannot be hard-deleted. Deactivate it instead when preserving history.
 
@@ -75,7 +77,7 @@ A department with categories or historical tickets cannot be hard-deleted. Deact
 
 Every category belongs to exactly one department. Different departments may reuse the same name. Category administration shows the owner, ticket count, and whether its effective template is inherited or overridden.
 
-Administrators can rename, archive/restore, or assign a form override. A category with tickets cannot be moved or hard-deleted; archive it to preserve historical ticket relationships.
+Super administrators can rename, move, archive/restore, or delete categories where history permits. Department administrators can choose any active shared template as an override for categories in departments they administer, or restore inheritance from the department default. They cannot modify categories in another department. A category with tickets cannot be moved or hard-deleted; archive it to preserve historical ticket relationships.
 
 ### Ticket Form Templates
 
@@ -83,7 +85,7 @@ Administrators can rename, archive/restore, or assign a form override. A categor
 
 The first list item is the protected system default. It cannot be archived or deleted, and departments without an explicit assignment inherit it.
 
-Administrators can:
+Administrators can see and work with the shared template library regardless of department assignment. They can:
 
 - create a form by cloning the current system default;
 - duplicate another form;

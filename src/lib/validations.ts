@@ -49,7 +49,10 @@ export const createQueueSchema = z.object({
     defaultTemplateId: z.string().uuid().nullable().optional(),
 });
 
-export const updateQueueSchema = createQueueSchema.partial().extend({ id: z.string().uuid() }).refine(
+export const updateQueueSchema = createQueueSchema.partial().extend({
+    id: z.string().uuid(),
+    administratorIds: z.array(z.string().uuid()).max(100).optional(),
+}).refine(
     (value) => Object.keys(value).some((key) => key !== 'id'),
     'At least one department field is required'
 );

@@ -49,36 +49,42 @@ Resets one branding asset.
 
 ### `GET /api/queues`
 
-Returns active departments scoped to the requester: public departments for users, assigned departments for agents, and all departments for administrators. Admins can add `includeInactive=true`.
+Returns departments scoped to the requester: public departments for users, assigned departments for agents, explicitly administered departments for department admins, and all departments for Super Admins. Department admins and Super Admins can add `includeInactive=true` within their scope.
 
-### `POST /api/queues` / `PATCH /api/queues`
+### `POST /api/queues`
 
-Admin only. Create or edit a department. Important fields:
+Super Admin only. Creates a department.
+
+### `PATCH /api/queues`
+
+A Super Admin can edit the complete department configuration and its direct department-admin assignments. Important fields:
 
 ```json
 {
+  "id": "department-uuid",
   "name": "IT Support",
   "description": "Technical support",
   "isPublic": true,
   "isActive": true,
   "autoAssign": false,
-  "defaultTemplateId": "uuid-or-null"
+  "defaultTemplateId": "uuid-or-null",
+  "administratorIds": ["admin-user-uuid"]
 }
 ```
 
-A default template must be active. `null` means inherit the protected system default.
+A department admin can patch only `id` and `defaultTemplateId`, and only for a department assigned to that admin either directly or through a group. The selected template may be any active template in the shared library; `null` means inherit the protected system default. The server rejects attempts to change another department or any other department setting.
 
 ### `DELETE /api/queues?id=uuid`
 
-Admin only. Permanent deletion is allowed only when no categories or tickets reference the department.
+Super Admin only. Permanent deletion is allowed only when no categories or tickets reference the department.
 
 ### `GET /api/categories?queueId=uuid`
 
-Returns active categories belonging to exactly that department. `queueId` is mandatory for non-admins. Admins may omit it to list all departments and may add `includeInactive=true`.
+Returns active categories belonging to exactly that department. `queueId` is mandatory for users and agents. A department admin may list only categories in administered departments and may add `includeInactive=true`; a Super Admin may list all departments.
 
 ### `POST /api/categories`
 
-Admin only.
+Super Admin only.
 
 ```json
 {
@@ -94,11 +100,13 @@ Names are unique within one department, so different departments may both use `N
 
 ### `PATCH /api/categories`
 
-Admin only. Supports rename, activation/archive, a template override, and moving an unused category. Moving is rejected when tickets already reference the category.
+A Super Admin can rename, activate/archive, move an unused category, and set its template override. Moving is rejected when tickets already reference the category.
+
+A department admin can patch only `id` and `templateId`, and only for a category in an administered department. The override may use any active template in the shared library; `null` inherits the department default. The server rejects category edits and assignments outside that scope.
 
 ### `DELETE /api/categories?id=uuid`
 
-Archives by default. Add `mode=hard` only for an unreferenced category. Referenced categories are never detached from historical tickets.
+Super Admin only. Archives by default. Add `mode=hard` only for an unreferenced category. Referenced categories are never detached from historical tickets.
 
 ## Ticket Form Templates
 

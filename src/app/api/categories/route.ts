@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
-import { canAccessQueue, isAdminRole } from '@/lib/permissions';
+import {
+    canAccessQueue,
+    canAdministerQueue,
+    getAdministeredQueueIds,
+    isAdminRole,
+} from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { createCategorySchema, updateCategorySchema } from '@/lib/validations';
 import logger from '@/lib/logger';
@@ -22,24 +27,36 @@ export async function GET(req: NextRequest) {
         const url = new URL(req.url);
         const queueId = url.searchParams.get('queueId');
         const admin = isAdminRole(session.user.role);
-        if (!queueId && !admin) {
-            return NextResponse.json({ error: 'queueId is required' }, { status: 400 });
-        }
-        if (queueId && !admin) {
+        const where: Prisma.CategoryWhereInput = {};
+
+        if (session.user.role === 'SUPER_ADMIN') {
+            if (queueId) where.queueId = queueId;
+        } else if (session.user.role === 'ADMIN') {
+            const queueIds = await getAdministeredQueueIds(session.user.id);
+            if (queueId && !queueIds.includes(queueId)) {
+                return NextResponse.json({ error: 'You do not administer this department' }, { status: 403 });
+            }
+            where.queueId = queueId ?? { in: queueIds };
+        } else {
+            if (!queueId) return NextResponse.json({ error: 'queueId is required' }, { status: 400 });
             if (session.user.role === 'AGENT') {
                 if (!(await canAccessQueue(session.user.id, session.user.role, queueId))) {
                     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
                 }
             } else {
-                const queue = await prisma.queue.findFirst({ where: { id: queueId, isActive: true, isPublic: true }, select: { id: true } });
+                const queue = await prisma.queue.findFirst({
+                    where: { id: queueId, isActive: true, isPublic: true },
+                    select: { id: true },
+                });
                 if (!queue) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
-        }        const includeInactive = admin && url.searchParams.get('includeInactive') === 'true';
+            where.queueId = queueId;
+        }
+
+        const includeInactive = admin && url.searchParams.get('includeInactive') === 'true';
+        if (!includeInactive) Object.assign(where, { isActive: true, archivedAt: null });
         const categories = await prisma.category.findMany({
-            where: {
-                ...(queueId ? { queueId } : {}),
-                ...(includeInactive ? {} : { isActive: true, archivedAt: null }),
-            },
+            where,
             include: {
                 queue: { select: { id: true, name: true, defaultTemplateId: true } },
                 template: { select: { id: true, name: true, isActive: true, archivedAt: true } },
@@ -57,8 +74,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdminRole(session.user.role)) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only super administrators can create categories' }, { status: 403 });
         }
         const parsed = createCategorySchema.safeParse(await req.json());
         if (!parsed.success) {
@@ -103,6 +120,17 @@ export async function PATCH(req: NextRequest) {
         const { id, ...changes } = parsed.data;
         const existing = await prisma.category.findUnique({ where: { id }, include: { _count: { select: { tickets: true } } } });
         if (!existing) return NextResponse.json({ error: 'Category not found' }, { status: 404 });
+
+        if (session.user.role === 'ADMIN') {
+            if (!(await canAdministerQueue(session.user.id, session.user.role, existing.queueId))) {
+                return NextResponse.json({ error: 'You do not administer this category department' }, { status: 403 });
+            }
+            const disallowedFields = Object.keys(changes).filter((key) => key !== 'templateId');
+            if (disallowedFields.length > 0) {
+                return NextResponse.json({ error: 'Department administrators may only assign the category ticket form' }, { status: 403 });
+            }
+        }
+
         if (changes.queueId && changes.queueId !== existing.queueId && existing._count.tickets > 0) {
             return NextResponse.json({ error: 'A category with historical tickets cannot be moved to another department' }, { status: 409 });
         }
@@ -143,8 +171,8 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdminRole(session.user.role)) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
+            return NextResponse.json({ error: 'Only super administrators can remove categories' }, { status: 403 });
         }
         const url = new URL(req.url);
         const id = url.searchParams.get('id');
