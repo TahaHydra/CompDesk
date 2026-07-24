@@ -246,4 +246,4 @@ For Docker PostgreSQL, use `docker compose exec db pg_dump -U compdesk -d compde
 
 ## Uploaded files
 
-Ticket, branding, and dashboard quick-link assets are stored under `public/uploads`. Local development keeps them in the working tree (ignored by Git). The full Docker Compose deployment uses the persistent `compdesk_uploads` named volume. Back up both PostgreSQL and this upload volume. Multiple application replicas must share the same durable upload storage.
+Ticket, branding, and dashboard quick-link assets are stored under `public/uploads`. Local development keeps them in the working tree (ignored by Git). When `npm run start` runs the local standalone build, optimized quick-link uploads are written to both the persistent project folder and the active standalone public folder, so they load immediately and survive later builds. The full Docker Compose deployment uses the persistent `compdesk_uploads` named volume. Back up both PostgreSQL and this upload volume. Multiple application replicas must share the same durable upload storage.

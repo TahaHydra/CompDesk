@@ -126,7 +126,7 @@ Canned responses remain reusable comment text for agents. They do not define tic
 - **SMTP**: outgoing server credentials and test mail.
 - **Email Notifications**: per-event delivery controls.
 - **Entra ID**: Microsoft OIDC credentials; restart after environment changes.
-- **Quick Links**: up to 16 validated HTTP/HTTPS dashboard links with optional PNG, JPEG, WebP, GIF, or ICO images. Icons render at 32 px on the dashboard and are limited to 512 KB.
+- **Quick Links**: up to 16 validated HTTP/HTTPS dashboard links with optional PNG, JPEG, WebP, GIF, or ICO images. Source files may be up to 5 MB and must have sensible icon proportions. CompDesk preserves the aspect ratio, resizes inside 128×128 without stretching or enlarging small images, stores a compact WebP, and renders it at 32 px on the dashboard.
 - **Security**: local login control (also reflected in Branding).
 - **Features**: attachments, quick links, external API, and webhooks.
 - **API Clients**: scoped API keys and optional department restrictions.
