@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import path from 'path';
 import { dashboardLinksSchema, parseDashboardLinks } from '@/lib/dashboard-links';
 import { normalizeLanguage, translate } from '@/lib/i18n';
 import { helpArticleInputSchema, helpCollectionInputSchema } from '@/lib/help-center';
@@ -48,5 +50,15 @@ describe('dashboard quick-link validation', () => {
 
     it('fails closed when stored JSON is malformed', () => {
         expect(parseDashboardLinks('{broken')).toEqual([]);
+    });
+});
+
+describe('language provider boundaries', () => {
+    it('wraps unauthenticated routes before the sign-in theme toggle renders', () => {
+        const rootLayout = readFileSync(path.join(process.cwd(), 'src', 'app', 'layout.tsx'), 'utf8');
+        const signInPage = readFileSync(path.join(process.cwd(), 'src', 'app', 'auth', 'signin', 'page.tsx'), 'utf8');
+        expect(signInPage).toContain('<ThemeToggle />');
+        expect(rootLayout).toContain('<LanguageProvider initialLanguage="en">');
+        expect(rootLayout.indexOf('<LanguageProvider initialLanguage="en">')).toBeLessThan(rootLayout.indexOf('{children}'));
     });
 });
