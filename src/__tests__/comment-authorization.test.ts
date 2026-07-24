@@ -51,6 +51,49 @@ describe('comment authorization', () => {
         expect(mockPrisma.timelineEvent.update).not.toHaveBeenCalled();
     });
 
+    it('does not let an administrator edit a system timeline event', async () => {
+        mockAuth.mockResolvedValue({
+            user: { id: 'admin-id', email: 'admin@example.com', name: 'Admin', role: 'SUPER_ADMIN', groupIds: [] },
+        });
+        mockPrisma.timelineEvent.findUnique.mockResolvedValue({
+            id: eventId,
+            ticketId,
+            userId: 'admin-id',
+            type: 'STATUS_CHANGE',
+            content: 'Status changed',
+            createdAt: new Date(),
+        });
+        const response = await PATCH(
+            new NextRequest(`http://localhost/api/tickets/${ticketId}/comments`, {
+                method: 'PATCH',
+                body: JSON.stringify({ eventId, content: 'Rewritten history' }),
+                headers: { 'Content-Type': 'application/json' },
+            }),
+            { params: Promise.resolve({ id: ticketId }) }
+        );
+        expect(response.status).toBe(409);
+        expect(mockPrisma.timelineEvent.update).not.toHaveBeenCalled();
+    });
+
+    it('does not let an administrator delete a system timeline event', async () => {
+        mockAuth.mockResolvedValue({
+            user: { id: 'admin-id', email: 'admin@example.com', name: 'Admin', role: 'ADMIN', groupIds: [] },
+        });
+        mockPrisma.timelineEvent.findUnique.mockResolvedValue({
+            id: eventId,
+            ticketId,
+            userId: 'admin-id',
+            type: 'CREATED',
+            content: 'Ticket created',
+            createdAt: new Date(),
+        });
+        const response = await DELETE(
+            new NextRequest(`http://localhost/api/tickets/${ticketId}/comments?eventId=${eventId}`, { method: 'DELETE' }),
+            { params: Promise.resolve({ id: ticketId }) }
+        );
+        expect(response.status).toBe(409);
+        expect(mockPrisma.timelineEvent.delete).not.toHaveBeenCalled();
+    });
     it('does not let an agent delete another person conversation entry', async () => {
         mockAuth.mockResolvedValue({
             user: { id: 'agent-id', email: 'agent@example.com', name: 'Agent', role: 'AGENT', groupIds: [] },

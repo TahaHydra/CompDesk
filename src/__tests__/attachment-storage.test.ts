@@ -5,6 +5,7 @@ import {
     privateAttachmentLocation,
     resolveStoredAttachmentPath,
     resolveTemporaryAttachmentPath,
+    temporaryAttachmentLimits,
     temporaryAttachmentLocation,
 } from '@/lib/attachment-storage';
 
@@ -43,6 +44,27 @@ describe('private attachment storage', () => {
         } finally {
             if (previous === undefined) delete process.env.ATTACHMENT_STORAGE_DIR;
             else process.env.ATTACHMENT_STORAGE_DIR = previous;
+        }
+    });
+
+    it('uses bounded temporary storage defaults and validates overrides', () => {
+        const previous = {
+            ttl: process.env.TEMP_ATTACHMENT_TTL_HOURS,
+            files: process.env.TEMP_ATTACHMENT_MAX_FILES_PER_USER,
+            bytes: process.env.TEMP_ATTACHMENT_MAX_BYTES_PER_USER,
+        };
+        process.env.TEMP_ATTACHMENT_TTL_HOURS = '2';
+        process.env.TEMP_ATTACHMENT_MAX_FILES_PER_USER = '7';
+        process.env.TEMP_ATTACHMENT_MAX_BYTES_PER_USER = '12345';
+        try {
+            expect(temporaryAttachmentLimits()).toEqual({ ttlMs: 2 * 60 * 60 * 1000, maxFilesPerUser: 7, maxBytesPerUser: 12345 });
+        } finally {
+            if (previous.ttl === undefined) delete process.env.TEMP_ATTACHMENT_TTL_HOURS;
+            else process.env.TEMP_ATTACHMENT_TTL_HOURS = previous.ttl;
+            if (previous.files === undefined) delete process.env.TEMP_ATTACHMENT_MAX_FILES_PER_USER;
+            else process.env.TEMP_ATTACHMENT_MAX_FILES_PER_USER = previous.files;
+            if (previous.bytes === undefined) delete process.env.TEMP_ATTACHMENT_MAX_BYTES_PER_USER;
+            else process.env.TEMP_ATTACHMENT_MAX_BYTES_PER_USER = previous.bytes;
         }
     });
 });

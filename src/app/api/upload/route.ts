@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import path from 'path';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, unlink, writeFile } from 'fs/promises';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canAccessTicket } from '@/lib/permissions';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import logger from '@/lib/logger';
-import { authenticatedAttachmentUrl, privateAttachmentLocation, temporaryAttachmentLocation } from '@/lib/attachment-storage';
+import { authenticatedAttachmentUrl, privateAttachmentLocation, temporaryAttachmentLocation, temporaryAttachmentUsage } from '@/lib/attachment-storage';
+import { checkRateLimit } from '@/lib/utils';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -37,6 +38,9 @@ export async function POST(req: NextRequest) {
         if (!(await getFeatureFlag('feature_attachments_enabled'))) {
             return NextResponse.json({ error: 'Attachments are disabled' }, { status: 403 });
         }
+        if (!checkRateLimit(`attachment:upload:${session.user.id}`, 20, 10 * 60 * 1000)) {
+            return NextResponse.json({ error: 'Upload rate limit exceeded. Try again later.' }, { status: 429 });
+        }
         const body = await req.formData();
         const fileValue = body.get('file');
         const ticketIdValue = body.get('ticketId');
@@ -62,6 +66,16 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        if (!ticket) {
+            const usage = await temporaryAttachmentUsage(session.user.id);
+            if (usage.files >= usage.limits.maxFilesPerUser) {
+                return NextResponse.json({ error: 'Temporary upload file limit reached. Submit or remove existing files first.' }, { status: 429 });
+            }
+            if (usage.bytes + fileValue.size > usage.limits.maxBytesPerUser) {
+                return NextResponse.json({ error: 'Temporary upload storage limit reached. Submit or remove existing files first.' }, { status: 413 });
+            }
+        }
+
         const buffer = Buffer.from(await fileValue.arrayBuffer());
         if (!contentMatchesMime(fileValue.type, buffer)) {
             return NextResponse.json({ error: 'The uploaded file content does not match its declared type' }, { status: 400 });
@@ -84,9 +98,17 @@ export async function POST(req: NextRequest) {
         await mkdir(uploadDirectory, { recursive: true });
         await writeFile(filePath, buffer, { flag: 'wx' });
         const safeOriginalName = path.basename(fileValue.name).slice(0, 255) || `attachment${extension}`;
-        const attachment = ticket ? await prisma.attachment.create({
-            data: { ticketId: ticket.id, filename: safeOriginalName, mimetype: fileValue.type, size: fileValue.size, path: storedPath },
-        }) : null;
+        let attachment = null;
+        if (ticket) {
+            try {
+                attachment = await prisma.attachment.create({
+                    data: { ticketId: ticket.id, filename: safeOriginalName, mimetype: fileValue.type, size: fileValue.size, path: storedPath },
+                });
+            } catch (error) {
+                await unlink(filePath).catch(() => undefined);
+                throw error;
+            }
+        }
         const accessUrl = attachment ? authenticatedAttachmentUrl(attachment.id) : storedPath;
         return NextResponse.json({
             id: attachment?.id ?? null,

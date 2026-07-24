@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { constants } from 'node:fs';
-import { copyFile, mkdir, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import nextEnv from '@next/env';
 import { PrismaClient } from '@prisma/client';
 
@@ -72,6 +72,31 @@ try {
     if (moved || repaired || missing) {
         console.log(`Private attachment migration: ${moved} moved, ${repaired} repaired, ${missing} missing.`);
     }
+
+    const ttlHours = Number.parseInt(process.env.TEMP_ATTACHMENT_TTL_HOURS || '24', 10);
+    const cutoff = Date.now() - (Number.isFinite(ttlHours) && ttlHours > 0 ? ttlHours : 24) * 60 * 60 * 1000;
+    const tempRoot = path.resolve(storageRoot, 'temp');
+    const userDirectories = await readdir(tempRoot, { withFileTypes: true }).catch((error) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+    });
+    let expiredRemoved = 0;
+    for (const userDirectory of userDirectories) {
+        if (!userDirectory.isDirectory() || !/^[a-zA-Z0-9-]+$/.test(userDirectory.name)) continue;
+        const directory = path.resolve(tempRoot, userDirectory.name);
+        const files = await readdir(directory, { withFileTypes: true });
+        for (const file of files) {
+            if (!file.isFile() || !/^[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/.test(file.name)) continue;
+            const filePath = path.resolve(directory, file.name);
+            if (!filePath.startsWith(`${directory}${path.sep}`)) continue;
+            const info = await stat(filePath).catch(() => null);
+            if (info?.isFile() && info.mtimeMs <= cutoff) {
+                await unlink(filePath).catch(() => undefined);
+                expiredRemoved += 1;
+            }
+        }
+    }
+    if (expiredRemoved > 0) console.log(`Temporary attachment cleanup: ${expiredRemoved} expired files removed.`);
 } finally {
     await prisma.$disconnect();
 }

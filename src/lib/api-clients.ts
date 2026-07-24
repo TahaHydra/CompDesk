@@ -1,134 +1,83 @@
 import crypto from 'crypto';
+import type { ApiClient } from '@prisma/client';
 import type { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 
-export type ApiClientScope = 'tickets:read' | 'tickets:write';
+export const apiClientScopeSchema = z.enum(['tickets:read', 'tickets:write']);
+export type ApiClientScope = z.infer<typeof apiClientScopeSchema>;
 
-export interface StoredApiClient {
-    id: string;
-    name: string;
-    keyHash: string;
-    scopes: ApiClientScope[];
-    allowedQueueIds: string[];
-    isActive: boolean;
-    createdAt: string;
-    updatedAt: string;
-    lastUsedAt?: string;
-}
+const uniqueScopes = z.array(apiClientScopeSchema).min(1).max(2)
+    .transform((scopes) => [...new Set(scopes)]);
+const queueIds = z.array(z.string().uuid()).max(100)
+    .transform((ids) => [...new Set(ids)]);
 
-const API_CLIENTS_SETTING_KEY = 'api_clients';
+export const createApiClientSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    scopes: uniqueScopes,
+    allowedQueueIds: queueIds.default([]),
+    isActive: z.boolean().default(true),
+}).strict();
+
+export const updateApiClientSchema = z.object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(100).optional(),
+    scopes: uniqueScopes.optional(),
+    allowedQueueIds: queueIds.optional(),
+    isActive: z.boolean().optional(),
+    rotateKey: z.boolean().optional(),
+}).strict().refine(
+    (value) => Object.keys(value).some((key) => key !== 'id'),
+    { message: 'At least one client change is required' }
+);
 
 function hashApiKey(apiKey: string): string {
     return crypto.createHash('sha256').update(apiKey).digest('hex');
 }
 
-function safeEqual(left: string, right: string): boolean {
-    const leftBuffer = Buffer.from(left);
-    const rightBuffer = Buffer.from(right);
-    if (leftBuffer.length !== rightBuffer.length) return false;
-    return crypto.timingSafeEqual(leftBuffer, rightBuffer);
-}
-
 function extractApiKey(req: NextRequest): string | null {
     const bearer = req.headers.get('authorization');
-    if (bearer?.startsWith('Bearer ')) {
-        return bearer.slice('Bearer '.length).trim();
-    }
+    if (bearer?.startsWith('Bearer ')) return bearer.slice('Bearer '.length).trim();
     return req.headers.get('x-api-key')?.trim() || null;
-}
-
-export async function loadApiClients(): Promise<StoredApiClient[]> {
-    const setting = await prisma.appSetting.findUnique({
-        where: { key: API_CLIENTS_SETTING_KEY },
-    });
-    if (!setting?.value) return [];
-
-    try {
-        const parsed = JSON.parse(setting.value);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
-}
-
-export async function saveApiClients(clients: StoredApiClient[]): Promise<void> {
-    await prisma.appSetting.upsert({
-        where: { key: API_CLIENTS_SETTING_KEY },
-        update: { value: JSON.stringify(clients) },
-        create: { key: API_CLIENTS_SETTING_KEY, value: JSON.stringify(clients) },
-    });
 }
 
 export function createApiClientSecret(): string {
     return `exd_${crypto.randomBytes(24).toString('hex')}`;
 }
 
+export function apiClientSecretData(rawKey = createApiClientSecret()) {
+    return { rawKey, keyHash: hashApiKey(rawKey) };
+}
+
 export async function authenticateApiRequest(
     req: NextRequest,
     requiredScope: ApiClientScope
-): Promise<
-    | { ok: true; source: 'client'; client: StoredApiClient }
-    | { ok: true; source: 'legacy'; client: null }
-    | { ok: false }
-> {
+): Promise<{ ok: true; client: ApiClient } | { ok: false }> {
     const apiKey = extractApiKey(req);
     if (!apiKey) return { ok: false };
 
-    const legacyKey = process.env.API_KEY?.trim();
-    if (legacyKey && safeEqual(apiKey, legacyKey)) {
-        return { ok: true, source: 'legacy', client: null };
-    }
+    const client = await prisma.apiClient.findUnique({
+        where: { keyHash: hashApiKey(apiKey) },
+    });
+    if (!client?.isActive || !client.scopes.includes(requiredScope)) return { ok: false };
 
-    const keyHash = hashApiKey(apiKey);
-    const clients = await loadApiClients();
-    const client = clients.find(
-        (candidate) =>
-            candidate.isActive &&
-            candidate.scopes.includes(requiredScope) &&
-            safeEqual(candidate.keyHash, keyHash)
-    );
-
-    if (!client) return { ok: false };
-
-    client.lastUsedAt = new Date().toISOString();
-    client.updatedAt = new Date().toISOString();
-    await saveApiClients(clients);
-
-    return { ok: true, source: 'client', client };
+    const authenticatedAt = new Date();
+    await prisma.apiClient.update({
+        where: { id: client.id },
+        data: { lastUsedAt: authenticatedAt },
+    });
+    return { ok: true, client: { ...client, lastUsedAt: authenticatedAt } };
 }
 
-export function serializeApiClient(client: StoredApiClient) {
+export function serializeApiClient(client: ApiClient) {
     return {
         id: client.id,
         name: client.name,
-        scopes: client.scopes,
+        scopes: client.scopes.filter((scope): scope is ApiClientScope => apiClientScopeSchema.safeParse(scope).success),
         allowedQueueIds: client.allowedQueueIds,
         isActive: client.isActive,
-        createdAt: client.createdAt,
-        updatedAt: client.updatedAt,
-        lastUsedAt: client.lastUsedAt,
+        createdAt: client.createdAt.toISOString(),
+        updatedAt: client.updatedAt.toISOString(),
+        lastUsedAt: client.lastUsedAt?.toISOString(),
     };
-}
-
-export function buildStoredApiClient(input: {
-    name: string;
-    scopes: ApiClientScope[];
-    allowedQueueIds?: string[];
-    isActive?: boolean;
-}) {
-    const rawKey = createApiClientSecret();
-    const now = new Date().toISOString();
-
-    const client: StoredApiClient = {
-        id: crypto.randomUUID(),
-        name: input.name,
-        keyHash: hashApiKey(rawKey),
-        scopes: input.scopes,
-        allowedQueueIds: input.allowedQueueIds ?? [],
-        isActive: input.isActive ?? true,
-        createdAt: now,
-        updatedAt: now,
-    };
-
-    return { client, rawKey };
 }
