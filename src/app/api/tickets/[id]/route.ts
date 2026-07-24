@@ -9,6 +9,8 @@ import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
 import { fieldsVisibleToRoleFromSnapshot, parseTicketFormSchemaSnapshot } from '@/lib/ticket-form/validation';
+import { authenticatedAttachmentUrl, resolveStoredAttachmentPath } from '@/lib/attachment-storage';
+import { unlink } from 'fs/promises';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -58,10 +60,30 @@ export async function GET(
         const storedValues = ticket.submittedFormValues && typeof ticket.submittedFormValues === 'object' && !Array.isArray(ticket.submittedFormValues)
             ? ticket.submittedFormValues as Record<string, unknown>
             : {};
+        const attachmentUrlsByStoredPath = new Map<string, string>(
+            ticket.attachments.map((attachment) => [attachment.path, authenticatedAttachmentUrl(attachment.id)] as const)
+        );
+        const attachmentUrlsByIdentity = new Map<string, string>(
+            ticket.attachments.map((attachment) => [`${attachment.filename}:${attachment.size}`, authenticatedAttachmentUrl(attachment.id)] as const)
+        );
         const historicalValues = Object.fromEntries(
             historicalFields
                 .filter((field) => Object.prototype.hasOwnProperty.call(storedValues, field.fieldKey))
-                .map((field) => [field.fieldKey, storedValues[field.fieldKey]])
+                .map((field) => {
+                    const value = storedValues[field.fieldKey];
+                    if (!Array.isArray(value)) return [field.fieldKey, value];
+                    return [field.fieldKey, value.map((item) => {
+                        if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+                        const record = item as Record<string, unknown>;
+                        const url = typeof record.url === 'string' ? record.url : null;
+                        const identity = typeof record.filename === 'string' && typeof record.size === 'number'
+                            ? `${record.filename}:${record.size}`
+                            : null;
+                        const authenticatedUrl = (url ? attachmentUrlsByStoredPath.get(url) : undefined)
+                            ?? (identity ? attachmentUrlsByIdentity.get(identity) : undefined);
+                        return authenticatedUrl ? { ...record, url: authenticatedUrl } : item;
+                    })];
+                })
         );
 
         // SLA info
@@ -103,7 +125,24 @@ export async function GET(
             });
         }
 
-        const safeTicket = { ...ticket, formSchemaSnapshot: undefined, submittedFormValues: undefined };
+        const safeTicket = {
+            ...ticket,
+            ...(session.user.role === 'USER' ? {
+                queue: { id: ticket.queue.id, name: ticket.queue.name, description: ticket.queue.description },
+                category: ticket.category ? { id: ticket.category.id, name: ticket.category.name, description: ticket.category.description } : null,
+                assignee: ticket.assignee ? { id: ticket.assignee.id, name: ticket.assignee.name, image: ticket.assignee.image } : null,
+            } : {}),
+            watchers: session.user.role === 'USER' ? [] : ticket.watchers.map((watcher) => ({
+                id: watcher.id,
+                user: { id: watcher.user.id, name: watcher.user.name },
+            })),
+            attachments: ticket.attachments.map((attachment) => ({
+                ...attachment,
+                path: authenticatedAttachmentUrl(attachment.id),
+            })),
+            formSchemaSnapshot: undefined,
+            submittedFormValues: undefined,
+        };
         return NextResponse.json({
             ...safeTicket,
             slaInfo,
@@ -152,13 +191,13 @@ export async function PATCH(
 
         const data = parsed.data;
         if (session.user.role === 'USER') {
-            const protectedKeys = ['queueId', 'categoryId', 'assigneeId', 'priority', 'severity', 'tagIds'] as const;
+            const protectedKeys = ['title', 'description', 'status', 'queueId', 'categoryId', 'assigneeId', 'priority', 'severity', 'tagIds'] as const;
             if (protectedKeys.some((key) => data[key] !== undefined)) {
-                return NextResponse.json({ error: 'Only agents can change ticket routing, assignment, priority, severity, or tags' }, { status: 403 });
+                return NextResponse.json({ error: 'Only agents can change ticket content, status, routing, assignment, priority, severity, or tags' }, { status: 403 });
             }
         }
         if (
-            session.user.role === 'AGENT' &&
+            (session.user.role === 'AGENT' || session.user.role === 'ADMIN') &&
             data.queueId &&
             data.queueId !== existingTicket.queueId &&
             !(await canAccessQueue(session.user.id, session.user.role, data.queueId))
@@ -167,6 +206,19 @@ export async function PATCH(
         }
 
         const targetQueueId = data.queueId ?? existingTicket.queueId;
+        const targetAssigneeId = data.assigneeId !== undefined ? data.assigneeId : existingTicket.assigneeId;
+        if (targetAssigneeId && (data.assigneeId !== undefined || data.queueId !== undefined)) {
+            const targetAssignee = await prisma.user.findUnique({
+                where: { id: targetAssigneeId },
+                select: { id: true, role: true, isActive: true },
+            });
+            if (!targetAssignee || !targetAssignee.isActive || targetAssignee.role === 'USER') {
+                return NextResponse.json({ error: 'The assignee must be an active agent or administrator' }, { status: 400 });
+            }
+            if (!(await canAccessQueue(targetAssignee.id, targetAssignee.role, targetQueueId))) {
+                return NextResponse.json({ error: 'The assignee does not have access to the ticket department' }, { status: 400 });
+            }
+        }
         const targetCategoryId = data.categoryId !== undefined ? data.categoryId : existingTicket.categoryId;
         if (targetCategoryId && (data.categoryId !== undefined || data.queueId !== undefined)) {
             const category = await prisma.category.findUnique({
@@ -323,7 +375,7 @@ export async function DELETE(
 
         const { id } = await params;
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({ where: { id }, include: { attachments: true } });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
@@ -346,6 +398,10 @@ export async function DELETE(
             prisma.attachment.deleteMany({ where: { ticketId: id } }),
             prisma.ticket.delete({ where: { id } }),
         ]);
+        await Promise.all(ticket.attachments.map(async (attachment) => {
+            const filePath = resolveStoredAttachmentPath(attachment.path, ticket.id);
+            if (filePath) await unlink(filePath).catch(() => undefined);
+        }));
 
         auditLog({
             userId: session.user.id,

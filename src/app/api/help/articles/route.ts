@@ -17,8 +17,49 @@ export async function GET(request: NextRequest) {
         const raw = admin && request.nextUrl.searchParams.get('raw') === 'true';
         const collectionId = request.nextUrl.searchParams.get('collectionId');
         const query = request.nextUrl.searchParams.get('q')?.trim().slice(0, 100) || '';
+        const slug = request.nextUrl.searchParams.get('slug')?.trim() || '';
+        if (slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+            return NextResponse.json({ error: 'Invalid article slug' }, { status: 400 });
+        }
         const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { preferredLanguage: true } });
         const language = normalizeLanguage(user?.preferredLanguage);
+        if (slug) {
+            const article = await prisma.helpArticle.findUnique({
+                where: { slug },
+                include: {
+                    collection: {
+                        include: {
+                            articles: {
+                                where: includeDrafts ? {} : { isPublished: true },
+                                orderBy: [{ sortOrder: 'asc' }, { titleEn: 'asc' }],
+                            },
+                        },
+                    },
+                },
+            });
+            if (!article || (!includeDrafts && (!article.isPublished || !article.collection.isPublished))) {
+                return NextResponse.json({ error: 'Article not found' }, { status: 404 });
+            }
+            const localized = localizedHelpFields(article, language);
+            const localizedCollection = localizedHelpFields(article.collection, language);
+            return NextResponse.json({
+                id: article.id,
+                slug: article.slug,
+                title: localized.title,
+                summary: localized.summary,
+                content: localized.content ?? '',
+                collection: {
+                    id: article.collection.id,
+                    slug: article.collection.slug,
+                    title: localizedCollection.title,
+                    articles: article.collection.articles.map((item) => {
+                        const fields = localizedHelpFields(item, language);
+                        return { id: item.id, slug: item.slug, title: fields.title };
+                    }),
+                },
+            });
+        }
+
         const searchFields: Prisma.HelpArticleWhereInput[] = language === 'fr'
             ? [{ titleFr: { contains: query, mode: 'insensitive' } }, { summaryFr: { contains: query, mode: 'insensitive' } }, { contentFr: { contains: query, mode: 'insensitive' } }]
             : [{ titleEn: { contains: query, mode: 'insensitive' } }, { summaryEn: { contains: query, mode: 'insensitive' } }, { contentEn: { contains: query, mode: 'insensitive' } }];

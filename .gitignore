@@ -41,6 +41,10 @@ prisma/migrations/**/migration_lock.toml
 public/uploads/*
 !public/uploads/.gitkeep
 
+# Private ticket attachments
+storage/*
+!storage/.gitkeep
+
 # Logs
 /logs/
 *.log

@@ -5,6 +5,10 @@ export function isAdminRole(role: Role): boolean {
     return role === 'ADMIN' || role === 'SUPER_ADMIN';
 }
 
+export function isSuperAdminRole(role: Role): boolean {
+    return role === 'SUPER_ADMIN';
+}
+
 export function isAgentRole(role: Role): boolean {
     return role === 'AGENT' || isAdminRole(role);
 }
@@ -55,6 +59,25 @@ export async function getAdministeredQueueIds(userId: string): Promise<string[]>
     ];
 }
 
+/**
+ * Queue scope used by the Department Inbox.
+ * Super administrators can see every department, department administrators
+ * see the departments they administer plus any where they are also agents,
+ * and agents see their assigned departments.
+ */
+export async function getQueueInboxQueueIds(userId: string, role: Role): Promise<string[] | null> {
+    if (role === 'SUPER_ADMIN') return null;
+    if (role === 'ADMIN') {
+        const [administered, assigned] = await Promise.all([
+            getAdministeredQueueIds(userId),
+            getAgentAccessibleQueueIds(userId),
+        ]);
+        return [...new Set([...administered, ...assigned])];
+    }
+    if (role === 'AGENT') return getAgentAccessibleQueueIds(userId);
+    return [];
+}
+
 export async function canAdministerQueue(userId: string, role: Role, queueId: string): Promise<boolean> {
     if (role === 'SUPER_ADMIN') return true;
     if (role !== 'ADMIN') return false;
@@ -62,7 +85,11 @@ export async function canAdministerQueue(userId: string, role: Role, queueId: st
     return queueIds.includes(queueId);
 }
 export async function canAccessQueue(userId: string, role: Role, queueId: string): Promise<boolean> {
-    if (isAdminRole(role)) return true;
+    if (role === 'SUPER_ADMIN') return true;
+    if (role === 'ADMIN') {
+        const queueIds = await getQueueInboxQueueIds(userId, role);
+        return Boolean(queueIds?.includes(queueId));
+    }
     if (role !== 'AGENT') return false;
 
     const queueIds = await getAgentAccessibleQueueIds(userId);
@@ -74,7 +101,8 @@ export async function canAccessTicket(
     role: Role,
     ticket: { requesterId: string; queueId: string }
 ): Promise<boolean> {
-    if (isAdminRole(role)) return true;
+    if (role === 'SUPER_ADMIN') return true;
+    if (role === 'ADMIN') return canAccessQueue(userId, role, ticket.queueId);
     if (role === 'USER') return ticket.requesterId === userId;
     if (role === 'AGENT') return canAccessQueue(userId, role, ticket.queueId);
     return false;

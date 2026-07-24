@@ -51,12 +51,17 @@ export default function QueueInboxPage() {
         router.replace(query ? `/queue?${query}` : '/queue', { scroll: false });
     }, [router, queueId, status, priority, search, page, limit]);
 
-    const { data: queues, isLoading: isLoadingQueues } = useQuery({
+    const { data: queues, isLoading: isLoadingQueues, error: queuesError } = useQuery({
         queryKey: ['queues'],
-        queryFn: async () => { const res = await fetch('/api/queues?accessible=true'); return res.json(); },
+        queryFn: async () => {
+            const res = await fetch('/api/queues?accessible=true');
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || 'Failed to load departments');
+            return payload;
+        },
     });
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, error: ticketsError } = useQuery({
         queryKey: ['queue-tickets', queueId, search, status, priority, page, limit],
         queryFn: async () => {
             const params = new URLSearchParams({ view: 'queue', page: String(page), limit: String(limit) });
@@ -65,7 +70,9 @@ export default function QueueInboxPage() {
             if (status !== 'all') params.set('status', status);
             if (priority !== 'all') params.set('priority', priority);
             const res = await fetch(`/api/tickets?${params}`);
-            return res.json();
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || 'Failed to load department tickets');
+            return payload;
         },
         refetchInterval: 15000,
         enabled: queues !== undefined && queues.length > 0, // only run if they have access to some departments
@@ -76,6 +83,20 @@ export default function QueueInboxPage() {
     const hasFilters = queueId !== 'all' || status !== 'all' || priority !== 'all' || !!search.trim();
 
     const noAccess = !isLoadingQueues && queues?.length === 0;
+
+    if (queuesError || ticketsError) {
+        const message = queuesError instanceof Error
+            ? queuesError.message
+            : ticketsError instanceof Error ? ticketsError.message : 'The Department Inbox could not be loaded.';
+        return (
+            <div className="flex min-h-[45vh] flex-col items-center justify-center text-center">
+                <AlertTriangle className="h-10 w-10 text-destructive" />
+                <h1 className="mt-4 text-xl font-semibold">Department Inbox unavailable</h1>
+                <p className="mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
+                <Button className="mt-5" variant="outline" onClick={() => window.location.reload()}>Try again</Button>
+            </div>
+        );
+    }
 
     if (noAccess) {
         return (

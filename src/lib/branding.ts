@@ -105,6 +105,7 @@ export function normalizeBranding(input: Partial<BrandingConfig>): BrandingConfi
 export function toPublicBranding(config: BrandingConfig): PublicBranding {
     return {
         ...config,
+        demoAccountInfo: config.showDemoAccounts ? config.demoAccountInfo : '',
         microsoftLoginConfigured: Boolean(
             process.env.AZURE_AD_CLIENT_ID &&
             process.env.AZURE_AD_CLIENT_SECRET &&

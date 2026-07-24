@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createTicketSchema } from '@/lib/validations';
 import { checkRateLimit } from '@/lib/utils';
-import { getAgentAccessibleQueueIds } from '@/lib/permissions';
+import { getAgentAccessibleQueueIds, getQueueInboxQueueIds } from '@/lib/permissions';
 import { createTicketFromResolvedTemplate } from '@/lib/tickets/create-ticket';
 import { TemplateResolutionError } from '@/lib/ticket-form/service';
 import { TicketFormValidationError } from '@/lib/ticket-form/validation';
@@ -43,8 +43,8 @@ export async function GET(req: NextRequest) {
         const view = VALID_VIEWS.has(viewParam) ? viewParam : 'my';
         const queueId = queueIdParam && queueIdParam !== 'all' ? queueIdParam : null;
 
-        const where: Record<string, unknown> = {};
-        const andConditions: Record<string, unknown>[] = [];
+        const where: Prisma.TicketWhereInput = {};
+        const andConditions: Prisma.TicketWhereInput[] = [];
         const userId = session.user.id;
         const role = session.user.role;
 
@@ -71,9 +71,11 @@ export async function GET(req: NextRequest) {
                     { requesterId: userId },
                 ],
             });
-        } else if (view === 'queue') {
-            roleBasedQueueIds = await getAgentAccessibleQueueIds(userId);
-            where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
+        } else if (role === 'ADMIN' || view === 'queue') {
+            roleBasedQueueIds = await getQueueInboxQueueIds(userId, role);
+            if (roleBasedQueueIds !== null) {
+                where.queueId = roleBasedQueueIds.length > 0 ? { in: roleBasedQueueIds } : { in: ['__none__'] };
+            }
         }
 
         if (queueId) {
@@ -107,7 +109,7 @@ export async function GET(req: NextRequest) {
 
         const [tickets, total] = await Promise.all([
             prisma.ticket.findMany({
-                where: where as any,
+                where,
                 include: {
                     queue: { select: { id: true, name: true } },
                     category: { select: { id: true, name: true } },
@@ -120,7 +122,7 @@ export async function GET(req: NextRequest) {
                 skip: (page - 1) * limit,
                 take: limit,
             }),
-            prisma.ticket.count({ where: where as any }),
+            prisma.ticket.count({ where }),
         ]);
 
         const queueIds = [...new Set(tickets.map((ticket) => ticket.queueId))];

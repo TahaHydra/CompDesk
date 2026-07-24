@@ -125,7 +125,7 @@ npm run verify
 
 The department-category/template migration is transactional and preserves existing users, tickets, categories, submitted values, and queue-owned fields. It does not require seed execution.
 
-Ticket attachments and branding assets live in `public/uploads`. Docker Compose mounts the persistent `compdesk_uploads` named volume at `/app/public/uploads`; include it in backups. A standalone or multi-replica deployment must provide equivalent durable shared storage with write access for the application user.
+Branding and quick-link assets live in `public/uploads`; private ticket attachments live in `storage/attachments` and are served only by the authenticated `/api/upload/[id]` route. Docker Compose mounts persistent `compdesk_uploads` and `compdesk_attachments` volumes at `/app/public/uploads` and `/app/storage/attachments`. Include both in backups. A standalone or multi-replica deployment must provide equivalent durable shared storage with write access for the application user. On the first `npm start` after this upgrade, the guarded migration script moves legacy ticket files out of the public directory and updates their database paths before the server starts.
 
 Do not run `npm run db:seed` in production unless you explicitly want demo data. A clean demo install can override `SEED_ADMIN_EMAIL` and `SEED_DEFAULT_PASSWORD`.
 ## Option A: Docker Compose (Recommended)
@@ -227,11 +227,8 @@ npm run build
 ### Step 5: Start the Server
 
 ```bash
-# Option 1: Using the standalone output (recommended for production)
-node .next/standalone/server.js
-
-# Option 2: Using next start (development-like)
-# Note: doesn't work with output: standalone, use option 1
+# Runs the guarded attachment migration, then starts the standalone server
+npm start
 ```
 
 ### Step 6: Keep it Running (systemd)
@@ -248,7 +245,7 @@ Type=simple
 User=www-data
 WorkingDirectory=/opt/compdesk
 EnvironmentFile=/opt/compdesk/.env
-ExecStart=/usr/bin/node .next/standalone/server.js
+ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=10
 
@@ -541,7 +538,7 @@ sudo systemctl restart compdesk
 
 ### "next start" fails with "standalone" error
 
-Use `node .next/standalone/server.js` instead of `npm start`. The app is built with `output: 'standalone'` for Docker compatibility.
+Run `npm run build` and then `npm start`. The start script performs the guarded legacy-attachment migration before launching `.next/standalone/server.js`; do not bypass it during the first upgraded start.
 
 ### Database connection refused
 

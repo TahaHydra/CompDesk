@@ -116,13 +116,14 @@ export async function PATCH(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const isAgent = isAgentOrAbove(session.user.role);
-        const isOwnerComment = event.userId === session.user.id && (event.type === 'COMMENT' || event.type === 'INTERNAL_NOTE');
-        if (!isAgent && !isOwnerComment) {
+        const isAdministrator = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN';
+        const isOwnConversationEntry = event.userId === session.user.id
+            && (event.type === 'COMMENT' || (event.type === 'INTERNAL_NOTE' && session.user.role !== 'USER'));
+        if (!isAdministrator && !isOwnConversationEntry) {
             return NextResponse.json({ error: 'You can only edit your own comments' }, { status: 403 });
         }
 
-        if (!isAgent) {
+        if (!isAdministrator) {
             const hoursSinceCreation = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
             if (hoursSinceCreation > 24) {
                 return NextResponse.json({ error: 'Comments can only be edited within 24 hours' }, { status: 400 });
@@ -195,9 +196,10 @@ export async function DELETE(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const isAgent = isAgentOrAbove(session.user.role);
-        const isOwnerComment = event.userId === session.user.id && (event.type === 'COMMENT' || event.type === 'INTERNAL_NOTE');
-        if (!isAgent && !isOwnerComment) {
+        const isAdministrator = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN';
+        const isOwnConversationEntry = event.userId === session.user.id
+            && (event.type === 'COMMENT' || (event.type === 'INTERNAL_NOTE' && session.user.role !== 'USER'));
+        if (!isAdministrator && !isOwnConversationEntry) {
             return NextResponse.json({ error: 'You can only delete your own comments' }, { status: 403 });
         }
 
