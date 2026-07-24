@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { BrandingProvider } from '@/components/providers/branding-provider';
+import { LanguageProvider } from '@/components/providers/language-provider';
 import { getBrandingStyleVariables, getPublicBranding } from '@/lib/branding';
 
 export const dynamic = 'force-dynamic';
@@ -53,12 +54,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </head>
             <body className="min-h-screen transition-theme">
                 <BrandingProvider branding={branding}>
-                    <ThemeProvider>
-                        <QueryProvider>
-                            {children}
-                            <Toaster />
-                        </QueryProvider>
-                    </ThemeProvider>
+                    <LanguageProvider initialLanguage="en">
+                        <ThemeProvider>
+                            <QueryProvider>
+                                {children}
+                                <Toaster />
+                            </QueryProvider>
+                        </ThemeProvider>
+                    </LanguageProvider>
                 </BrandingProvider>
             </body>
         </html>
