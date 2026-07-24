@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { copyFile, mkdir, stat, unlink } from 'node:fs/promises';
-import { loadEnvConfig } from '@next/env';
+import nextEnv from '@next/env';
 import { PrismaClient } from '@prisma/client';
 
+const { loadEnvConfig } = nextEnv;
 loadEnvConfig(process.cwd());
 const prisma = new PrismaClient();
 const storageRoot = path.resolve(
