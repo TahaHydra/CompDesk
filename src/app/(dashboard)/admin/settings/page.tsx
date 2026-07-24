@@ -348,14 +348,26 @@ function DashboardLinksTab() {
     };
     const uploadIcon = async (index: number, file?: File) => {
         if (!file) return;
+        const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/x-icon', 'image/vnd.microsoft.icon']);
+        if (!allowedTypes.has(file.type)) {
+            toast({ title: 'Icon could not be uploaded', description: 'Choose a PNG, JPEG, WebP, GIF, or ICO image.', variant: 'destructive' });
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast({ title: 'Icon could not be uploaded', description: 'The source image must be 5 MB or smaller.', variant: 'destructive' });
+            return;
+        }
         setUploadingIndex(index);
         try {
             const form = new FormData();
             form.set('file', file);
             const response = await fetch('/api/settings/quick-link-icons', { method: 'POST', body: form });
-            const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Icon upload failed');
+            const payload = await response.json() as { url?: string; width?: number; height?: number; size?: number; error?: string };
+            if (!response.ok || !payload.url) throw new Error(payload.error || 'Icon upload failed');
             updateLink(index, 'iconUrl', payload.url);
+            const dimensions = payload.width && payload.height ? `${payload.width}×${payload.height}` : 'compact';
+            const size = payload.size ? `${Math.max(1, Math.ceil(payload.size / 1024))} KB` : 'optimized';
+            toast({ title: 'Icon ready', description: `${dimensions} WebP · ${size}. Save links to publish it.` });
         } catch (error) {
             toast({ title: 'Icon could not be uploaded', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
         } finally {
@@ -371,7 +383,7 @@ function DashboardLinksTab() {
             </CardHeader>
             <CardContent className="space-y-4">
                 <p className="rounded-lg border bg-muted/35 p-3 text-sm text-muted-foreground">
-                    Add up to 16 useful resources. A small square icon is optional; 32×32 or 64×64 PNG/WebP files give the cleanest result.
+                    Add up to 16 useful resources. Upload a PNG, JPEG, WebP, GIF, or ICO image up to 5 MB. It is safely resized inside 128×128, keeps its proportions, and is stored as a compact WebP.
                 </p>
                 {!links.length ? (
                     <div className="rounded-lg border border-dashed py-8 text-center text-muted-foreground">No custom links added yet.</div>
@@ -390,7 +402,7 @@ function DashboardLinksTab() {
                                         <label className="inline-flex h-9 cursor-pointer items-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-accent">
                                             {uploadingIndex === index ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
                                             Upload
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon" className="sr-only" disabled={uploadingIndex !== null} onChange={(event) => uploadIcon(index, event.target.files?.[0])} />
+                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico" className="sr-only" disabled={uploadingIndex !== null} onChange={(event) => uploadIcon(index, event.target.files?.[0])} />
                                         </label>
                                         {link.iconUrl ? <Button type="button" variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateLink(index, 'iconUrl', '')} aria-label="Remove icon"><X className="h-4 w-4" /></Button> : null}
                                     </div>
