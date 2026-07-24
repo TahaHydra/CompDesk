@@ -196,7 +196,7 @@ export default function AppShell({
             {active && (
                 <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
             )}
-            <item.icon className={cn('h-5 w-5 shrink-0 transition-transform group-hover:scale-110', collapsed && 'lg:mx-auto')} />
+            <item.icon className={cn('h-5 w-5 shrink-0', collapsed && 'lg:mx-auto')} />
             <span className={cn('truncate', collapsed && 'lg:hidden')}>{item.label}</span>
         </Link>
     );
