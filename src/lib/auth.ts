@@ -204,22 +204,29 @@ export const authConfig: NextAuthConfig = {
             return true;
         },
         async jwt({ token, user }) {
-            // Hydrate on sign-in and repair older/incomplete tokens.
-            if (user || !token.id || !token.role || !Array.isArray(token.groupIds)) {
-                const email = user?.email ?? token.email;
-                if (!email) return token;
+            // Refresh authorization data on every session read. Roles, active state,
+            // and memberships are security data and must not remain stale in a JWT.
+            const userId = typeof user?.id === 'string'
+                ? user.id
+                : typeof token.id === 'string' ? token.id : null;
+            const email = typeof user?.email === 'string'
+                ? user.email
+                : typeof token.email === 'string' ? token.email : null;
+            if (!userId && !email) return null;
 
-                const dbUser = await prisma.user.findUnique({
-                    where: { email },
-                    include: { groupMemberships: true },
-                });
-                if (dbUser) {
-                    token.id = dbUser.id;
-                    token.role = dbUser.role;
-                    token.entraObjectId = dbUser.entraObjectId;
-                    token.groupIds = dbUser.groupMemberships.map((m) => m.groupId);
-                }
-            }
+            const dbUser = await prisma.user.findUnique({
+                where: userId ? { id: userId } : { email: email! },
+                include: { groupMemberships: true },
+            });
+            if (!dbUser?.isActive) return null;
+
+            token.id = dbUser.id;
+            token.email = dbUser.email;
+            token.name = dbUser.name;
+            token.picture = dbUser.image;
+            token.role = dbUser.role;
+            token.entraObjectId = dbUser.entraObjectId;
+            token.groupIds = dbUser.groupMemberships.map((membership) => membership.groupId);
             return token;
         },
         async session({ session, token }) {

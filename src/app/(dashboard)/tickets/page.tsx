@@ -151,12 +151,7 @@ export default function TicketsPage() {
                 title="Tickets"
                 description={`${pagination.total} ticket${pagination.total !== 1 ? 's' : ''} total`}
             >
-                <Link href="/tickets/new">
-                    <Button className="gap-2 shadow-lg shadow-primary/25">
-                        <Plus className="h-4 w-4" />
-                        New Ticket
-                    </Button>
-                </Link>
+                <Button asChild className="gap-2 shadow-lg shadow-primary/25"><Link href="/tickets/new"><Plus className="h-4 w-4" /> New Ticket</Link></Button>
             </PageHeader>
 
             {/* Filters */}

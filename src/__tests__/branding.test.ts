@@ -40,6 +40,13 @@ describe('branding configuration', () => {
         process.env.AZURE_AD_TENANT_ID = previous.tenant;
     });
 
+    it('omits demo information from the public response while display is disabled', () => {
+        const hidden = toPublicBranding({ ...DEFAULT_BRANDING, showDemoAccounts: false, demoAccountInfo: 'admin@example.com / password' });
+        const visible = toPublicBranding({ ...DEFAULT_BRANDING, showDemoAccounts: true, demoAccountInfo: 'safe demo instructions' });
+        expect(hidden.demoAccountInfo).toBe('');
+        expect(visible.demoAccountInfo).toBe('safe demo instructions');
+    });
+
     it('maps primary and accent colors to global CSS variables', () => {
         const variables = getBrandingStyleVariables({ ...DEFAULT_BRANDING, primaryColor: '#ff0000', accentColor: '#00ff00' });
         expect(variables).toMatchObject({

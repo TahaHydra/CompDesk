@@ -12,6 +12,7 @@ import {
     canAccessTicket,
     canAdministerQueue,
     getAdministeredQueueIds,
+    getQueueInboxQueueIds,
     isAdminRole,
     isAgentRole,
 } from '@/lib/permissions';
@@ -65,6 +66,26 @@ describe('permissions', () => {
         await expect(canAdministerQueue('agent-1', 'AGENT', 'queue-1')).resolves.toBe(false);
     });
 
+    it('combines administered and agent departments for an ADMIN inbox', async () => {
+        mockQueueGroupFindMany
+            .mockResolvedValueOnce([{ queueId: 'admin-queue' }])
+            .mockResolvedValueOnce([{ queueId: 'agent-queue' }]);
+        mockQueueMemberFindMany
+            .mockResolvedValueOnce([{ queueId: 'shared-queue' }])
+            .mockResolvedValueOnce([{ queueId: 'shared-queue' }]);
+
+        await expect(getQueueInboxQueueIds('admin-1', 'ADMIN')).resolves.toEqual([
+            'admin-queue',
+            'shared-queue',
+            'agent-queue',
+        ]);
+    });
+
+    it('uses an unrestricted Department Inbox for a SUPER_ADMIN', async () => {
+        await expect(getQueueInboxQueueIds('super-1', 'SUPER_ADMIN')).resolves.toBeNull();
+        expect(mockQueueGroupFindMany).not.toHaveBeenCalled();
+    });
+
     it('lets requesters access their own tickets', async () => {
         await expect(
             canAccessTicket('user-1', 'USER', { requesterId: 'user-1', queueId: 'queue-1' })
@@ -77,9 +98,21 @@ describe('permissions', () => {
         ).resolves.toBe(false);
     });
 
-    it('always lets admins access tickets', async () => {
+    it('limits department administrators to tickets in their administered or agent departments', async () => {
+        mockQueueGroupFindMany.mockResolvedValue([{ queueId: 'queue-1' }]);
+        mockQueueMemberFindMany.mockResolvedValue([]);
+
         await expect(
             canAccessTicket('admin-1', 'ADMIN', { requesterId: 'user-2', queueId: 'queue-1' })
+        ).resolves.toBe(true);
+        await expect(
+            canAccessTicket('admin-1', 'ADMIN', { requesterId: 'user-2', queueId: 'queue-2' })
+        ).resolves.toBe(false);
+    });
+
+    it('lets super administrators access tickets in every department', async () => {
+        await expect(
+            canAccessTicket('super-1', 'SUPER_ADMIN', { requesterId: 'user-2', queueId: 'queue-any' })
         ).resolves.toBe(true);
     });
 });

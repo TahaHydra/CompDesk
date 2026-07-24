@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { isAdmin } from '@/lib/utils';
 
 // GET /api/audit-logs — list audit logs with pagination and filters
 export async function GET(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdmin(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

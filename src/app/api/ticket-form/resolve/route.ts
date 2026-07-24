@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { isAdminRole } from '@/lib/permissions';
+import { canAccessQueue, isAdminRole } from '@/lib/permissions';
 import { resolveTicketFormTemplate, TemplateResolutionError } from '@/lib/ticket-form/service';
 import logger from '@/lib/logger';
+import { prisma } from '@/lib/prisma';
 
 const querySchema = z.object({
     queueId: z.string().uuid(),
@@ -28,7 +29,16 @@ export async function GET(req: NextRequest) {
         if (parsed.data.previewRole && !isAdminRole(session.user.role)) {
             return NextResponse.json({ error: 'Only administrators can preview another role' }, { status: 403 });
         }
-        const role = parsed.data.previewRole ?? session.user.role;
+        if (session.user.role === 'USER') {
+            const publicDepartment = await prisma.queue.findFirst({
+                where: { id: parsed.data.queueId, isActive: true, isPublic: true },
+                select: { id: true },
+            });
+            if (!publicDepartment) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        } else if (session.user.role !== 'SUPER_ADMIN'
+            && !(await canAccessQueue(session.user.id, session.user.role, parsed.data.queueId))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }        const role = parsed.data.previewRole ?? session.user.role;
         const resolved = await resolveTicketFormTemplate(parsed.data.queueId, parsed.data.categoryId, role);
         return NextResponse.json({
             template: resolved.template,

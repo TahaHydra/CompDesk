@@ -4,6 +4,7 @@ const mockRemoveUploadedImage = jest.fn();
 const mockPrisma = {
     user: { findUnique: jest.fn(), update: jest.fn() },
     helpCollection: { create: jest.fn() },
+    helpArticle: { findUnique: jest.fn() },
     appSetting: { findUnique: jest.fn() },
 };
 
@@ -20,10 +21,12 @@ jest.mock('@/lib/logger', () => ({ __esModule: true, default: { error: jest.fn()
 import { NextRequest } from 'next/server';
 import { PATCH as updatePreferences } from '@/app/api/profile/preferences/route';
 import { POST as createHelpCollection } from '@/app/api/help/collections/route';
+import { GET as getHelpArticles } from '@/app/api/help/articles/route';
 import { DELETE as deleteQuickLinkIcon } from '@/app/api/settings/quick-link-icons/route';
 
 const userSession = { user: { id: 'user-id', email: 'user@example.com', name: 'User', role: 'USER', groupIds: [] } };
 const adminSession = { user: { ...userSession.user, id: 'admin-id', role: 'ADMIN' } };
+const superSession = { user: { ...userSession.user, id: 'super-id', role: 'SUPER_ADMIN' } };
 
 describe('profile preference and help-center authorization', () => {
     beforeEach(() => {
@@ -55,6 +58,34 @@ describe('profile preference and help-center authorization', () => {
         expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
+    it('loads a localized published help article by slug without server rendering', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ preferredLanguage: 'fr' });
+        mockPrisma.helpArticle.findUnique.mockResolvedValue({
+            id: 'article-id', collectionId: 'collection-id', slug: 'welcome-to-compdesk',
+            titleEn: 'Welcome', titleFr: 'Bienvenue', summaryEn: 'Start here', summaryFr: 'Commencez ici',
+            contentEn: 'English content', contentFr: 'Contenu français', isPublished: true,
+            collection: {
+                id: 'collection-id', slug: 'getting-started', titleEn: 'Getting started', titleFr: 'Bien démarrer',
+                isPublished: true,
+                articles: [{ id: 'article-id', slug: 'welcome-to-compdesk', titleEn: 'Welcome', titleFr: 'Bienvenue' }],
+            },
+        });
+        const response = await getHelpArticles(new NextRequest('http://localhost/api/help/articles?slug=welcome-to-compdesk'));
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({ title: 'Bienvenue', content: 'Contenu français' });
+    });
+
+    it('does not expose a draft help article to a normal user', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ preferredLanguage: 'en' });
+        mockPrisma.helpArticle.findUnique.mockResolvedValue({
+            id: 'draft-id', slug: 'draft-article', titleEn: 'Draft', titleFr: 'Brouillon',
+            contentEn: 'Draft content', contentFr: 'Brouillon', isPublished: false,
+            collection: { id: 'collection-id', slug: 'drafts', titleEn: 'Drafts', titleFr: 'Brouillons', isPublished: true, articles: [] },
+        });
+        const response = await getHelpArticles(new NextRequest('http://localhost/api/help/articles?slug=draft-article'));
+        expect(response.status).toBe(404);
+    });
+
     it('blocks normal users from creating help content', async () => {
         const response = await createHelpCollection(new NextRequest('http://localhost/api/help/collections', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -64,7 +95,7 @@ describe('profile preference and help-center authorization', () => {
     });
 
     it('does not delete a quick-link icon while saved settings still reference it', async () => {
-        mockAuth.mockResolvedValue(adminSession);
+        mockAuth.mockResolvedValue(superSession);
         const iconUrl = '/uploads/quick-links/123e4567-e89b-12d3-a456-426614174000.png';
         mockPrisma.appSetting.findUnique.mockResolvedValue({ value: JSON.stringify([{ title: 'Intranet', url: 'https://intranet.example.com', iconUrl }]) });
         const response = await deleteQuickLinkIcon(new NextRequest(`http://localhost/api/settings/quick-link-icons?url=${encodeURIComponent(iconUrl)}`, { method: 'DELETE' }));

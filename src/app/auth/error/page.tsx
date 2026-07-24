@@ -31,9 +31,7 @@ function AuthErrorContent() {
             </CardHeader>
             <CardContent className="text-center space-y-4">
                 <p className="text-muted-foreground">{errorMessages[error ?? 'Default'] ?? errorMessages.Default}</p>
-                <Link href="/auth/signin">
-                    <Button className="w-full">Try Again</Button>
-                </Link>
+                <Button asChild className="w-full"><Link href="/auth/signin">Try Again</Link></Button>
             </CardContent>
         </Card>
     );

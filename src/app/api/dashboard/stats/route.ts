@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { parseDashboardLinks } from '@/lib/dashboard-links';
+import { getQueueInboxQueueIds } from '@/lib/permissions';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -31,7 +32,7 @@ export async function GET() {
                     select: { queueId: true },
                 }),
                 prisma.queueMember.findMany({
-                    where: { userId },
+                    where: { userId, role: 'agent' },
                     select: { queueId: true },
                 })
             ]);
@@ -46,8 +47,13 @@ export async function GET() {
                 // Agent not assigned to any department — show only assigned
                 whereClause = { assigneeId: userId };
             }
+        } else if (role === 'ADMIN') {
+            const departmentIds = await getQueueInboxQueueIds(userId, role);
+            whereClause = departmentIds?.length
+                ? { queueId: { in: departmentIds } }
+                : { queueId: { in: ['__none__'] } };
         }
-        // ADMIN / SUPER_ADMIN: no filter, see all tickets
+        // SUPER_ADMIN: no filter, see all tickets
 
         const dashboardLinksEnabled = await getFeatureFlag('feature_dashboard_links_enabled');
 

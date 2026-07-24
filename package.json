@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/copy-standalone-assets.js",
-    "start": "node .next/standalone/server.js",
+    "start": "node scripts/migrate-private-attachments.mjs && node .next/standalone/server.js",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",

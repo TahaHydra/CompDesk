@@ -29,9 +29,13 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 
 export default function AdminUsersPage() {
     const { toast } = useToast();
+    const { data: session } = useSession();
+    const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
+    const roleOptions = isSuperAdmin ? ['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'] : ['USER', 'AGENT', 'ADMIN'];
     const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
     const [createOpen, setCreateOpen] = useState(false);
@@ -51,14 +55,24 @@ export default function AdminUsersPage() {
     const [editRole, setEditRole] = useState('');
     const [editActive, setEditActive] = useState(true);
 
-    const { data: users, isLoading } = useQuery({
+    const { data: users, isLoading, error: usersError } = useQuery({
         queryKey: ['users'],
-        queryFn: async () => { const res = await fetch('/api/users'); return res.json(); },
+        queryFn: async () => {
+            const res = await fetch('/api/users');
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || 'Failed to load users');
+            return payload;
+        },
     });
 
-    const { data: queues } = useQuery({
+    const { data: queues, error: queuesError } = useQuery({
         queryKey: ['queues'],
-        queryFn: async () => { const res = await fetch('/api/queues'); return res.json(); },
+        queryFn: async () => {
+            const res = await fetch('/api/queues');
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || 'Failed to load departments');
+            return payload;
+        },
     });
 
     const createUser = useMutation({
@@ -158,6 +172,10 @@ export default function AdminUsersPage() {
     };
 
     if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading users...</div>;
+    if (usersError || queuesError) {
+        const message = usersError instanceof Error ? usersError.message : queuesError instanceof Error ? queuesError.message : 'Failed to load user management';
+        return <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center text-destructive">{message}</div>;
+    }
 
     return (
         <div className="space-y-6">
@@ -185,6 +203,7 @@ export default function AdminUsersPage() {
             {/* User Cards */}
             <div className="grid grid-cols-1 gap-3">
                 {filteredUsers.map((u: any) => {
+                    const canManageUser = isSuperAdmin || u.role !== 'SUPER_ADMIN';
                     const assignedQueueIds = u.queueMemberships?.map((m: any) => m.queueId) || [];
                     return (
                         <Card key={u.id} className={`border shadow-sm transition-colors ${!u.isActive ? 'opacity-60 border-dashed' : ''}`}>
@@ -213,20 +232,21 @@ export default function AdminUsersPage() {
                                     {/* Quick role change */}
                                     <Select
                                         value={u.role}
+                                        disabled={!canManageUser || u.id === session?.user?.id}
                                         onValueChange={(role) => updateUser.mutate({ userId: u.id, role })}
                                     >
                                         <SelectTrigger className="w-[130px] h-8 text-xs">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'].map((r) => (
+                                            {roleOptions.map((r) => (
                                                 <SelectItem key={r} value={r}>{r.replace('_', ' ')}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
 
                                     {/* Department assignment (for agents+) */}
-                                    {(u.role === 'AGENT' || u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && (
+                                    {canManageUser && (u.role === 'AGENT' || u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && (
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="outline" size="sm" className="h-8 text-xs">
@@ -256,13 +276,13 @@ export default function AdminUsersPage() {
                                     )}
 
                                     {/* Action buttons */}
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(u)} title="Edit user">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(u)} disabled={!canManageUser} title="Edit user">
                                         <Pencil className="h-3.5 w-3.5" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => resetPassword.mutate(u.id)} title="Reset password">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => resetPassword.mutate(u.id)} disabled={!canManageUser} title="Reset password">
                                         <RotateCcw className="h-3.5 w-3.5" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteUser(u)} title="Delete user">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteUser(u)} disabled={!canManageUser || u.id === session?.user?.id} title="Delete user">
                                         <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
                                 </div>
@@ -293,7 +313,7 @@ export default function AdminUsersPage() {
                             <Select value={newRole} onValueChange={setNewRole}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'].map((r) => (
+                                    {roleOptions.map((r) => (
                                         <SelectItem key={r} value={r}>{r.replace('_', ' ')}</SelectItem>
                                     ))}
                                 </SelectContent>
@@ -330,7 +350,7 @@ export default function AdminUsersPage() {
                             <Select value={editRole} onValueChange={setEditRole}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {['USER', 'AGENT', 'ADMIN', 'SUPER_ADMIN'].map((r) => (
+                                    {roleOptions.map((r) => (
                                         <SelectItem key={r} value={r}>{r.replace('_', ' ')}</SelectItem>
                                     ))}
                                 </SelectContent>

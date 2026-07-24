@@ -3,14 +3,13 @@ import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { parseDashboardLinks } from '@/lib/dashboard-links';
-import { isAdminRole } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { isUploadedImageUrl, removeUploadedImage, storeOptimizedQuickLinkIcon } from '@/lib/uploaded-image';
 
 export async function POST(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdminRole(session.user.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         const form = await request.formData();
         const file = form.get('file');
         if (!(file instanceof File)) return NextResponse.json({ error: 'No icon image provided' }, { status: 400 });
@@ -40,7 +39,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdminRole(session.user.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         const url = request.nextUrl.searchParams.get('url') || '';
         if (!isUploadedImageUrl(url, 'quick-links')) return NextResponse.json({ error: 'Invalid quick-link icon URL' }, { status: 400 });
         const storedLinks = await prisma.appSetting.findUnique({ where: { key: 'dashboard_links' }, select: { value: true } });

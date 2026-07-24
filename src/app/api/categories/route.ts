@@ -26,17 +26,17 @@ export async function GET(req: NextRequest) {
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const url = new URL(req.url);
         const queueId = url.searchParams.get('queueId');
-        const admin = isAdminRole(session.user.role);
         const where: Prisma.CategoryWhereInput = {};
+        let administeredQueueIds: string[] = [];
 
         if (session.user.role === 'SUPER_ADMIN') {
             if (queueId) where.queueId = queueId;
         } else if (session.user.role === 'ADMIN') {
-            const queueIds = await getAdministeredQueueIds(session.user.id);
-            if (queueId && !queueIds.includes(queueId)) {
-                return NextResponse.json({ error: 'You do not administer this department' }, { status: 403 });
+            administeredQueueIds = await getAdministeredQueueIds(session.user.id);
+            if (queueId && !(await canAccessQueue(session.user.id, session.user.role, queueId))) {
+                return NextResponse.json({ error: 'You cannot access this department' }, { status: 403 });
             }
-            where.queueId = queueId ?? { in: queueIds };
+            where.queueId = queueId ?? { in: administeredQueueIds };
         } else {
             if (!queueId) return NextResponse.json({ error: 'queueId is required' }, { status: 400 });
             if (session.user.role === 'AGENT') {
@@ -53,7 +53,9 @@ export async function GET(req: NextRequest) {
             where.queueId = queueId;
         }
 
-        const includeInactive = admin && url.searchParams.get('includeInactive') === 'true';
+        const includeInactive = url.searchParams.get('includeInactive') === 'true'
+            && (session.user.role === 'SUPER_ADMIN'
+                || (session.user.role === 'ADMIN' && (!queueId || administeredQueueIds.includes(queueId))));
         if (!includeInactive) Object.assign(where, { isActive: true, archivedAt: null });
         const categories = await prisma.category.findMany({
             where,
@@ -64,7 +66,15 @@ export async function GET(req: NextRequest) {
             },
             orderBy: [{ queue: { name: 'asc' } }, { name: 'asc' }],
         });
-        return NextResponse.json(categories);
+        if (includeInactive || session.user.role === 'SUPER_ADMIN') {
+            return NextResponse.json(categories);
+        }
+        return NextResponse.json(categories.map((category) => ({
+            id: category.id,
+            queueId: category.queueId,
+            name: category.name,
+            description: category.description,
+        })));
     } catch (error) {
         logger.error('Failed to fetch categories', { error });
         return NextResponse.json({ error: 'Failed to load categories' }, { status: 500 });

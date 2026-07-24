@@ -4,12 +4,11 @@ import { auditLog } from '@/lib/audit';
 import { BRANDING_ASSET_FIELDS, brandingConfigSchema, DEFAULT_BRANDING, getBrandingConfig, saveBrandingConfig } from '@/lib/branding';
 import { unlink } from 'fs/promises';
 import path from 'path';
-import { isAdminRole } from '@/lib/permissions';
 import logger from '@/lib/logger';
 
 export async function GET() {
     const session = await auth();
-    if (!session?.user || !isAdminRole(session.user.role)) {
+    if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     return NextResponse.json(await getBrandingConfig());
@@ -18,7 +17,7 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdminRole(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -54,7 +53,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user || !isAdminRole(session.user.role)) {
+        if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         const previous = await getBrandingConfig();
