@@ -5,9 +5,7 @@ import logger from '@/lib/logger';
 import { parseDashboardLinks } from '@/lib/dashboard-links';
 import { isAdminRole } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
-import { isUploadedImageUrl, removeUploadedImage, storeUploadedImage } from '@/lib/uploaded-image';
-
-const MAX_QUICK_LINK_ICON_SIZE = 512 * 1024;
+import { isUploadedImageUrl, removeUploadedImage, storeOptimizedQuickLinkIcon } from '@/lib/uploaded-image';
 
 export async function POST(request: NextRequest) {
     try {
@@ -16,9 +14,22 @@ export async function POST(request: NextRequest) {
         const form = await request.formData();
         const file = form.get('file');
         if (!(file instanceof File)) return NextResponse.json({ error: 'No icon image provided' }, { status: 400 });
-        const stored = await storeUploadedImage(file, 'quick-links', MAX_QUICK_LINK_ICON_SIZE);
-        await auditLog({ userId: session.user.id, action: 'dashboard_link.icon_uploaded', entity: 'app_setting', metadata: { mimeType: stored.mimeType, size: stored.size } });
-        return NextResponse.json({ url: stored.url }, { status: 201 });
+        const stored = await storeOptimizedQuickLinkIcon(file);
+        await auditLog({
+            userId: session.user.id,
+            action: 'dashboard_link.icon_uploaded',
+            entity: 'app_setting',
+            metadata: {
+                mimeType: stored.mimeType,
+                size: stored.size,
+                width: stored.width,
+                height: stored.height,
+                sourceSize: stored.sourceSize,
+                sourceWidth: stored.sourceWidth,
+                sourceHeight: stored.sourceHeight,
+            },
+        });
+        return NextResponse.json({ url: stored.url, width: stored.width, height: stored.height, size: stored.size }, { status: 201 });
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to upload quick-link icon';
         logger.error('Failed to upload quick-link icon', { error });

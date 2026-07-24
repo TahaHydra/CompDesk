@@ -89,7 +89,7 @@ Dashboard links are stored through `PATCH /api/settings` in the `dashboard_links
 
 ### `POST /api/settings/quick-link-icons`
 
-Admin only. Multipart `file` upload, maximum 512 KB. PNG, JPEG, WebP, GIF, and ICO signatures are accepted; SVG is rejected. The response contains a randomized local `url` for a quick link.
+Admin only. Multipart `file` upload, maximum 5 MB. PNG, JPEG, WebP, GIF, and ICO signatures are accepted; SVG is rejected. The server enforces a 20-megapixel decode limit and an aspect ratio between 1:2 and 2:1, strips metadata, preserves proportions, resizes inside 128×128 without enlargement, and stores a randomized WebP. The response contains the local `url`, optimized width/height, and byte size.
 
 ### `DELETE /api/settings/quick-link-icons?url=...`
 
