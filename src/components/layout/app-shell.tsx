@@ -50,7 +50,7 @@ import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
-import { releaseStaleInteractionLock } from '@/lib/browser-interaction';
+import { installInteractionLockGuard } from '@/lib/browser-interaction';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -124,29 +124,12 @@ export default function AppShell({
         void refreshSession();
     }, [pathname, refreshSession]);
 
-    // A modal layer interrupted by client navigation or Edge's back/forward
-    // cache can leave `pointer-events: none` on <body> after it disappears.
-    // Recover only when no real interaction layer is currently open.
-    useEffect(() => {
-        const frame = window.requestAnimationFrame(() => {
-            releaseStaleInteractionLock(document);
-        });
-        return () => window.cancelAnimationFrame(frame);
-    }, [pathname]);
-
-    useEffect(() => {
-        const recoverInteraction = () => {
-            window.requestAnimationFrame(() => {
-                releaseStaleInteractionLock(document);
-            });
-        };
-        window.addEventListener('pageshow', recoverInteraction);
-        window.addEventListener('focus', recoverInteraction);
-        return () => {
-            window.removeEventListener('pageshow', recoverInteraction);
-            window.removeEventListener('focus', recoverInteraction);
-        };
-    }, []);
+    // A modal layer (dialog, alert dialog, modal select) interrupted by client
+    // navigation or Edge's back/forward cache can leave `pointer-events: none`
+    // on <body> after it disappears, which silently kills every click on the
+    // page. The guard watches the body style and self-heals on the next frame
+    // whenever that lock leaks, while leaving genuine open modals untouched.
+    useEffect(() => installInteractionLockGuard(window), []);
 
     useEffect(() => {
         if (status === 'unauthenticated') {
@@ -378,7 +361,17 @@ export default function AppShell({
                                         <Shield className="mr-2 h-4 w-4" /> {t('Profile')}
                                     </Link>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer text-red-500 focus:text-red-500">
+                                <DropdownMenuItem
+                                    onSelect={(event) => {
+                                        // Take signout off Radix's select/focus-return path and send
+                                        // it straight to the sign-in page. The default callbackUrl is
+                                        // the current protected route, which bounces through an extra
+                                        // redirect and makes the first click look like it did nothing.
+                                        event.preventDefault();
+                                        void signOut({ callbackUrl: '/auth/signin' });
+                                    }}
+                                    className="cursor-pointer text-red-500 focus:text-red-500"
+                                >
                                     <LogOut className="mr-2 h-4 w-4" />
                                     <span>{t('Sign out')}</span>
                                 </DropdownMenuItem>
