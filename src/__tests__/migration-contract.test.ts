@@ -10,6 +10,10 @@ const migration = readFileSync(path.join(
     process.cwd(), 'prisma', 'migrations',
     '20260723150000_add_branding_department_categories_and_ticket_form_templates', 'migration.sql'
 ), 'utf8');
+const localizationMigration = readFileSync(path.join(
+    process.cwd(), 'prisma', 'migrations',
+    '20260724120000_add_user_language_and_help_center', 'migration.sql'
+), 'utf8');
 
 describe('department category and ticket-form migration contract', () => {
     it('allows the same category name in different departments only', () => {
@@ -38,13 +42,14 @@ describe('department category and ticket-form migration contract', () => {
     });
 
     it('requires complete immutable template history for every ticket', () => {
-        expect(schema).toContain('resolvedTemplateId      String       @map("resolved_template_id")');
-        expect(schema).toContain('submittedFormValues     Json         @default("{}")');
-        expect(schema).toContain('resolvedTemplate TicketFormTemplate  @relation(fields: [resolvedTemplateId], references: [id], onDelete: Restrict)');
+        expect(schema).toMatch(/resolvedTemplateId\s+String\s+@map\("resolved_template_id"\)/);
+        expect(schema).toMatch(/submittedFormValues\s+Json\s+@default\("{}"\)/);
+        expect(schema).toMatch(/resolvedTemplate\s+TicketFormTemplate\s+@relation\(fields: \[resolvedTemplateId\], references: \[id\], onDelete: Restrict\)/);
         expect(historyMigration).toContain('Ticket form history backfill is incomplete');
         expect(historyMigration).toContain('ALTER COLUMN "submitted_form_values" SET NOT NULL');
         expect(historyMigration).toContain('ON DELETE RESTRICT ON UPDATE CASCADE');
     });
+
     it('protects the system default at both schema and database levels', () => {
         expect(migration).toContain('ticket_form_templates_single_system_default_key');
         expect(migration).toContain('protect_system_ticket_form_template_trigger');
@@ -52,7 +57,23 @@ describe('department category and ticket-form migration contract', () => {
     });
 
     it('uses restrict/archival semantics for historical category data', () => {
-        expect(schema).toContain('category         Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)');
+        expect(schema).toMatch(/category\s+Category\?\s+@relation\(fields: \[categoryId\], references: \[id\], onDelete: Restrict\)/);
         expect(schema).toContain('archivedAt  DateTime? @map("archived_at")');
+    });
+});
+
+describe('language and help-center migration contract', () => {
+    it('adds a constrained per-user language without changing existing accounts', () => {
+        expect(schema).toContain('preferredLanguage String');
+        expect(localizationMigration).toContain('ADD COLUMN "preferred_language" TEXT NOT NULL DEFAULT \'en\'');
+        expect(localizationMigration).toContain("CHECK (\"preferred_language\" IN ('en', 'fr'))");
+    });
+
+    it('creates bilingual help collections and articles with restrictive deletion', () => {
+        expect(schema).toContain('model HelpCollection');
+        expect(schema).toContain('model HelpArticle');
+        expect(localizationMigration).toContain('CREATE TABLE "help_collections"');
+        expect(localizationMigration).toContain('CREATE TABLE "help_articles"');
+        expect(localizationMigration).toContain('ON DELETE RESTRICT ON UPDATE CASCADE');
     });
 });

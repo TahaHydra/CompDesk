@@ -176,23 +176,35 @@ npm ci
 ```
 
 Removing `node_modules` and `.next` does not affect PostgreSQL data.
-## Seed accounts
+## Seed accounts and demo data
 
-The seed is idempotent and template-aware, but it intentionally creates demo departments, categories, templates, tickets, tags, and accounts. Do not run it on production unless you explicitly want demo data.
+The seed is idempotent and template-aware, but it intentionally creates demo departments, department-owned categories, useful templates, tickets, tags, Help Center content, and accounts. Do not run it on production unless you explicitly want demo data.
 
 Defaults:
 
 ```text
+SEED_DEMO_DOMAIN=example.com
 SEED_ADMIN_EMAIL=admin@example.com
+SEED_DEPARTMENT_ADMIN_EMAIL=administrator@example.com
+SEED_AGENT1_EMAIL=agent1@example.com
+SEED_AGENT2_EMAIL=agent2@example.com
+SEED_USER1_EMAIL=user1@example.com
+SEED_USER2_EMAIL=user2@example.com
 SEED_DEFAULT_PASSWORD=Password123!
 ```
 
-Override them for a private development environment before running `npm run db:seed`.
+For an existing private test environment, point every seed role at the accounts you intend to refresh. The seed updates those accounts' demo role, name, active state, and password. It does not alter unrelated accounts.
 
 PowerShell:
 
 ```powershell
+$env:SEED_DEMO_DOMAIN = 'your-company.example'
 $env:SEED_ADMIN_EMAIL = 'admin@your-company.example'
+$env:SEED_DEPARTMENT_ADMIN_EMAIL = 'department-admin@your-company.example'
+$env:SEED_AGENT1_EMAIL = 'agent1@your-company.example'
+$env:SEED_AGENT2_EMAIL = 'agent2@your-company.example'
+$env:SEED_USER1_EMAIL = 'user1@your-company.example'
+$env:SEED_USER2_EMAIL = 'user2@your-company.example'
 $env:SEED_DEFAULT_PASSWORD = 'a-long-private-password'
 npm run db:seed
 ```
@@ -200,11 +212,18 @@ npm run db:seed
 macOS/Linux:
 
 ```bash
+SEED_DEMO_DOMAIN='your-company.example' \
 SEED_ADMIN_EMAIL='admin@your-company.example' \
+SEED_DEPARTMENT_ADMIN_EMAIL='department-admin@your-company.example' \
+SEED_AGENT1_EMAIL='agent1@your-company.example' \
+SEED_AGENT2_EMAIL='agent2@your-company.example' \
+SEED_USER1_EMAIL='user1@your-company.example' \
+SEED_USER2_EMAIL='user2@your-company.example' \
 SEED_DEFAULT_PASSWORD='a-long-private-password' \
 npm run db:seed
 ```
 
+The seed assigns the department administrator to all three demo departments, gives each department a matching default Ticket Template, and applies the Access & Permission template to relevant category overrides. Known legacy demo category aliases are renamed in place so referenced tickets retain history. Known misplaced zero-ticket demo categories are removed; referenced categories are archived instead.
 ## Upgrading an existing CompDesk database
 
 Never reset the database. Back it up, then use the production migration command:
@@ -227,4 +246,4 @@ For Docker PostgreSQL, use `docker compose exec db pg_dump -U excodesk -d excode
 
 ## Uploaded files
 
-Ticket and branding assets are stored under `public/uploads`. Local development keeps them in the working tree (ignored by Git). The full Docker Compose deployment uses the persistent `compdesk_uploads` named volume. Back up both PostgreSQL and this upload volume. Multiple application replicas must share the same durable upload storage.
+Ticket, branding, and dashboard quick-link assets are stored under `public/uploads`. Local development keeps them in the working tree (ignored by Git). The full Docker Compose deployment uses the persistent `compdesk_uploads` named volume. Back up both PostgreSQL and this upload volume. Multiple application replicas must share the same durable upload storage.

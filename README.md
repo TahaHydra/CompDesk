@@ -35,10 +35,11 @@ A **production-ready**, modern ticketing system built for small organizations (2
 - **Role-Based Access** — Four roles: End User, Agent, Admin, Super Admin with granular permissions
 - **Microsoft SSO** — Sign in with Microsoft Entra ID (Azure AD) + local email/password fallback
 - **Real-time Notifications** — Bell icon shows recent activity on your tickets, auto-refreshes every 30s
-- **Profile Page** — View your account details, department access, and lifetime ticket statistics
-- **Dashboard Quick Links** — Admins can add custom external links visible to all users on the dashboard
+- **Profile & Language** — View account details and choose a personal English or French interface
+- **Dashboard Quick Links** — Admins can add validated external links with optional compact icons
+- **Searchable Help Center** — Bilingual collections and articles managed by administrators
 - **SLA Policies** — Per-department, per-priority response and resolution time targets
-- **Ticket Form Templates** — Versioned role-aware forms with built-ins, custom fields, conditions, validation, previews, and historical snapshots
+- **Ticket Templates** — Versioned role-aware forms with built-ins, custom fields, conditions, validation, previews, and historical snapshots
 - **Escalation** — Agents can escalate tickets to higher-level support
 - **Canned Responses** — Pre-written reply templates for common issues
 - **Email Notifications** — Configurable SMTP with per-event toggles
@@ -50,13 +51,15 @@ A **production-ready**, modern ticketing system built for small organizations (2
 
 ---
 
-## Branding and ticket-form architecture
+## Branding and ticket-template architecture
 
 Branding is read through one typed service. The public `/api/branding` response contains only safe pre-authentication values; admin changes and asset uploads use separate protected endpoints. Primary/accent colors are applied through root CSS variables, while runtime metadata controls the title, description, application name, and favicon.
 
-Every category belongs to one department (`Category.queueId`) and is unique by `(queueId, name)`. Ticket Form Template resolution is centralized and always uses category override → department default → protected system default. Browser-supplied template IDs are ignored. The server resolves and validates every submitted field, then stores the template ID/version, immutable schema snapshot, and sanitized values on the ticket.
+Every category belongs to one department (`Category.queueId`) and is unique by `(queueId, name)`. Ticket Template resolution is centralized and always uses category override → department default → protected system default. Browser-supplied template IDs are ignored. The server resolves and validates every submitted field, then stores the template ID/version, immutable schema snapshot, and sanitized values on the ticket.
 
 Historical tickets therefore keep their original labels and values after templates/categories are changed or archived.
+
+The authenticated Help Center stores English and French collections/articles, follows each user's saved profile language, and supports title/summary/content search. Administrators manage drafts and published content under **Admin → Help Content**. Quick-link icon uploads use randomized local filenames and strict image-signature validation.
 
 ## Safe upgrades
 
@@ -378,18 +381,20 @@ Tests cover:
 
 ## 📝 Seed Data
 
-The seed script creates:
-- **5 users**: 1 SuperAdmin, 2 Agents, 2 End Users
-- **2 groups**: IT Support, HR Team
-- **3 queues**: IT Support (auto-assign), HR, Finance
-- **7 categories**: Hardware, Software, Network, Access, General, Onboarding, Payroll
-- **6 tags**: urgent, vpn, email, printer, new-hire, password-reset
-- **5 SLA policies**: per priority per queue
-- **5 sample tickets**: various statuses and priorities
-- **3 canned responses**: Password Reset, VPN Troubleshooting, Request Received
+The idempotent development seed creates:
+
+- **6 users**: 1 Super Admin, 1 Department Admin, 2 Agents, and 2 End Users;
+- **3 departments**, each with **6 department-specific categories**;
+- **5 useful Ticket Templates**: Standard, IT Support, Access & Permission, HR, and Finance;
+- **4 bilingual Help Center collections** with **8 searchable articles**;
+- realistic tags, SLA policies, canned responses, and sample tickets.
+
+The default domain is `example.com` and the default password is `Password123!`. Set `SEED_DEMO_DOMAIN`, the six `SEED_*_EMAIL` variables, and `SEED_DEFAULT_PASSWORD` before seeding an existing private test database. The seed preserves ticket history, renames known legacy category aliases in place, and only removes known misplaced demo categories when they have no tickets. It never deletes referenced historical categories.
+
+See [SETUP.md](SETUP.md#seed-accounts-and-demo-data) for exact Windows and Unix commands.
 
 ---
 
 ## License
 
-MIT — Built with ❤️ for EXCO
+MIT

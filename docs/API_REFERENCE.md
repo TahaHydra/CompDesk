@@ -45,6 +45,55 @@ The server validates the file signature, generates a random UUID filename, updat
 
 Resets one branding asset.
 
+## Profile preferences
+
+### `GET /api/profile/preferences`
+
+Authenticated. Returns the current user's saved interface language.
+
+### `PATCH /api/profile/preferences`
+
+Authenticated. Updates only the current user's preference. The strict request body is `{ "preferredLanguage": "en" }` or `{ "preferredLanguage": "fr" }`. The change is audited and takes effect across the application shell, dashboard, profile, ticket creation, and Help Center.
+
+## Help Center
+
+Help Center reads require an authenticated session. Normal users receive only published content localized to their saved profile language. Admin and Super Admin write access is always enforced server-side.
+
+### `GET /api/help/collections`
+
+Returns localized published collections with article counts. Administrators may use `includeDrafts=true&raw=true` to retrieve complete bilingual editor fields.
+
+### `POST` / `PATCH /api/help/collections`
+
+Admin only. Creates or replaces a collection definition containing `slug`, English/French titles and descriptions, an allowed icon key, sort order, and publication state. Slugs contain lowercase letters, numbers, and hyphens. PATCH requires the collection UUID in `id`.
+
+### `DELETE /api/help/collections?id=uuid`
+
+Admin only. Deletion is rejected with `409` while the collection still has articles.
+
+### `GET /api/help/articles`
+
+Returns localized published articles. Optional `collectionId` filters one collection and `q` searches the selected language's title, summary, and content. Administrators may use `includeDrafts=true&raw=true` for editing.
+
+### `POST` / `PATCH /api/help/articles`
+
+Admin only. Creates or replaces a bilingual Markdown-style article. Required fields include collection ID, slug, English/French titles, English/French content, sort order, and publication state. PATCH requires `id`.
+
+### `DELETE /api/help/articles?id=uuid`
+
+Admin only. Permanently removes the selected article after authorization.
+
+## Dashboard quick links
+
+Dashboard links are stored through `PATCH /api/settings` in the `dashboard_links` key. The value is an array of at most 16 strict objects: `{ "title": "Payroll", "url": "https://…", "iconUrl": "/uploads/quick-links/random.ext" }`. URLs must use HTTP or HTTPS. Unknown fields and arbitrary icon paths are rejected.
+
+### `POST /api/settings/quick-link-icons`
+
+Admin only. Multipart `file` upload, maximum 512 KB. PNG, JPEG, WebP, GIF, and ICO signatures are accepted; SVG is rejected. The response contains a randomized local `url` for a quick link.
+
+### `DELETE /api/settings/quick-link-icons?url=...`
+
+Admin only. Removes an unreferenced uploaded icon. Deletion returns `409` while a saved dashboard link still uses the file; remove or replace the icon in Settings first.
 ## Departments and categories
 
 ### `GET /api/queues`
@@ -108,9 +157,9 @@ A department admin can patch only `id` and `templateId`, and only for a category
 
 Super Admin only. Archives by default. Add `mode=hard` only for an unreferenced category. Referenced categories are never detached from historical tickets.
 
-## Ticket Form Templates
+## Ticket Templates
 
-Ticket Form Templates are not canned responses. Canned responses remain reply macros under `/api/canned-responses`.
+Ticket Templates are not canned responses. Canned responses remain reply macros under `/api/canned-responses`.
 
 ### `GET /api/ticket-form-templates?includeArchived=true`
 
@@ -216,7 +265,7 @@ Download or remove an attachment subject to ticket authorization.
 - `/api/users`
 - `/api/groups`
 - `/api/audit-logs`
-- `/api/settings` and `/api/settings/test-email`
+- `/api/settings`, `/api/settings/test-email`, and `/api/settings/quick-link-icons`
 - `/api/api-clients`
 
 All write operations use server-side role checks. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.

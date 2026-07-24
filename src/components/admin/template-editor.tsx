@@ -148,7 +148,7 @@ export function TemplateEditor({
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
                 <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
-                    <DialogHeader><DialogTitle>Edit Ticket Form Template</DialogTitle></DialogHeader>
+                    <DialogHeader><DialogTitle>Edit Ticket Template</DialogTitle></DialogHeader>
                     {template ? <div className="space-y-6">
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2"><Label htmlFor="template-name">Name</Label><Input id="template-name" value={name} onChange={(event) => setName(event.target.value)} /></div>

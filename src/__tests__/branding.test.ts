@@ -42,6 +42,11 @@ describe('branding configuration', () => {
 
     it('maps primary and accent colors to global CSS variables', () => {
         const variables = getBrandingStyleVariables({ ...DEFAULT_BRANDING, primaryColor: '#ff0000', accentColor: '#00ff00' });
-        expect(variables).toMatchObject({ '--primary': '0 100% 50%', '--accent': '120 100% 50%' });
+        expect(variables).toMatchObject({
+            '--brand-primary': '0 100% 50%',
+            '--brand-primary-dark': '0 58% 64%',
+            '--brand-accent': '120 100% 50%',
+            '--brand-accent-surface-dark': '120 20% 17%',
+        });
     });
 });
