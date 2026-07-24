@@ -139,6 +139,7 @@ async function main() {
         });
         users.set(spec.email, user);
     }
+    const applicationAdmin = users.get('administrator@example.com')!;
     const agent1 = users.get('agent1@example.com')!;
     const agent2 = users.get('agent2@example.com')!;
     const user1 = users.get('user1@example.com')!;
@@ -199,6 +200,10 @@ async function main() {
         update: {}, create: { queueId: financeQueue.id, userId: agent2.id, role: 'agent' },
     });
 
+    await prisma.queueMember.upsert({
+        where: { queueId_userId_role: { queueId: itQueue.id, userId: applicationAdmin.id, role: 'admin' } },
+        update: {}, create: { queueId: itQueue.id, userId: applicationAdmin.id, role: 'admin' },
+    });
     const categorySpecs = [
         [itQueue.id, 'Hardware'], [itQueue.id, 'Software'], [itQueue.id, 'Network'], [itQueue.id, 'General'],
         [hrQueue.id, 'General'], [hrQueue.id, 'Onboarding'], [hrQueue.id, 'Payroll'],
