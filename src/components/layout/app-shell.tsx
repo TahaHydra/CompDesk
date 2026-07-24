@@ -98,7 +98,7 @@ export default function AppShell({
     children: React.ReactNode;
     initialSession: Session;
 }) {
-    const { data: clientSession, status, update: refreshSession } = useSession();
+    const { data: clientSession, status } = useSession();
     const branding = useBranding();
     const { t, language } = useLanguage();
     const pathname = usePathname();
@@ -118,11 +118,15 @@ export default function AppShell({
     const isAdminUser = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
     const initials = session?.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
 
-    // Close the mobile drawer whenever the route changes
+    // Close the mobile drawer whenever the route changes. We deliberately do NOT
+    // refresh the session here: next-auth's `update` is re-created whenever the
+    // session or its loading flag changes, so depending on it — and calling it —
+    // creates a refetch/re-render loop that saturates the main thread and makes
+    // every control stop responding a few seconds after load. The SessionProvider
+    // already refreshes on an interval and on window focus.
     useEffect(() => {
         setMobileOpen(false);
-        void refreshSession();
-    }, [pathname, refreshSession]);
+    }, [pathname]);
 
     // A modal layer (dialog, alert dialog, modal select) interrupted by client
     // navigation or Edge's back/forward cache can leave `pointer-events: none`
