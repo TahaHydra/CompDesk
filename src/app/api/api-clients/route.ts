@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
-import { buildStoredApiClient, loadApiClients, saveApiClients, serializeApiClient, type ApiClientScope } from '@/lib/api-clients';
+import { prisma } from '@/lib/prisma';
+import {
+    apiClientSecretData,
+    createApiClientSchema,
+    serializeApiClient,
+    updateApiClientSchema,
+} from '@/lib/api-clients';
 
-const VALID_SCOPES: ApiClientScope[] = ['tickets:read', 'tickets:write'];
+async function validateQueueIds(ids: string[]): Promise<boolean> {
+    if (ids.length === 0) return true;
+    return await prisma.queue.count({ where: { id: { in: ids } } }) === ids.length;
+}
 
 export async function GET() {
     try {
@@ -12,8 +22,7 @@ export async function GET() {
         if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
-
-        const clients = await loadApiClients();
+        const clients = await prisma.apiClient.findMany({ orderBy: { createdAt: 'asc' } });
         return NextResponse.json(clients.map(serializeApiClient));
     } catch (error) {
         logger.error('Failed to load API clients', { error });
@@ -27,39 +36,24 @@ export async function POST(req: NextRequest) {
         if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
-
-        const { name, scopes, allowedQueueIds, isActive } = await req.json();
-        if (!name || !Array.isArray(scopes) || scopes.length === 0) {
-            return NextResponse.json({ error: 'name and scopes are required' }, { status: 400 });
+        const parsed = createApiClientSchema.safeParse(await req.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: 'API client validation failed', details: parsed.error.flatten() }, { status: 400 });
+        }
+        if (!(await validateQueueIds(parsed.data.allowedQueueIds))) {
+            return NextResponse.json({ error: 'One or more allowed departments do not exist' }, { status: 400 });
         }
 
-        const normalizedScopes = scopes.filter((scope: ApiClientScope) => VALID_SCOPES.includes(scope));
-        if (normalizedScopes.length === 0) {
-            return NextResponse.json({ error: 'At least one valid scope is required' }, { status: 400 });
-        }
-
-        const clients = await loadApiClients();
-        const { client, rawKey } = buildStoredApiClient({
-            name: String(name).trim(),
-            scopes: normalizedScopes,
-            allowedQueueIds: Array.isArray(allowedQueueIds) ? allowedQueueIds : [],
-            isActive: Boolean(isActive ?? true),
-        });
-        clients.push(client);
-        await saveApiClients(clients);
-
-        auditLog({
+        const { rawKey, keyHash } = apiClientSecretData();
+        const client = await prisma.apiClient.create({ data: { ...parsed.data, keyHash } });
+        await auditLog({
             userId: session.user.id,
             action: 'api_client.created',
             entity: 'apiClient',
             entityId: client.id,
             metadata: { name: client.name, scopes: client.scopes, allowedQueueIds: client.allowedQueueIds },
         });
-
-        return NextResponse.json({
-            client: serializeApiClient(client),
-            apiKey: rawKey,
-        }, { status: 201 });
+        return NextResponse.json({ client: serializeApiClient(client), apiKey: rawKey }, { status: 201 });
     } catch (error) {
         logger.error('Failed to create API client', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -72,50 +66,33 @@ export async function PATCH(req: NextRequest) {
         if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
-
-        const { id, name, scopes, allowedQueueIds, isActive, rotateKey } = await req.json();
-        if (!id) {
-            return NextResponse.json({ error: 'id is required' }, { status: 400 });
+        const parsed = updateApiClientSchema.safeParse(await req.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: 'API client validation failed', details: parsed.error.flatten() }, { status: 400 });
+        }
+        if (parsed.data.allowedQueueIds && !(await validateQueueIds(parsed.data.allowedQueueIds))) {
+            return NextResponse.json({ error: 'One or more allowed departments do not exist' }, { status: 400 });
         }
 
-        const clients = await loadApiClients();
-        const client = clients.find((candidate) => candidate.id === id);
-        if (!client) {
-            return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-        }
+        const existing = await prisma.apiClient.findUnique({ where: { id: parsed.data.id } });
+        if (!existing) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
 
-        let rotatedKey: string | undefined;
-        if (name !== undefined) client.name = String(name).trim();
-        if (Array.isArray(scopes)) {
-            client.scopes = scopes.filter((scope: ApiClientScope) => VALID_SCOPES.includes(scope));
-        }
-        if (Array.isArray(allowedQueueIds)) client.allowedQueueIds = allowedQueueIds;
-        if (isActive !== undefined) client.isActive = Boolean(isActive);
-        if (rotateKey) {
-            const replacement = buildStoredApiClient({
-                name: client.name,
-                scopes: client.scopes,
-                allowedQueueIds: client.allowedQueueIds,
-                isActive: client.isActive,
-            });
-            client.keyHash = replacement.client.keyHash;
-            rotatedKey = replacement.rawKey;
-        }
-        client.updatedAt = new Date().toISOString();
-
-        await saveApiClients(clients);
-
-        auditLog({
+        const { id, rotateKey, ...changes } = parsed.data;
+        const rotated = rotateKey ? apiClientSecretData() : null;
+        const client = await prisma.apiClient.update({
+            where: { id },
+            data: { ...changes, ...(rotated ? { keyHash: rotated.keyHash } : {}) },
+        });
+        await auditLog({
             userId: session.user.id,
             action: rotateKey ? 'api_client.rotated' : 'api_client.updated',
             entity: 'apiClient',
             entityId: client.id,
             metadata: { name: client.name, scopes: client.scopes, allowedQueueIds: client.allowedQueueIds, isActive: client.isActive },
         });
-
         return NextResponse.json({
             client: serializeApiClient(client),
-            ...(rotatedKey ? { apiKey: rotatedKey } : {}),
+            ...(rotated ? { apiKey: rotated.rawKey } : {}),
         });
     } catch (error) {
         logger.error('Failed to update API client', { error });
@@ -129,28 +106,17 @@ export async function DELETE(req: NextRequest) {
         if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
-
         const id = new URL(req.url).searchParams.get('id');
-        if (!id) {
-            return NextResponse.json({ error: 'id is required' }, { status: 400 });
+        if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
+            return NextResponse.json({ error: 'A valid id is required' }, { status: 400 });
         }
-
-        const clients = await loadApiClients();
-        const nextClients = clients.filter((client) => client.id !== id);
-        if (nextClients.length === clients.length) {
-            return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-        }
-
-        await saveApiClients(nextClients);
-        auditLog({
-            userId: session.user.id,
-            action: 'api_client.deleted',
-            entity: 'apiClient',
-            entityId: id,
-        });
-
+        await prisma.apiClient.delete({ where: { id } });
+        await auditLog({ userId: session.user.id, action: 'api_client.deleted', entity: 'apiClient', entityId: id });
         return NextResponse.json({ success: true });
     } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+        }
         logger.error('Failed to delete API client', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

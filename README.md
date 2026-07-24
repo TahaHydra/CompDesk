@@ -256,7 +256,7 @@ Admin: All of the above + any status → CLOSED, CLOSED → OPEN
 
 ### Authentication
 
-Include `X-API-Key: <your-api-key>` header.
+Enable the feature explicitly, create a scoped client in **Admin → Settings → API Clients**, then include `X-API-Key: <client-secret>` (or `Authorization: Bearer <client-secret>`). The secret is shown only when it is created or rotated.
 
 ### Create Ticket
 
@@ -303,7 +303,7 @@ POST /api/v1/tickets/{id}/notes
 │   │   │       ├── departments/  # Department management
 │   │   │       ├── categories/   # Category management
 │   │   │       ├── tags/         # Tag management
-│   │   │       ├── templates/    # Canned response templates
+│   │   │       ├── templates/    # Ticket form templates
 │   │   │       ├── users/        # User/role management
 │   │   │       └── settings/     # SMTP, email, Entra, quick links
 │   │   ├── auth/              # Sign-in, error pages
@@ -332,7 +332,6 @@ POST /api/v1/tickets/{id}/notes
 │   │   ├── validations.ts     # Zod schemas
 │   │   ├── utils.ts           # Helpers, transitions, rate limiting
 │   │   └── logger.ts          # Winston logger
-│   ├── middleware.ts           # Auth protection
 │   └── __tests__/             # Jest tests
 ├── docker-compose.yml          # PostgreSQL + App
 ├── Dockerfile                  # Multi-stage build
@@ -366,16 +365,14 @@ Tests cover:
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `AUTH_SECRET` | Yes | Random 32+ char secret |
 | `AUTH_URL` | Yes | App URL (e.g., `https://compdesk.yourorg.com`) |
-| `AZURE_AD_CLIENT_ID` | Yes | Entra app client ID |
-| `AZURE_AD_CLIENT_SECRET` | Yes | Entra app client secret |
-| `AZURE_AD_TENANT_ID` | Yes | Entra tenant ID |
+| `AZURE_AD_CLIENT_ID` | For SSO | Entra app client ID |
+| `AZURE_AD_CLIENT_SECRET` | For SSO | Entra app client secret |
+| `AZURE_AD_TENANT_ID` | For SSO | Entra tenant ID |
 | `SMTP_HOST` | For email | SMTP server hostname |
 | `SMTP_PORT` | For email | SMTP port (587) |
 | `SMTP_USER` | For email | SMTP username |
 | `SMTP_PASS` | For email | SMTP password |
 | `SMTP_FROM` | For email | Sender email address |
-| `API_KEY` | For ext API | Static API key |
-| `WEBHOOK_SECRET` | For webhooks | Webhook signing secret |
 
 ---
 

@@ -11,9 +11,7 @@ import { TemplateResolutionError } from '@/lib/ticket-form/service';
 import { TicketFormValidationError } from '@/lib/ticket-form/validation';
 import logger from '@/lib/logger';
 
-const externalTicketSchema = createTicketSchema.extend({
-    userEmail: z.string().email(),
-});
+const externalTicketSchema = createTicketSchema.extend({ userEmail: z.string().email() });
 
 export async function GET(req: NextRequest) {
     if (!(await getFeatureFlag('feature_external_api_enabled'))) {
@@ -21,18 +19,19 @@ export async function GET(req: NextRequest) {
     }
     const authResult = await authenticateApiRequest(req, 'tickets:read');
     if (!authResult.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!checkRateLimit(`api:v1:tickets:read:${authResult.client.id}`, 100, 60000)) {
+        return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+    }
 
     const url = new URL(req.url);
     const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
     const limit = Math.min(50, Math.max(1, Number.parseInt(url.searchParams.get('limit') ?? '20', 10) || 20));
     const queueId = url.searchParams.get('queueId');
-    if (queueId && authResult.source === 'client' && authResult.client.allowedQueueIds.length > 0 && !authResult.client.allowedQueueIds.includes(queueId)) {
+    const allowedQueueIds = authResult.client.allowedQueueIds;
+    if (queueId && allowedQueueIds.length > 0 && !allowedQueueIds.includes(queueId)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
-    const allowedQueueIds = authResult.source === 'client' ? authResult.client.allowedQueueIds : [];
-    const where = queueId
-        ? { queueId }
-        : allowedQueueIds.length > 0 ? { queueId: { in: allowedQueueIds } } : {};
+    const where = queueId ? { queueId } : allowedQueueIds.length > 0 ? { queueId: { in: allowedQueueIds } } : {};
     const [tickets, total] = await Promise.all([
         prisma.ticket.findMany({
             where,
@@ -57,8 +56,7 @@ export async function POST(req: NextRequest) {
     }
     const authResult = await authenticateApiRequest(req, 'tickets:write');
     if (!authResult.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const rateKey = authResult.source === 'client' ? authResult.client.id : 'legacy';
-    if (!checkRateLimit(`api:v1:tickets:${rateKey}`, 50, 60000)) {
+    if (!checkRateLimit(`api:v1:tickets:write:${authResult.client.id}`, 50, 60000)) {
         return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
     }
 
@@ -68,7 +66,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Ticket validation failed', details: parsed.error.flatten() }, { status: 400 });
         }
         const { userEmail, ...input } = parsed.data;
-        if (authResult.source === 'client' && authResult.client.allowedQueueIds.length > 0 && !authResult.client.allowedQueueIds.includes(input.queueId)) {
+        if (authResult.client.allowedQueueIds.length > 0 && !authResult.client.allowedQueueIds.includes(input.queueId)) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         let requester = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });

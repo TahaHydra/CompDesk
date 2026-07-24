@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
 import { mkdir, rename, stat } from 'fs/promises';
 import { Prisma, Role, type User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -32,18 +34,24 @@ export interface CreateTicketOptions {
     input: CreateTicketInput;
 }
 
-async function reserveNextTicketCount(year: number): Promise<number> {
-    return prisma.$transaction(async (tx) => {
-        const current = await tx.ticketCounter.findUnique({ where: { id: 'singleton' } });
-        if (!current) {
-            await tx.ticketCounter.create({ data: { id: 'singleton', year, count: 1 } });
-            return 1;
-        }
-        if (current.year !== year) {
-            return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { year, count: 1 } })).count;
-        }
-        return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { count: { increment: 1 } } })).count;
-    });
+interface PreparedAttachment {
+    id: string;
+    file: UploadedFieldFile;
+    sourcePath: string;
+    destinationPath: string;
+    reference: string;
+}
+
+async function reserveNextTicketCount(tx: Prisma.TransactionClient, year: number): Promise<number> {
+    const current = await tx.ticketCounter.findUnique({ where: { id: 'singleton' } });
+    if (!current) {
+        await tx.ticketCounter.create({ data: { id: 'singleton', year, count: 1 } });
+        return 1;
+    }
+    if (current.year !== year) {
+        return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { year, count: 1 } })).count;
+    }
+    return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { count: { increment: 1 } } })).count;
 }
 
 function submissionValues(input: CreateTicketInput): Record<string, unknown> {
@@ -79,13 +87,42 @@ function safeTempSource(url: string, userId: string): { absolutePath: string; fi
     return absolutePath ? { absolutePath, filename: match[1] } : null;
 }
 
-async function verifyTempFiles(files: UploadedFieldFile[], userId: string) {
+async function prepareUploadedFiles(
+    ticketId: string,
+    files: UploadedFieldFile[],
+    userId: string
+): Promise<PreparedAttachment[]> {
+    const prepared: PreparedAttachment[] = [];
     for (const file of files) {
         const source = safeTempSource(file.url, userId);
         if (!source) throw new TicketFormValidationError({ attachments: 'An uploaded file reference is invalid or expired' });
         const info = await stat(source.absolutePath).catch(() => null);
         if (!info?.isFile() || info.size !== file.size) {
             throw new TicketFormValidationError({ attachments: `Uploaded file ${file.filename} is missing or invalid` });
+        }
+        const location = privateAttachmentLocation(ticketId, source.filename);
+        prepared.push({
+            id: randomUUID(),
+            file,
+            sourcePath: source.absolutePath,
+            destinationPath: location.absolutePath,
+            reference: location.reference,
+        });
+    }
+    return prepared;
+}
+
+async function restoreMovedFiles(files: PreparedAttachment[]): Promise<void> {
+    for (const file of [...files].reverse()) {
+        try {
+            await mkdir(dirname(file.sourcePath), { recursive: true });
+            await rename(file.destinationPath, file.sourcePath);
+        } catch (error) {
+            logger.error('Failed to restore a temporary attachment after ticket creation rollback', {
+                error,
+                sourcePath: file.sourcePath,
+                destinationPath: file.destinationPath,
+            });
         }
     }
 }
@@ -104,29 +141,6 @@ function replaceUploadedUrls(
         }));
     }
     return next;
-}
-
-async function persistUploadedFiles(ticketId: string, files: UploadedFieldFile[], userId: string): Promise<Map<string, string>> {
-    const urlMap = new Map<string, string>();
-    for (const file of files) {
-        const source = safeTempSource(file.url, userId);
-        if (!source) continue;
-        const location = privateAttachmentLocation(ticketId, source.filename);
-        await mkdir(location.directory, { recursive: true });
-        await rename(source.absolutePath, location.absolutePath);
-        const attachment = await prisma.attachment.create({
-            data: {
-                ticketId,
-                filename: file.filename,
-                mimetype: file.mimetype,
-                size: file.size,
-                path: location.reference,
-            },
-            select: { id: true },
-        });
-        urlMap.set(file.url, authenticatedAttachmentUrl(attachment.id));
-    }
-    return urlMap;
 }
 
 export async function createTicketFromResolvedTemplate(options: CreateTicketOptions) {
@@ -162,64 +176,16 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         if (count !== uniqueTagIds.length) throw new TicketFormValidationError({ tags: 'One or more selected tags are invalid' });
     }
 
+    const ticketId = randomUUID();
     const uploadedFiles = fileValuesForFields(validated.submittedValues, resolved.allFields);
-    await verifyTempFiles(uploadedFiles, actor.id);
+    const preparedAttachments = await prepareUploadedFiles(ticketId, uploadedFiles, actor.id);
+    const urlMap = new Map(preparedAttachments.map((item) => [item.file.url, authenticatedAttachmentUrl(item.id)]));
+    const storedValues = replaceUploadedUrls(validated.submittedValues, resolved.allFields, urlMap);
 
-    const year = new Date().getFullYear();
-    const ticketKey = generateTicketKey(year, await reserveNextTicketCount(year));
-    const sla = await prisma.slaPolicy.findUnique({
-        where: { queueId_priority: { queueId: input.queueId, priority: validated.priority } },
-    });
-    const dueAt = sla ? new Date(Date.now() + sla.resolutionMinutes * 60000) : null;
-    const snapshot = buildTicketFormSchemaSnapshot(resolved);
-
-    const ticket = await prisma.ticket.create({
-        data: {
-            key: ticketKey,
-            idempotencyKey: input.idempotencyKey,
-            title: validated.title,
-            description: validated.description,
-            status: 'NEW',
-            priority: validated.priority,
-            severity: validated.severity,
-            queueId: input.queueId,
-            categoryId: input.categoryId,
-            requesterId: requester.id,
-            assigneeId: null,
-            dueAt,
-            resolvedTemplateId: resolved.template.id,
-            resolvedTemplateVersion: resolved.template.version,
-            formSchemaSnapshot: snapshot as unknown as Prisma.InputJsonValue,
-            submittedFormValues: validated.submittedValues as Prisma.InputJsonValue,
-        },
-        include: { queue: true, requester: true, assignee: true },
-    });
-
-    if (uniqueTagIds.length > 0) {
-        await prisma.ticketTag.createMany({
-            data: uniqueTagIds.map((tagId) => ({ ticketId: ticket.id, tagId })),
-            skipDuplicates: true,
-        });
-    }
-
-    if (uploadedFiles.length > 0) {
-        const urlMap = await persistUploadedFiles(ticket.id, uploadedFiles, actor.id);
-        if (urlMap.size > 0) {
-            const movedValues = replaceUploadedUrls(validated.submittedValues, resolved.allFields, urlMap);
-            await prisma.ticket.update({
-                where: { id: ticket.id },
-                data: { submittedFormValues: movedValues as Prisma.InputJsonValue },
-            });
-        }
-    }
-
-    await prisma.ticketWatcher.upsert({
-        where: { ticketId_userId: { ticketId: ticket.id, userId: requester.id } },
-        update: {},
-        create: { ticketId: ticket.id, userId: requester.id },
-    });
-
-    const [groupAgents, directAgents] = await Promise.all([
+    const [sla, groupAgents, directAgents] = await Promise.all([
+        prisma.slaPolicy.findUnique({
+            where: { queueId_priority: { queueId: input.queueId, priority: validated.priority } },
+        }),
         prisma.groupMember.findMany({
             where: { group: { queueAssignments: { some: { queueId: input.queueId, role: 'agent' } } } },
             include: { user: { select: { id: true, email: true } } },
@@ -229,26 +195,96 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
             include: { user: { select: { id: true, email: true } } },
         }),
     ]);
+    const dueAt = sla ? new Date(Date.now() + sla.resolutionMinutes * 60000) : null;
+    const snapshot = buildTicketFormSchemaSnapshot(resolved);
     const agentMap = new Map<string, string>();
     groupAgents.forEach((member) => agentMap.set(member.user.id, member.user.email));
     directAgents.forEach((member) => agentMap.set(member.user.id, member.user.email));
     agentMap.delete(requester.id);
-    if (agentMap.size > 0) {
-        await prisma.ticketWatcher.createMany({
-            data: [...agentMap.keys()].map((userId) => ({ ticketId: ticket.id, userId })),
-            skipDuplicates: true,
-        });
-    }
+    const movedFiles: PreparedAttachment[] = [];
 
-    await prisma.timelineEvent.create({
-        data: {
-            ticketId: ticket.id,
-            userId: requester.id,
-            type: 'CREATED',
-            content: source === 'api' ? `Ticket created via API: ${ticket.title}` : `Ticket created: ${ticket.title}`,
-            metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source },
-        },
-    });
+    let ticket;
+    try {
+        ticket = await prisma.$transaction(async (tx) => {
+            const year = new Date().getFullYear();
+            const ticketKey = generateTicketKey(year, await reserveNextTicketCount(tx, year));
+            await tx.ticket.create({
+                data: {
+                    id: ticketId,
+                    key: ticketKey,
+                    idempotencyKey: input.idempotencyKey,
+                    title: validated.title,
+                    description: validated.description,
+                    status: 'NEW',
+                    priority: validated.priority,
+                    severity: validated.severity,
+                    queueId: input.queueId,
+                    categoryId: input.categoryId,
+                    requesterId: requester.id,
+                    assigneeId: null,
+                    dueAt,
+                    resolvedTemplateId: resolved.template.id,
+                    resolvedTemplateVersion: resolved.template.version,
+                    formSchemaSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+                    submittedFormValues: storedValues as Prisma.InputJsonValue,
+                },
+            });
+
+            if (uniqueTagIds.length > 0) {
+                await tx.ticketTag.createMany({
+                    data: uniqueTagIds.map((tagId) => ({ ticketId, tagId })),
+                    skipDuplicates: true,
+                });
+            }
+
+            if (preparedAttachments.length > 0) {
+                for (const file of preparedAttachments) {
+                    await mkdir(dirname(file.destinationPath), { recursive: true });
+                    await rename(file.sourcePath, file.destinationPath);
+                    movedFiles.push(file);
+                }
+                await tx.attachment.createMany({
+                    data: preparedAttachments.map((item) => ({
+                        id: item.id,
+                        ticketId,
+                        filename: item.file.filename,
+                        mimetype: item.file.mimetype,
+                        size: item.file.size,
+                        path: item.reference,
+                    })),
+                });
+            }
+
+            await tx.ticketWatcher.createMany({
+                data: [requester.id, ...agentMap.keys()].map((userId) => ({ ticketId, userId })),
+                skipDuplicates: true,
+            });
+            await tx.timelineEvent.create({
+                data: {
+                    ticketId,
+                    userId: requester.id,
+                    type: 'CREATED',
+                    content: source === 'api' ? `Ticket created via API: ${validated.title}` : `Ticket created: ${validated.title}`,
+                    metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source },
+                },
+            });
+
+            return tx.ticket.findUniqueOrThrow({
+                where: { id: ticketId },
+                include: { queue: true, requester: true, assignee: true },
+            });
+        }, { maxWait: 5_000, timeout: 15_000 });
+    } catch (error) {
+        await restoreMovedFiles(movedFiles);
+        if (input.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            const existing = await prisma.ticket.findFirst({
+                where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
+                include: { queue: true, requester: true, assignee: true },
+            });
+            if (existing) return { ticket: existing, replayed: true };
+        }
+        throw error;
+    }
 
     void sendTicketCreatedEmail(requester.email, ticket.key, ticket.title);
     const agentEmails = [...agentMap.values()].filter(Boolean);
