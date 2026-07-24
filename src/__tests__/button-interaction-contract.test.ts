@@ -36,3 +36,13 @@ describe('sidebar navigation interaction contract', () => {
         expect(navLinkSource).not.toContain('preventDefault');
     });
 });
+
+describe('sign out interaction contract', () => {
+    it('sends signout straight to the sign-in page in a single redirect', () => {
+        expect(appShellSource).toContain("signOut({ callbackUrl: '/auth/signin' })");
+    });
+
+    it('installs the self-healing pointer-events lock guard', () => {
+        expect(appShellSource).toContain('installInteractionLockGuard(window)');
+    });
+});
