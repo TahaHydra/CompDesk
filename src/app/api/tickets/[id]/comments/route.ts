@@ -105,6 +105,9 @@ export async function PATCH(
         if (!event || event.ticketId !== id) {
             return NextResponse.json({ error: 'Timeline entry not found' }, { status: 404 });
         }
+        if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
+            return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
+        }
 
         const ticket = await prisma.ticket.findUnique({ where: { id } });
         if (!ticket) {
@@ -184,6 +187,9 @@ export async function DELETE(
         const event = await prisma.timelineEvent.findUnique({ where: { id: eventId } });
         if (!event || event.ticketId !== id) {
             return NextResponse.json({ error: 'Timeline entry not found' }, { status: 404 });
+        }
+        if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
+            return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
         }
 
         const ticket = await prisma.ticket.findUnique({ where: { id } });

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 export const FEATURE_FLAGS = {
     feature_attachments_enabled: true,
     feature_dashboard_links_enabled: true,
-    feature_external_api_enabled: true,
+    feature_external_api_enabled: false,
     feature_webhooks_enabled: true,
 } as const;
 

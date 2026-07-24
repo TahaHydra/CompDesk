@@ -3,7 +3,7 @@ const mockGetQueueInboxQueueIds = jest.fn();
 const mockGetAgentAccessibleQueueIds = jest.fn();
 const mockPrisma = {
     appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
-    timelineEvent: { findMany: jest.fn() },
+    timelineEvent: { findMany: jest.fn(), count: jest.fn() },
 };
 
 jest.mock('@/lib/auth', () => ({ auth: mockAuth }));
@@ -20,6 +20,7 @@ describe('notification authorization', () => {
         jest.clearAllMocks();
         mockPrisma.appSetting.findUnique.mockResolvedValue(null);
         mockPrisma.timelineEvent.findMany.mockResolvedValue([]);
+        mockPrisma.timelineEvent.count.mockResolvedValue(0);
         mockGetQueueInboxQueueIds.mockResolvedValue([]);
         mockGetAgentAccessibleQueueIds.mockResolvedValue([]);
     });
@@ -59,5 +60,18 @@ describe('notification authorization', () => {
             OR: [{ requesterId: 'agent-id' }, { queueId: { in: ['queue-1'] } }],
         });
         expect(JSON.stringify(query.where.ticket)).not.toContain('watchers');
+    });
+
+    it('counts all unread events independently of the 20-item display limit', async () => {
+        mockAuth.mockResolvedValue({
+            user: { id: 'super-id', email: 'super@example.com', name: 'Super', role: 'SUPER_ADMIN', groupIds: [] },
+        });
+        mockPrisma.timelineEvent.count.mockResolvedValue(65);
+        const response = await getNotifications();
+        expect(response.status).toBe(200);
+        expect((await response.json()).unreadCount).toBe(65);
+        expect(mockPrisma.timelineEvent.count).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ createdAt: { gt: expect.any(Date) } }),
+        }));
     });
 });

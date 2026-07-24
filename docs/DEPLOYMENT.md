@@ -97,17 +97,18 @@ SMTP_USER="noreply@yourorg.com"
 SMTP_PASS="your-smtp-password"
 SMTP_FROM="CompDesk <noreply@yourorg.com>"
 
-# ── External API ────────────────────────────────────────────────
-API_KEY="generate-a-strong-api-key"
-
-# ── Webhooks ────────────────────────────────────────────────────
-WEBHOOK_URL=""
-WEBHOOK_SECRET="generate-a-strong-webhook-secret"
-
 # ── App Settings ────────────────────────────────────────────────
 NODE_ENV="production"
 LOG_LEVEL="info"
+TEMP_ATTACHMENT_TTL_HOURS="24"
+TEMP_ATTACHMENT_MAX_FILES_PER_USER="20"
+TEMP_ATTACHMENT_MAX_BYTES_PER_USER="104857600"
 ```
+
+
+External API clients and webhook endpoints/secrets are database records managed by a Super Admin. There is no environment-wide fallback API key. The external API is disabled by default and must be explicitly enabled after creating a scoped client.
+
+`AUTH_URL` must be the exact public origin used in the browser (scheme, host, and port). Keep `AUTH_SECRET` stable between builds. The production start command validates both values and rejects placeholders; non-local origins must use HTTPS.
 
 ---
 
@@ -123,7 +124,7 @@ npm run db:migrate:prod
 npm run verify
 ```
 
-The department-category/template migration is transactional and preserves existing users, tickets, categories, submitted values, and queue-owned fields. It does not require seed execution.
+Database migrations run automatically in both the Docker image and `npm run start`. Running `npm run db:migrate:prod` explicitly before a planned upgrade remains recommended so migration failures are handled before application startup. The department-category/template migration is transactional and preserves existing users, tickets, categories, submitted values, and queue-owned fields. It does not require seed execution.
 
 Branding and quick-link assets live in `public/uploads`; private ticket attachments live in `storage/attachments` and are served only by the authenticated `/api/upload/[id]` route. Docker Compose mounts persistent `compdesk_uploads` and `compdesk_attachments` volumes at `/app/public/uploads` and `/app/storage/attachments`. Include both in backups. A standalone or multi-replica deployment must provide equivalent durable shared storage with write access for the application user. On the first `npm start` after this upgrade, the guarded migration script moves legacy ticket files out of the public directory and updates their database paths before the server starts.
 
@@ -538,7 +539,7 @@ sudo systemctl restart compdesk
 
 ### "next start" fails with "standalone" error
 
-Run `npm run build` and then `npm start`. The start script performs the guarded legacy-attachment migration before launching `.next/standalone/server.js`; do not bypass it during the first upgraded start.
+Run `npm run build` and then `npm start`; the start command validates the runtime environment and applies pending production migrations before launching the server. Each build removes the previous `.next` directory and replaces standalone static/public assets, preventing removed files from surviving an upgrade. The start script validates Auth.js runtime settings and performs guarded private/temporary attachment cleanup before launching `.next/standalone/server.js`; do not bypass it.
 
 ### Database connection refused
 

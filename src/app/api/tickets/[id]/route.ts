@@ -285,41 +285,49 @@ export async function PATCH(
             });
         }
 
-        // Update tags if provided
-        if (data.tagIds) {
-            await prisma.ticketTag.deleteMany({ where: { ticketId: id } });
-            if (data.tagIds.length > 0) {
-                await prisma.ticketTag.createMany({
-                    data: data.tagIds.map((tagId) => ({ ticketId: id, tagId })),
-                });
+        const uniqueTagIds = data.tagIds ? [...new Set(data.tagIds)] : undefined;
+        if (uniqueTagIds && uniqueTagIds.length > 0) {
+            const validTagCount = await prisma.tag.count({ where: { id: { in: uniqueTagIds } } });
+            if (validTagCount !== uniqueTagIds.length) {
+                return NextResponse.json({ error: 'One or more selected tags are invalid' }, { status: 400 });
             }
         }
 
         const updateData = { ...data } as Record<string, unknown>;
         delete (updateData as any).tagIds;
-        const updatedTicket = await prisma.ticket.update({
-            where: { id },
-            data: updateData as any,
-            include: {
-                queue: true,
-                requester: true,
-                assignee: true,
-            },
-        });
+        const updatedTicket = await prisma.$transaction(async (tx) => {
+            if (uniqueTagIds) {
+                await tx.ticketTag.deleteMany({ where: { ticketId: id } });
+                if (uniqueTagIds.length > 0) {
+                    await tx.ticketTag.createMany({
+                        data: uniqueTagIds.map((tagId) => ({ ticketId: id, tagId })),
+                    });
+                }
+            }
 
-        // Create timeline events
-        for (const event of timelineEvents) {
-            await prisma.timelineEvent.create({
-                data: {
-                    ticketId: id,
-                    userId: session.user.id,
-                    type: event.type as any,
-                    content: event.content,
-                    metadata: (event.metadata as any) ?? undefined,
+            const updated = await tx.ticket.update({
+                where: { id },
+                data: updateData as any,
+                include: {
+                    queue: true,
+                    requester: true,
+                    assignee: true,
                 },
             });
-        }
 
+            if (timelineEvents.length > 0) {
+                await tx.timelineEvent.createMany({
+                    data: timelineEvents.map((event) => ({
+                        ticketId: id,
+                        userId: session.user.id,
+                        type: event.type as any,
+                        content: event.content,
+                        metadata: (event.metadata as any) ?? undefined,
+                    })),
+                });
+            }
+            return updated;
+        });
         // Send notifications
         if (data.assigneeId && data.assigneeId !== existingTicket.assigneeId && updatedTicket.assignee) {
             sendTicketAssignedEmail(updatedTicket.assignee.email, updatedTicket.key, updatedTicket.title);

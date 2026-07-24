@@ -4,7 +4,6 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAgentAccessibleQueueIds, getQueueInboxQueueIds } from '@/lib/permissions';
 
-// GET /api/notifications — fetch recent activity for the current user
 export async function GET() {
     try {
         const session = await auth();
@@ -12,18 +11,12 @@ export async function GET() {
 
         const userId = session.user.id;
         const role = session.user.role;
+        const lastReadSetting = await prisma.appSetting.findUnique({ where: { key: `notifications_read_${userId}` } });
+        const parsedLastRead = lastReadSetting ? new Date(lastReadSetting.value) : new Date(0);
+        const lastReadAt = Number.isNaN(parsedLastRead.getTime()) ? new Date(0) : parsedLastRead;
 
-        // Get the user's last-read timestamp from app settings
-        const lastReadSetting = await prisma.appSetting.findUnique({
-            where: { key: `notifications_read_${userId}` },
-        });
-        const lastReadAt = lastReadSetting ? new Date(lastReadSetting.value) : new Date(0);
-
-        // Build the where clause based on role
         let ticketFilter: Prisma.TicketWhereInput = {};
-
         if (role === 'USER') {
-            // End users see notifications for tickets they submitted
             ticketFilter = { requesterId: userId };
         } else if (role === 'AGENT') {
             const departmentIds = await getAgentAccessibleQueueIds(userId);
@@ -38,31 +31,30 @@ export async function GET() {
             ticketFilter = departmentIds?.length
                 ? { queueId: { in: departmentIds } }
                 : { queueId: { in: ['__none__'] } };
-        } else {
-            // SUPER_ADMIN sees all recent activity.
-            ticketFilter = {};
         }
 
-        // Fetch recent timeline events (excluding the user's own actions)
-        const items = await prisma.timelineEvent.findMany({
-            where: {
-                ticket: ticketFilter,
-                userId: { not: userId }, // Don't show the user's own actions
-                ...(role === 'USER' ? { type: { not: 'INTERNAL_NOTE' as const } } : {}),
-            },
-            include: {
-                user: { select: { name: true } },
-                ticket: { select: { id: true, key: true, title: true } },
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 20,
-        });
-
-        // Count unread
-        const unreadCount = items.filter(item => item.createdAt > lastReadAt).length;
+        const eventFilter: Prisma.TimelineEventWhereInput = {
+            ticket: ticketFilter,
+            userId: { not: userId },
+            ...(role === 'USER' ? { type: { not: 'INTERNAL_NOTE' as const } } : {}),
+        };
+        const [items, unreadCount] = await Promise.all([
+            prisma.timelineEvent.findMany({
+                where: eventFilter,
+                include: {
+                    user: { select: { name: true } },
+                    ticket: { select: { id: true, key: true, title: true } },
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 20,
+            }),
+            prisma.timelineEvent.count({
+                where: { ...eventFilter, createdAt: { gt: lastReadAt } },
+            }),
+        ]);
 
         return NextResponse.json({
-            items: items.map(item => ({
+            items: items.map((item) => ({
                 id: item.id,
                 type: item.type,
                 content: item.content,
@@ -80,19 +72,18 @@ export async function GET() {
     }
 }
 
-// POST /api/notifications — mark all as read
 export async function POST() {
     try {
         const session = await auth();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const key = `notifications_read_${session.user.id}`;
+        const value = new Date().toISOString();
         await prisma.appSetting.upsert({
             where: { key },
-            update: { value: new Date().toISOString() },
-            create: { key, value: new Date().toISOString() },
+            update: { value },
+            create: { key, value },
         });
-
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('Failed to mark notifications as read', error);

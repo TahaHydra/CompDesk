@@ -33,11 +33,12 @@ export function BrandingSettings() {
     const queryClient = useQueryClient();
     const [form, setForm] = useState<BrandingConfig | null>(null);
     const [uploading, setUploading] = useState<BrandingAssetField | null>(null);
+    const [isDirty, setIsDirty] = useState(false);
     const query = useQuery<BrandingConfig>({
         queryKey: ['branding', 'admin'],
         queryFn: async () => responseJson(await fetch('/api/branding/admin', { cache: 'no-store' })),
     });
-    useEffect(() => { if (query.data) setForm(query.data); }, [query.data]);
+    useEffect(() => { if (query.data && !isDirty) setForm(query.data); }, [isDirty, query.data]);
 
     const saveMutation = useMutation({
         mutationFn: async () => responseJson<BrandingConfig>(await fetch('/api/branding/admin', {
@@ -45,6 +46,7 @@ export function BrandingSettings() {
         })),
         onSuccess: (branding) => {
             setForm(branding);
+            setIsDirty(false);
             queryClient.setQueryData(['branding', 'admin'], branding);
             toast({ title: 'Branding saved', description: 'Reloading the application shell with the new theme.' });
             window.setTimeout(() => window.location.reload(), 350);
@@ -55,6 +57,7 @@ export function BrandingSettings() {
         mutationFn: async () => responseJson<BrandingConfig>(await fetch('/api/branding/admin', { method: 'DELETE' })),
         onSuccess: (branding) => {
             setForm(branding);
+            setIsDirty(false);
             queryClient.setQueryData(['branding', 'admin'], branding);
             toast({ title: 'Default branding restored' });
             window.setTimeout(() => window.location.reload(), 350);
@@ -63,6 +66,7 @@ export function BrandingSettings() {
     });
 
     const update = <K extends keyof BrandingConfig>(key: K, value: BrandingConfig[K]) => {
+        setIsDirty(true);
         setForm((current) => current ? { ...current, [key]: value } : current);
     };
     const uploadAsset = async (field: BrandingAssetField, file: File) => {
@@ -72,6 +76,7 @@ export function BrandingSettings() {
             body.set('field', field); body.set('file', file);
             const result = await responseJson<{ branding: BrandingConfig }>(await fetch('/api/branding/assets', { method: 'POST', body }));
             setForm(result.branding);
+            setIsDirty(false);
             queryClient.setQueryData(['branding', 'admin'], result.branding);
             toast({ title: 'Brand asset uploaded' });
         } catch (error) {
@@ -85,6 +90,7 @@ export function BrandingSettings() {
         try {
             const result = await responseJson<{ branding: BrandingConfig }>(await fetch(`/api/branding/assets?field=${field}`, { method: 'DELETE' }));
             setForm(result.branding);
+            setIsDirty(false);
             queryClient.setQueryData(['branding', 'admin'], result.branding);
         } catch (error) {
             toast({ title: 'Asset reset failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
