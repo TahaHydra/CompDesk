@@ -46,3 +46,24 @@ describe('sign out interaction contract', () => {
         expect(appShellSource).toContain('installInteractionLockGuard(window)');
     });
 });
+
+describe('session refresh does not loop the shell', () => {
+    // next-auth v5's `update` is re-created whenever the session/loading state
+    // changes. Depending on it in an effect that also calls it produces an
+    // infinite refetch/re-render loop that freezes every control a few seconds
+    // after load. The shell must not wire the session updater that way.
+    it('does not alias or invoke the next-auth session updater', () => {
+        expect(appShellSource).not.toContain('update: refreshSession');
+        expect(appShellSource).not.toContain('refreshSession()');
+    });
+
+    it('closes the mobile drawer on route change without a session dependency', () => {
+        const marker = 'setMobileOpen(false);';
+        const start = appShellSource.indexOf(marker);
+        expect(start).not.toBe(-1);
+        const effectEnd = appShellSource.indexOf('}, [', start);
+        const deps = appShellSource.slice(effectEnd, appShellSource.indexOf(']', effectEnd) + 1);
+        expect(deps).toContain('[pathname]');
+        expect(deps).not.toContain('refreshSession');
+    });
+});
