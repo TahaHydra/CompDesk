@@ -50,6 +50,7 @@ import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
+import { releaseStaleInteractionLock } from '@/lib/browser-interaction';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -122,6 +123,30 @@ export default function AppShell({
         setMobileOpen(false);
         void refreshSession();
     }, [pathname, refreshSession]);
+
+    // A modal layer interrupted by client navigation or Edge's back/forward
+    // cache can leave `pointer-events: none` on <body> after it disappears.
+    // Recover only when no real interaction layer is currently open.
+    useEffect(() => {
+        const frame = window.requestAnimationFrame(() => {
+            releaseStaleInteractionLock(document);
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [pathname]);
+
+    useEffect(() => {
+        const recoverInteraction = () => {
+            window.requestAnimationFrame(() => {
+                releaseStaleInteractionLock(document);
+            });
+        };
+        window.addEventListener('pageshow', recoverInteraction);
+        window.addEventListener('focus', recoverInteraction);
+        return () => {
+            window.removeEventListener('pageshow', recoverInteraction);
+            window.removeEventListener('focus', recoverInteraction);
+        };
+    }, []);
 
     useEffect(() => {
         if (status === 'unauthenticated') {
