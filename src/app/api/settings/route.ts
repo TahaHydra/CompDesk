@@ -7,7 +7,7 @@ import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironme
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
 import { isValidSmtpFrom, normalizeSettingValue, SettingsValidationError, validateSmtpSecurityCombination } from '@/lib/settings-validation';
-import { encryptSettingSecret, hasSettingsEncryptionKey, isEncryptedSettingSecret, SettingsSecretError } from '@/lib/settings-secret';
+import { encryptSettingSecret, getEnvironmentSmtpPassword, hasIgnoredEnvironmentSmtpPlaceholder, hasSettingsEncryptionKey, isEncryptedSettingSecret, SettingsSecretError } from '@/lib/settings-secret';
 
 const SECRET_KEYS = new Set(['smtp_password', 'azure_ad_client_secret']);
 const ENV_ONLY_KEYS = new Set(['azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id']);
@@ -21,6 +21,8 @@ const ALLOWED_KEYS = new Set([
 ]);
 
 function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Record<string, string>): Record<string, string> {
+    const environmentPassword = getEnvironmentSmtpPassword();
+    const passwordSource = environmentPassword ? 'environment' : dbSettings.smtp_password ? 'database' : 'missing';
     return {
         ...dbSettings,
         azure_ad_client_id: managedEnv.azure_ad_client_id || process.env.AZURE_AD_CLIENT_ID || dbSettings.azure_ad_client_id || '',
@@ -34,7 +36,9 @@ function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Rec
         smtp_from: dbSettings.smtp_from || process.env.SMTP_FROM || '',
         smtp_secure: dbSettings.smtp_secure || process.env.SMTP_SECURE || 'false',
         smtp_password: '',
-        smtp_password_configured: dbSettings.smtp_password || process.env.SMTP_PASS || process.env.SMTP_PASSWORD ? 'true' : 'false',
+        smtp_password_configured: dbSettings.smtp_password || environmentPassword ? 'true' : 'false',
+        smtp_password_source: passwordSource,
+        smtp_environment_placeholder_ignored: hasIgnoredEnvironmentSmtpPlaceholder() ? 'true' : 'false',
         smtp_password_migration_required: dbSettings.smtp_password && !isEncryptedSettingSecret(dbSettings.smtp_password) ? 'true' : 'false',
         smtp_encryption_key_configured: hasSettingsEncryptionKey() ? 'true' : 'false',
         smtp_require_tls: dbSettings.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? ((dbSettings.smtp_secure ?? process.env.SMTP_SECURE) === 'true' ? 'false' : 'true'),

@@ -23,7 +23,7 @@ import os from 'os';
 import path from 'path';
 import { diagnoseEntraRuntime } from '@/lib/entra-diagnostic';
 
-import { createSmtpTransport } from '@/lib/email';
+import { createSmtpTransport, getSmtpConfig } from '@/lib/email';
 import { decryptSettingSecret, encryptSettingSecret } from '@/lib/settings-secret';
 import { isLoginMethodEnabled, resetLoginPolicyCacheForTests } from '@/lib/login-policy';
 import { parseTicketContent } from '@/lib/ticket-content';
@@ -117,6 +117,18 @@ describe('Phase 3 SMTP diagnostics and secret protection', () => {
         process.env.SMTP_PASS = 'environment-password';
     });
     afterAll(() => { process.env = savedEnvironment; });
+
+    it('ignores the documented environment placeholder so the saved password is effective', async () => {
+        process.env.SMTP_PASS = 'your-smtp-password';
+        mockPrisma.appSetting.findMany.mockResolvedValue([
+            { key: 'smtp_host', value: 'smtp.example.com' }, { key: 'smtp_port', value: '465' },
+            { key: 'smtp_secure', value: 'true' }, { key: 'smtp_require_tls', value: 'false' },
+            { key: 'smtp_user', value: 'admin@example.com' }, { key: 'smtp_from', value: 'admin@example.com' },
+            { key: 'smtp_password', value: 'saved-real-password' },
+        ]);
+        const smtp = await getSmtpConfig({} as any);
+        expect(smtp.pass).toBe('saved-real-password');
+    });
 
     it('passes requireTLS and certificate verification to Nodemailer', () => {
         createSmtpTransport({ host: 'smtp.example.com', port: 587, secure: false, requireTLS: true, user: 'u', pass: 'p', from: 'u@example.com' });
