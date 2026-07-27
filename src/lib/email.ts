@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import logger from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { getBrandingConfig, type BrandingConfig } from '@/lib/branding';
+import { auditLog } from '@/lib/audit';
 
 interface EmailOptions {
     to: string | string[];
@@ -98,28 +99,60 @@ function brandedEmail(branding: BrandingConfig, heading: string, content: string
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
     let smtp: Awaited<ReturnType<typeof getSmtpConfig>> | undefined;
+    const recipients = [...new Set((Array.isArray(options.to) ? options.to : [options.to]).map((email) => email.trim()).filter(Boolean))];
     try {
         const branding = await getBrandingConfig();
         smtp = await getSmtpConfig(branding);
         if (!smtp.user || !smtp.pass) {
-            logger.warn('SMTP credentials not configured, skipping email send', { subject: options.subject });
+            const message = 'SMTP credentials not configured, skipping email send';
+            logger.warn(message, { subject: options.subject, recipientCount: recipients.length });
+            await auditLog({ action: 'email.delivery_skipped', entity: 'email', metadata: { reason: message, subject: options.subject, recipientCount: recipients.length } });
             return false;
         }
+        if (recipients.length === 0) {
+            logger.warn('Email has no recipients, skipping send', { subject: options.subject });
+            return false;
+        }
+
         const transporter = createSmtpTransport(smtp);
-        await transporter.sendMail({
-            from: smtp.from,
-            to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
-            subject: options.subject,
-            html: options.html,
-            text: options.text,
-        });
-        logger.info('Email sent successfully', { to: options.to, subject: options.subject });
+        const failures: Array<{ recipient: string; message: string }> = [];
+        let sentCount = 0;
+        for (const recipient of recipients) {
+            try {
+                await transporter.sendMail({
+                    from: smtp.from,
+                    to: recipient,
+                    subject: options.subject,
+                    html: options.html,
+                    text: options.text,
+                });
+                sentCount += 1;
+            } catch (error) {
+                failures.push({ recipient, message: formatSmtpError(error, smtp) });
+            }
+        }
+
+        if (failures.length > 0) {
+            const message = failures[0].message;
+            logger.error('Failed to send email', { error: message, subject: options.subject, sentCount, failedCount: failures.length });
+            await auditLog({
+                action: 'email.delivery_failed',
+                entity: 'email',
+                metadata: { subject: options.subject, host: smtp.host, port: smtp.port, sentCount, failedCount: failures.length, error: message },
+            });
+            return false;
+        }
+
+        logger.info('Email sent successfully', { subject: options.subject, recipientCount: sentCount });
+        await auditLog({ action: 'email.delivery_succeeded', entity: 'email', metadata: { subject: options.subject, recipientCount: sentCount } });
         return true;
     } catch (error) {
-        logger.error('Failed to send email', {
-            error: formatSmtpError(error, smtp),
-            to: options.to,
-            subject: options.subject,
+        const message = formatSmtpError(error, smtp);
+        logger.error('Failed to send email', { error: message, subject: options.subject, recipientCount: recipients.length });
+        await auditLog({
+            action: 'email.delivery_failed',
+            entity: 'email',
+            metadata: { subject: options.subject, host: smtp?.host, port: smtp?.port, failedCount: recipients.length, error: message },
         });
         return false;
     }

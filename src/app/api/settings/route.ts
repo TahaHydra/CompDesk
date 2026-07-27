@@ -6,6 +6,7 @@ import logger from '@/lib/logger';
 import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
+import { normalizeSettingValue, SettingsValidationError } from '@/lib/settings-validation';
 
 const SECRET_KEYS = new Set(['smtp_password', 'azure_ad_client_secret']);
 const ENV_ONLY_KEYS = new Set(['azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id']);
@@ -21,8 +22,8 @@ const ALLOWED_KEYS = new Set([
 function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Record<string, string>): Record<string, string> {
     return {
         ...dbSettings,
-        azure_ad_client_id: process.env.AZURE_AD_CLIENT_ID || managedEnv.azure_ad_client_id || dbSettings.azure_ad_client_id || '',
-        azure_ad_tenant_id: process.env.AZURE_AD_TENANT_ID || managedEnv.azure_ad_tenant_id || dbSettings.azure_ad_tenant_id || '',
+        azure_ad_client_id: managedEnv.azure_ad_client_id || process.env.AZURE_AD_CLIENT_ID || dbSettings.azure_ad_client_id || '',
+        azure_ad_tenant_id: managedEnv.azure_ad_tenant_id || process.env.AZURE_AD_TENANT_ID || dbSettings.azure_ad_tenant_id || '',
         azure_ad_client_secret: '',
         azure_ad_client_secret_configured: process.env.AZURE_AD_CLIENT_SECRET || managedEnv.azure_ad_client_secret ? 'true' : 'false',
         azure_ad_runtime_configured: process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID ? 'true' : 'false',
@@ -82,21 +83,43 @@ export async function PATCH(request: Request) {
                 nextIcons = new Set(parsed.data.map((link) => link.iconUrl).filter(Boolean));
                 normalizedEntries.push([key, JSON.stringify(parsed.data)]);
             } else {
-                normalizedEntries.push([key, String(rawValue)]);
+                normalizedEntries.push([key, normalizeSettingValue(key, rawValue)]);
             }
+        }
+
+        let restartRequired = false;
+        const entraEntries = normalizedEntries.filter(([key]) => ENV_ONLY_KEYS.has(key));
+        if (entraEntries.length > 0) {
+            const [legacyRows, managedEnv] = await Promise.all([
+                prisma.appSetting.findMany({ where: { key: { in: [...ENV_ONLY_KEYS] } } }),
+                readManagedEnvironment(),
+            ]);
+            const legacy = Object.fromEntries(legacyRows.map((setting) => [setting.key, setting.value]));
+            const submitted = Object.fromEntries(entraEntries.filter(([, value]) => value.trim() !== ''));
+            const effectiveEntra = {
+                azure_ad_client_id: submitted.azure_ad_client_id || managedEnv.azure_ad_client_id || process.env.AZURE_AD_CLIENT_ID || legacy.azure_ad_client_id || '',
+                azure_ad_client_secret: submitted.azure_ad_client_secret || managedEnv.azure_ad_client_secret || process.env.AZURE_AD_CLIENT_SECRET || legacy.azure_ad_client_secret || '',
+                azure_ad_tenant_id: submitted.azure_ad_tenant_id || managedEnv.azure_ad_tenant_id || process.env.AZURE_AD_TENANT_ID || legacy.azure_ad_tenant_id || '',
+            };
+            if (!effectiveEntra.azure_ad_client_id || !effectiveEntra.azure_ad_client_secret || !effectiveEntra.azure_ad_tenant_id) {
+                return NextResponse.json({ error: 'Client ID, Client Secret, and Tenant ID are all required for Microsoft sign-in.' }, { status: 400 });
+            }
+            restartRequired = await updateManagedEnvironment(effectiveEntra);
+            if (restartRequired) await prisma.appSetting.deleteMany({ where: { key: { in: [...ENV_ONLY_KEYS] } } });
         }
 
         const dbUpdates = normalizedEntries.filter(([key, value]) => !ENV_ONLY_KEYS.has(key) && !(SECRET_KEYS.has(key) && value.trim() === ''));
         await prisma.$transaction(dbUpdates.map(([key, value]) => prisma.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } })));
-
         for (const oldIcon of previousIcons) {
             if (!nextIcons.has(oldIcon)) await removeUploadedImage(oldIcon, 'quick-links');
         }
-        const restartRequired = await updateManagedEnvironment(Object.fromEntries(normalizedEntries));
         await auditLog({ userId: session.user.id, action: 'settings.updated', entity: 'app_setting', metadata: { keys: normalizedEntries.map(([key]) => key) } });
         return NextResponse.json({ success: true, restartRequired });
     } catch (error) {
         logger.error('Failed to update settings', { error });
+        if (error instanceof SettingsValidationError) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         if (error instanceof ManagedEnvironmentError) {
             return NextResponse.json({ error: error.message }, { status: 409 });
         }

@@ -67,6 +67,18 @@ function SignInForm() {
                     </Button>
                 ) : null}
 
+                {branding.showMicrosoftLogin && !branding.microsoftLoginConfigured ? (
+                    <div className="space-y-2">
+                        <Button type="button" disabled className="h-12 w-full gap-3 text-base">
+                            <MicrosoftMark />
+                            {branding.microsoftButtonText}
+                        </Button>
+                        <p className="text-center text-xs text-muted-foreground">
+                            Microsoft sign-in is enabled but unavailable until the administrator completes the Entra configuration and restarts the application.
+                        </p>
+                    </div>
+                ) : null}
+
                 {showDivider ? (
                     <div className="relative">
                         <div className="absolute inset-0 flex items-center"><Separator className="w-full" /></div>
@@ -109,10 +121,12 @@ function SignInForm() {
                     </div>
                 ) : null}
 
-                {branding.showDemoAccounts && branding.demoAccountInfo ? (
+                {branding.showDemoAccounts ? (
                     <div className="rounded-lg bg-muted/50 p-3">
                         <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Demo accounts</p>
-                        <p className="whitespace-pre-wrap text-xs text-muted-foreground">{branding.demoAccountInfo}</p>
+                        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                            {branding.demoAccountInfo || 'Demo account information has not been configured.'}
+                        </p>
                     </div>
                 ) : null}
 
