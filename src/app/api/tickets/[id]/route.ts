@@ -7,7 +7,7 @@ import { sendTicketUpdatedEmail, sendTicketAssignedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
-import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
+import { canAccessQueue, canAccessTicket, canDeleteTicket } from '@/lib/permissions';
 import { fieldsVisibleToRoleFromSnapshot, parseTicketFormSchemaSnapshot } from '@/lib/ticket-form/validation';
 import { authenticatedAttachmentUrl, resolveStoredAttachmentPath } from '@/lib/attachment-storage';
 import { unlink } from 'fs/promises';
@@ -374,7 +374,8 @@ export async function PATCH(
     }
 }
 
-// DELETE /api/tickets/[id] — user can delete own ticket only if unassigned
+// DELETE /api/tickets/[id] — super admins can delete any ticket; others can
+// only withdraw a ticket they requested while it is still unassigned.
 export async function DELETE(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -392,14 +393,11 @@ export async function DELETE(
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        // Only the requester can delete
-        if (ticket.requesterId !== session.user.id) {
+        if (!canDeleteTicket(session.user.id, session.user.role, ticket)) {
+            if (ticket.requesterId === session.user.id && ticket.assigneeId) {
+                return NextResponse.json({ error: 'Cannot delete a ticket that has been assigned. Contact an agent.' }, { status: 400 });
+            }
             return NextResponse.json({ error: 'Only the ticket requester can delete this ticket' }, { status: 403 });
-        }
-
-        // Only unassigned tickets can be deleted
-        if (ticket.assigneeId) {
-            return NextResponse.json({ error: 'Cannot delete a ticket that has been assigned. Contact an agent.' }, { status: 400 });
         }
 
         // Delete all associated records
