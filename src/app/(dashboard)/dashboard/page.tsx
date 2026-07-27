@@ -39,6 +39,7 @@ interface DashboardData {
     stats: { total: number; open: number; pending: number; resolved: number; urgent: number; escalated: number };
     recentTickets: RecentTicket[];
     customLinks: DashboardLink[];
+    ticketView: 'my' | 'queue' | 'all';
 }
 
 export default function DashboardPage() {
@@ -57,12 +58,14 @@ export default function DashboardPage() {
     const stats = data?.stats ?? { total: 0, open: 0, pending: 0, resolved: 0, urgent: 0, escalated: 0 };
     const recentTickets = data?.recentTickets ?? [];
     const customLinks = data?.customLinks ?? [];
+    const ticketView = data?.ticketView ?? 'my';
+    const ticketHref = (filters = '') => `/tickets?view=${ticketView}${filters}`;
     const statCards = [
-        { label: 'Total Tickets', value: stats.total, icon: Ticket, className: 'text-primary', href: '/tickets?view=all' },
-        { label: 'Open', value: stats.open, icon: AlertCircle, className: 'text-sky-700 dark:text-sky-300', href: '/tickets?view=all&status=OPEN' },
-        { label: 'Pending', value: stats.pending, icon: Clock, className: 'text-amber-700 dark:text-amber-300', href: '/tickets?view=all&status=PENDING_USER' },
-        { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, className: 'text-emerald-700 dark:text-emerald-300', href: '/tickets?view=all&status=RESOLVED' },
-        { label: 'Urgent', value: stats.urgent, icon: Flame, className: 'text-rose-700 dark:text-rose-300', href: '/tickets?view=all&priority=URGENT' },
+        { label: 'Total Tickets', value: stats.total, icon: Ticket, className: 'text-primary', href: ticketHref() },
+        { label: 'Open', value: stats.open, icon: AlertCircle, className: 'text-sky-700 dark:text-sky-300', href: ticketHref('&status=OPEN') },
+        { label: 'Pending', value: stats.pending, icon: Clock, className: 'text-amber-700 dark:text-amber-300', href: ticketHref('&status=pending') },
+        { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, className: 'text-emerald-700 dark:text-emerald-300', href: ticketHref('&status=RESOLVED,CLOSED') },
+        { label: 'Urgent', value: stats.urgent, icon: Flame, className: 'text-rose-700 dark:text-rose-300', href: ticketHref('&priority=URGENT') },
     ];
     const dateFormatter = new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-GB', { dateStyle: 'short' });
 
@@ -91,19 +94,15 @@ export default function DashboardPage() {
                 <section className="space-y-4">
                     <h2 className="flex items-center gap-2 text-lg font-semibold"><LinkIcon className="h-5 w-5 text-primary" />{t('Quick Links')}</h2>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        {customLinks.map((link) => (
-                            <a href={link.url} target="_blank" rel="noopener noreferrer" key={`${link.title}:${link.url}`} className="group block">
-                                <Card className="h-full border shadow-sm transition-colors hover:border-primary/45">
-                                    <CardContent className="flex items-center gap-3 p-4">
-                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/35">
-                                            {link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}
-                                        </div>
-                                        <p className="min-w-0 flex-1 truncate text-sm font-medium">{link.title}</p>
-                                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                                    </CardContent>
-                                </Card>
-                            </a>
-                        ))}
+                        {customLinks.map((link) => {
+                            const content = <Card className="h-full border shadow-sm transition-colors hover:border-primary/45"><CardContent className="flex items-center gap-3 p-4"><div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/35">{link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}</div><p className="min-w-0 flex-1 truncate text-sm font-medium">{link.title}</p><ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" /></CardContent></Card>;
+                            if (link.type === 'ticket_form') {
+                                const params = new URLSearchParams({ queueId: link.queueId });
+                                if (link.categoryId) params.set('categoryId', link.categoryId);
+                                return <Link href={`/tickets/new?${params}`} key={`ticket_form:${link.queueId}:${link.categoryId ?? ''}`} className="group block">{content}</Link>;
+                            }
+                            return <a href={link.url} target="_blank" rel="noopener noreferrer" key={`external:${link.url}`} className="group block">{content}</a>;
+                        })}
                     </div>
                 </section>
             ) : null}

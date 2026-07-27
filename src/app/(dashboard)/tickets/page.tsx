@@ -1,336 +1,133 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { AlertTriangle, Plus, Search, Ticket, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/layout/page-header';
-import { Ticket, Plus, Search, AlertTriangle, SlidersHorizontal, X } from 'lucide-react';
+import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
 
 const DEFAULT_LIMIT = 20;
 const PAGE_LIMITS = [10, 20, 50] as const;
-const TICKET_PAGE_SIZE_KEY = 'compdesk-ticket-page-size';
-
-const STATUS_VALUES = ['all', 'NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'] as const;
+const STATUS_VALUES = ['all', 'pending', 'NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED', 'RESOLVED,CLOSED'] as const;
 const PRIORITY_VALUES = ['all', 'LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
-const VIEW_VALUES = ['my', 'queue', 'all'] as const;
+interface Option { id: string; name: string; queueId?: string }
 
-function readParamValue(value: string | null, allowedValues: readonly string[], fallback: string) {
-    if (!value) return fallback;
-    return allowedValues.includes(value) ? value : fallback;
-}
-
-function readPositiveInt(value: string | null, fallback: number) {
-    if (!value) return fallback;
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+function positive(value: string | null, fallback: number) { const parsed = Number.parseInt(value ?? '', 10); return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback; }
+function valid(value: string | null, values: readonly string[], fallback: string) { return value && values.includes(value) ? value : fallback; }
+function broadest(role?: string) { return role === 'USER' ? 'my' : role === 'AGENT' ? 'queue' : 'all'; }
+function scopeLabel(role: string | undefined, view: string) {
+    if (view === 'my') return 'Scope: my requested or assigned tickets';
+    if (role === 'SUPER_ADMIN') return 'Scope: all tickets globally';
+    return 'Scope: all tickets in departments you can access';
 }
 
 export default function TicketsPage() {
-    const searchParams = useSearchParams();
+    const params = useSearchParams();
     const router = useRouter();
     const { data: session } = useSession();
-
-    const userRole = session?.user?.role;
-
-    const allowedViews = useMemo<string[]>(() => {
-        if (!userRole) return [];
-        if (userRole === 'USER') return ['my'];
-        if (userRole === 'AGENT') return ['my', 'queue'];
-        return [...VIEW_VALUES];
-    }, [userRole]);
-
-    const initialUrlSearch = searchParams.get('search') ?? '';
-    const initialPage = readPositiveInt(searchParams.get('page'), 1);
-    const initialStatus = readParamValue(searchParams.get('status'), STATUS_VALUES, 'all');
-    const initialPriority = readParamValue(searchParams.get('priority'), PRIORITY_VALUES, 'all');
-    const initialView = readParamValue(searchParams.get('view'), allowedViews, 'my');
-
-    const initialLimitFromQuery = readPositiveInt(searchParams.get('limit'), DEFAULT_LIMIT);
-    const initialLimit = PAGE_LIMITS.includes(initialLimitFromQuery as any)
-        ? initialLimitFromQuery
-        : (() => {
-            if (typeof window === 'undefined') return DEFAULT_LIMIT;
-            const stored = Number.parseInt(localStorage.getItem(TICKET_PAGE_SIZE_KEY) ?? '', 10);
-            return PAGE_LIMITS.includes(stored as any) ? stored : DEFAULT_LIMIT;
-        })();
-
-    const [searchInput, setSearchInput] = useState(initialUrlSearch);
-    const [search, setSearch] = useState(initialUrlSearch.trim());
-    const [status, setStatus] = useState(initialStatus);
-    const [priority, setPriority] = useState(initialPriority);
-    const [view, setView] = useState(initialView);
-    const [page, setPage] = useState(initialPage);
-    const [limit, setLimit] = useState(initialLimit);
-
-    useEffect(() => {
-        if (session === undefined) return; // wait for session
-
-        const nextSearch = searchParams.get('search') ?? '';
-        const nextStatus = readParamValue(searchParams.get('status'), STATUS_VALUES, 'all');
-        const nextPriority = readParamValue(searchParams.get('priority'), PRIORITY_VALUES, 'all');
-        const nextView = readParamValue(searchParams.get('view'), allowedViews, 'my');
-        const nextPage = readPositiveInt(searchParams.get('page'), 1);
-
-        setSearchInput((prev) => (prev !== nextSearch ? nextSearch : prev));
-        setSearch((prev) => (prev !== nextSearch.trim() ? nextSearch.trim() : prev));
-        setStatus((prev) => (prev !== nextStatus ? nextStatus : prev));
-        setPriority((prev) => (prev !== nextPriority ? nextPriority : prev));
-        setView((prev) => (prev !== nextView ? nextView : prev));
-        setPage((prev) => (prev !== nextPage ? nextPage : prev));
-    }, [searchParams, allowedViews, session]);
-
-    // Handle initial limit from local storage
-    useEffect(() => {
-        if (searchParams.get('limit')) return;
-        const stored = Number.parseInt(localStorage.getItem(TICKET_PAGE_SIZE_KEY) ?? '', 10);
-        if (PAGE_LIMITS.includes(stored as any) && stored !== limit) {
-            setLimit(stored);
-        }
-    }, [limit, searchParams]);
+    const role = session?.user?.role;
+    const views = useMemo(() => role === 'USER' ? ['my'] : role === 'AGENT' ? ['my', 'queue'] : ['my', 'all'], [role]);
+    const scopeExplicit = useRef(params.has('view'));
+    const initialSearch = params.get('search') ?? '';
+    const [searchInput, setSearchInput] = useState(initialSearch);
+    const [search, setSearch] = useState(initialSearch.trim());
+    const [view, setView] = useState(() => params.get('view') ?? (initialSearch.trim() ? broadest(role) : 'my'));
+    const [status, setStatus] = useState(() => valid(params.get('status'), STATUS_VALUES, 'all'));
+    const [priority, setPriority] = useState(() => valid(params.get('priority'), PRIORITY_VALUES, 'all'));
+    const [queueId, setQueueId] = useState(params.get('queueId') ?? 'all');
+    const [categoryId, setCategoryId] = useState(params.get('categoryId') ?? 'all');
+    const [requesterId, setRequesterId] = useState(params.get('requesterId') ?? 'all');
+    const [assigneeId, setAssigneeId] = useState(params.get('assigneeId') ?? 'all');
+    const [tagIds, setTagIds] = useState(() => (params.get('tagIds') ?? '').split(',').filter(Boolean));
+    const [ticketRef, setTicketRef] = useState(params.get('ticketId') ?? params.get('ticketKey') ?? '');
+    const [page, setPage] = useState(positive(params.get('page'), 1));
+    const [limit, setLimit] = useState(Math.min(50, positive(params.get('limit'), DEFAULT_LIMIT)));
 
     useEffect(() => {
         const timeout = window.setTimeout(() => {
-            setSearch(searchInput.trim());
-            setPage(1);
+            const next = searchInput.trim();
+            if (next && !search && !scopeExplicit.current) setView(broadest(role));
+            setSearch(next); setPage(1);
         }, 250);
         return () => window.clearTimeout(timeout);
-    }, [searchInput]);
+    }, [role, search, searchInput]);
 
     useEffect(() => {
-        localStorage.setItem(TICKET_PAGE_SIZE_KEY, String(limit));
-    }, [limit]);
+        if (!role) return;
+        if (!views.includes(view)) setView(broadest(role));
+    }, [role, view, views]);
 
-    // Push local state to URL
+    const queuesQuery = useQuery<Option[]>({ queryKey: ['queues', 'ticket-filters'], queryFn: async () => { const response = await fetch('/api/queues?accessible=true'); if (!response.ok) throw new Error('Failed to load departments'); return response.json(); }, enabled: Boolean(role && role !== 'USER') });
+    const categoriesQuery = useQuery<Option[]>({ queryKey: ['categories', 'ticket-filters', queueId], queryFn: async () => { const response = await fetch(`/api/categories?queueId=${encodeURIComponent(queueId)}`); if (!response.ok) throw new Error('Failed to load categories'); return response.json(); }, enabled: queueId !== 'all' });
+    const tagsQuery = useQuery<Option[]>({ queryKey: ['tags', 'ticket-filters'], queryFn: async () => { const response = await fetch('/api/tags'); return response.ok ? response.json() : []; } });
+
     useEffect(() => {
-        if (session === undefined) return; // don't push until loaded
+        if (!role) return;
+        const next = new URLSearchParams();
+        if (view !== 'my' || search || scopeExplicit.current) next.set('view', view);
+        if (search) next.set('search', search);
+        if (status !== 'all') next.set('status', status);
+        if (priority !== 'all') next.set('priority', priority);
+        if (queueId !== 'all') next.set('queueId', queueId);
+        if (categoryId !== 'all') next.set('categoryId', categoryId);
+        if (requesterId !== 'all') next.set('requesterId', requesterId);
+        if (assigneeId !== 'all') next.set('assigneeId', assigneeId);
+        if (tagIds.length) next.set('tagIds', tagIds.join(','));
+        if (ticketRef.trim()) next.set(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(ticketRef.trim()) ? 'ticketId' : 'ticketKey', ticketRef.trim());
+        if (page > 1) next.set('page', String(page));
+        if (limit !== DEFAULT_LIMIT) next.set('limit', String(limit));
+        router.replace(next.size ? `/tickets?${next}` : '/tickets', { scroll: false });
+    }, [assigneeId, categoryId, limit, page, priority, queueId, requesterId, role, router, search, status, tagIds, ticketRef, view]);
 
-        const params = new URLSearchParams();
-        if (view !== 'my') params.set('view', view);
-        if (status !== 'all') params.set('status', status);
-        if (priority !== 'all') params.set('priority', priority);
-        if (search.trim()) params.set('search', search.trim());
-        if (page > 1) params.set('page', String(page));
-        if (limit !== DEFAULT_LIMIT) params.set('limit', String(limit));
-
-        const query = params.toString();
-        router.replace(query ? `/tickets?${query}` : '/tickets', { scroll: false });
-    }, [router, view, status, priority, search, page, limit, session]);
-
-    const { data, isLoading } = useQuery({
-        queryKey: ['tickets', view, status, priority, search, page, limit],
+    const queryValues = { view, search, status, priority, queueId, categoryId, requesterId, assigneeId, tagIds: tagIds.join(','), ticketRef: ticketRef.trim(), page, limit };
+    const ticketsQuery = useQuery({
+        queryKey: ['tickets', queryValues], enabled: Boolean(role),
         queryFn: async () => {
-            const params = new URLSearchParams();
-            params.set('page', String(page));
-            params.set('limit', String(limit));
-            params.set('view', view);
-            if (status !== 'all') params.set('status', status);
-            if (priority !== 'all') params.set('priority', priority);
-            if (search) params.set('search', search);
-            const res = await fetch(`/api/tickets?${params.toString()}`);
-            if (!res.ok) throw new Error('Failed to fetch tickets');
-            return res.json();
+            const query = new URLSearchParams({ view, page: String(page), limit: String(limit) });
+            if (search) query.set('search', search); if (status !== 'all') query.set('status', status); if (priority !== 'all') query.set('priority', priority);
+            if (queueId !== 'all') query.set('queueId', queueId); if (categoryId !== 'all') query.set('categoryId', categoryId);
+            if (requesterId !== 'all') query.set('requesterId', requesterId); if (assigneeId !== 'all') query.set('assigneeId', assigneeId);
+            if (tagIds.length) query.set('tagIds', tagIds.join(','));
+            if (ticketRef.trim()) query.set(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(ticketRef.trim()) ? 'ticketId' : 'ticketKey', ticketRef.trim());
+            const response = await fetch(`/api/tickets?${query}`); const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to fetch tickets'); return payload;
         },
-        enabled: !!userRole,
     });
+    const tickets = ticketsQuery.data?.tickets ?? [];
+    const pagination = ticketsQuery.data?.pagination ?? { page: 1, pages: 1, total: 0 };
+    const hasFilters = Boolean(searchInput.trim() || status !== 'all' || priority !== 'all' || queueId !== 'all' || categoryId !== 'all' || requesterId !== 'all' || assigneeId !== 'all' || tagIds.length || ticketRef.trim());
+    const reset = () => { scopeExplicit.current = false; setView('my'); setSearchInput(''); setSearch(''); setStatus('all'); setPriority('all'); setQueueId('all'); setCategoryId('all'); setRequesterId('all'); setAssigneeId('all'); setTagIds([]); setTicketRef(''); setPage(1); };
 
-    const tickets = data?.tickets ?? [];
-    const pagination = data?.pagination ?? { page: 1, pages: 1, total: 0 };
-    const hasFilters = status !== 'all' || priority !== 'all' || !!searchInput.trim() || view !== 'my';
-
-    return (
-        <div className="space-y-6">
-            <PageHeader
-                title="Tickets"
-                description={`${pagination.total} ticket${pagination.total !== 1 ? 's' : ''} total`}
-            >
-                <Button asChild className="gap-2 shadow-lg shadow-primary/25"><Link href="/tickets/new"><Plus className="h-4 w-4" /> New Ticket</Link></Button>
-            </PageHeader>
-
-            {/* Filters */}
-            <Card className="border-0 shadow-sm">
-                <CardContent className="p-4 space-y-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Tabs value={view} onValueChange={(v) => { setView(v); setPage(1); }} className="mr-auto">
-                            <TabsList>
-                                <TabsTrigger value="my">My Tickets</TabsTrigger>
-                                {allowedViews.includes('queue') ? (
-                                    <TabsTrigger value="queue">Department</TabsTrigger>
-                                ) : null}
-                                {allowedViews.includes('all') ? (
-                                    <TabsTrigger value="all">All</TabsTrigger>
-                                ) : null}
-                            </TabsList>
-                        </Tabs>
-
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Search..."
-                                value={searchInput}
-                                onChange={(e) => setSearchInput(e.target.value)}
-                                className="w-52 pl-9 h-9"
-                            />
-                        </div>
-
-                        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-                            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Status</SelectItem>
-                                <SelectItem value="NEW">New</SelectItem>
-                                <SelectItem value="OPEN">Open</SelectItem>
-                                <SelectItem value="PENDING_USER">Pending User</SelectItem>
-                                <SelectItem value="PENDING_AGENT">Pending Agent</SelectItem>
-                                <SelectItem value="RESOLVED">Resolved</SelectItem>
-                                <SelectItem value="CLOSED">Closed</SelectItem>
-                            </SelectContent>
-                        </Select>
-
-                        <Select value={priority} onValueChange={(v) => { setPriority(v); setPage(1); }}>
-                            <SelectTrigger className="w-36 h-9"><SelectValue placeholder="Priority" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Priority</SelectItem>
-                                <SelectItem value="LOW">Low</SelectItem>
-                                <SelectItem value="NORMAL">Normal</SelectItem>
-                                <SelectItem value="HIGH">High</SelectItem>
-                                <SelectItem value="URGENT">Urgent</SelectItem>
-                            </SelectContent>
-                        </Select>
-
-                        <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
-                            <SelectTrigger className="w-28 h-9"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {PAGE_LIMITS.map((size) => (
-                                    <SelectItem key={size} value={String(size)}>{size}/page</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-
-                        {hasFilters ? (
-                            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => {
-                                setView('my'); setStatus('all'); setPriority('all'); setSearchInput(''); setPage(1);
-                            }}>
-                                <X className="h-3.5 w-3.5" /> Clear
-                            </Button>
-                        ) : (
-                            <div className="text-xs text-muted-foreground flex items-center gap-1">
-                                <SlidersHorizontal className="h-3.5 w-3.5" /> Filters ready
-                            </div>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Ticket Table */}
-            <Card className="border-0 shadow-sm">
-                <CardContent className="p-0">
-                    {isLoading ? (
-                        <div className="flex items-center justify-center py-20">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-                        </div>
-                    ) : tickets.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-center">
-                            <div className="rounded-full bg-muted p-4 mb-4">
-                                <Ticket className="h-8 w-8 text-muted-foreground" />
-                            </div>
-                            <p className="text-lg font-medium">No tickets found</p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                                Try adjusting your filters or create a new ticket
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b bg-muted/40">
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Title</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Department</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Requester</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Assignee</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Priority</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden xl:table-cell">Created</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {tickets.map((ticket: any) => (
-                                        <tr
-                                            key={ticket.id}
-                                            className="hover:bg-muted/30 transition-colors cursor-pointer"
-                                            onClick={() => router.push(`/tickets/${ticket.id}`)}
-                                        >
-                                            <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                                                {ticket.key}
-                                                {ticket.slaBreached && <AlertTriangle className="inline h-3 w-3 text-destructive ml-1" />}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium max-w-[200px] sm:max-w-[280px]">
-                                                <span className="truncate block">{ticket.title}</span>
-                                                <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground md:hidden">
-                                                    {ticket.queue?.name ?? '—'}{ticket.requester?.name ? ` · ${ticket.requester.name}` : ''}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
-                                                {ticket.queue?.name ?? '—'}
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                                                {ticket.requester?.name ?? '—'}
-                                            </td>
-                                            <td className="px-4 py-3 hidden lg:table-cell">
-                                                {ticket.assignee ? (
-                                                    <span className="text-sm">{ticket.assignee.name}</span>
-                                                ) : (
-                                                    <span className="text-xs text-amber-600 font-medium">Unassigned</span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>
-                                                    {ticket.status.replace(/_/g, ' ')}
-                                                </Badge>
-                                            </td>
-                                            <td className="px-4 py-3 hidden sm:table-cell">
-                                                <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>
-                                                    {ticket.priority}
-                                                </Badge>
-                                            </td>
-                                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap hidden xl:table-cell">
-                                                {new Date(ticket.createdAt).toLocaleDateString()}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-
-                    {pagination.pages > 1 ? (
-                        <div className="flex items-center justify-between p-4 border-t">
-                            <p className="text-sm text-muted-foreground">
-                                Page {pagination.page} of {pagination.pages}
-                            </p>
-                            <div className="flex gap-2">
-                                <Button variant="outline" size="sm"
-                                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                                    disabled={page === 1}>
-                                    Previous
-                                </Button>
-                                <Button variant="outline" size="sm"
-                                    onClick={() => setPage((prev) => Math.min(pagination.pages, prev + 1))}
-                                    disabled={page >= pagination.pages}>
-                                    Next
-                                </Button>
-                            </div>
-                        </div>
-                    ) : null}
-                </CardContent>
-            </Card>
-        </div>
-    );
+    return <div className="space-y-6">
+        <PageHeader title="Tickets" description={`${pagination.total} ticket${pagination.total === 1 ? '' : 's'} total`}><Button asChild className="gap-2"><Link href="/tickets/new"><Plus className="h-4 w-4" /> New Ticket</Link></Button></PageHeader>
+        <Card><CardContent className="space-y-4 p-4">
+            <div className="flex flex-wrap items-center gap-3"><Tabs value={view} onValueChange={(next) => { scopeExplicit.current = true; setView(next); setPage(1); }}><TabsList><TabsTrigger value="my">My Tickets</TabsTrigger>{views.includes('queue') ? <TabsTrigger value="queue">Departments</TabsTrigger> : null}{views.includes('all') ? <TabsTrigger value="all">All permitted</TabsTrigger> : null}</TabsList></Tabs><Badge variant="outline">{ticketsQuery.data?.scope?.label ?? scopeLabel(role, view)}</Badge><div className="relative ml-auto"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search tickets" placeholder="Key, title, people, tags, category…" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} className="w-72 pl-9" /></div></div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <Filter label="Status"><Select value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="pending">Pending (user or agent)</SelectItem><SelectItem value="NEW">New</SelectItem><SelectItem value="OPEN">Open</SelectItem><SelectItem value="PENDING_USER">Pending user</SelectItem><SelectItem value="PENDING_AGENT">Pending agent</SelectItem><SelectItem value="RESOLVED">Resolved</SelectItem><SelectItem value="CLOSED">Closed</SelectItem><SelectItem value="RESOLVED,CLOSED">Resolved or closed</SelectItem></SelectContent></Select></Filter>
+                <Filter label="Priority"><Select value={priority} onValueChange={(value) => { setPriority(value); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITY_VALUES.map((value) => <SelectItem key={value} value={value}>{value === 'all' ? 'All priorities' : value}</SelectItem>)}</SelectContent></Select></Filter>
+                {role !== 'USER' ? <Filter label="Department"><Select value={queueId} onValueChange={(value) => { setQueueId(value); setCategoryId('all'); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All permitted departments</SelectItem>{(queuesQuery.data ?? []).map((queue) => <SelectItem key={queue.id} value={queue.id}>{queue.name}</SelectItem>)}</SelectContent></Select></Filter> : null}
+                {role !== 'USER' ? <Filter label="Category"><Select value={categoryId} disabled={queueId === 'all'} onValueChange={(value) => { setCategoryId(value); setPage(1); }}><SelectTrigger><SelectValue placeholder="Select department first" /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{(categoriesQuery.data ?? []).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></Filter> : null}
+                {role !== 'USER' ? <Filter label="Requester"><UserSearchCombobox kind="requester" queueId={queueId === 'all' ? undefined : queueId} value={requesterId} allowAny onValueChange={(value) => { setRequesterId(value); setPage(1); }} /></Filter> : null}
+                {role !== 'USER' ? <Filter label="Assignee"><UserSearchCombobox kind="assignee" queueId={queueId === 'all' ? undefined : queueId} value={assigneeId} allowAny allowUnassigned onValueChange={(value) => { setAssigneeId(value); setPage(1); }} /></Filter> : null}
+                <Filter label="Ticket key or exact ID"><Input value={ticketRef} onChange={(event) => { setTicketRef(event.target.value); setPage(1); }} placeholder="TCK-2026-000001 or UUID" /></Filter>
+                <Filter label="Page size"><Select value={String(limit)} onValueChange={(value) => { setLimit(Number(value)); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAGE_LIMITS.map((size) => <SelectItem key={size} value={String(size)}>{size} per page</SelectItem>)}</SelectContent></Select></Filter>
+            </div>
+            <div><Label className="text-xs text-muted-foreground">Tags (matches any selected tag)</Label><div className="mt-2 flex flex-wrap gap-2">{(tagsQuery.data ?? []).map((tag) => <Button key={tag.id} type="button" size="sm" variant={tagIds.includes(tag.id) ? 'default' : 'outline'} onClick={() => { setTagIds((current) => current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id]); setPage(1); }}>{tag.name}</Button>)}</div></div>
+            {hasFilters ? <Button variant="ghost" size="sm" onClick={reset}><X className="mr-1 h-4 w-4" /> Reset filters</Button> : null}
+        </CardContent></Card>
+        {ticketsQuery.isError ? <Card><CardContent className="p-6 text-destructive">{ticketsQuery.error.message}</CardContent></Card> : <Card><CardContent className="p-0">{ticketsQuery.isLoading ? <div className="py-20 text-center text-muted-foreground">Loading tickets…</div> : !tickets.length ? <div className="py-20 text-center"><Ticket className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p>No tickets found</p></div> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40"><Th>ID</Th><Th>Title</Th><Th>Department</Th><Th>Requester</Th><Th>Assignee</Th><Th>Status</Th><Th>Priority</Th></tr></thead><tbody className="divide-y">{tickets.map((ticket: any) => <tr key={ticket.id} className="cursor-pointer hover:bg-muted/30" onClick={() => router.push(`/tickets/${ticket.id}`)}><td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td><td className="max-w-72 truncate px-4 py-3 font-medium">{ticket.title}</td><td className="px-4 py-3">{ticket.queue?.name ?? '—'}</td><td className="px-4 py-3">{ticket.requester?.name ?? '—'}</td><td className="px-4 py-3">{ticket.assignee?.name ?? <span className="text-amber-700">Unassigned</span>}</td><td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()}`}>{ticket.status.replaceAll('_', ' ')}</Badge></td><td className="px-4 py-3"><Badge variant="outline">{ticket.priority}</Badge></td></tr>)}</tbody></table></div>}{pagination.pages > 1 ? <div className="flex items-center justify-between border-t p-4"><span className="text-sm text-muted-foreground">Page {pagination.page} of {pagination.pages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage((current) => current + 1)}>Next</Button></div></div> : null}</CardContent></Card>}
+    </div>;
 }
+
+function Filter({ label, children }: { label: string; children: React.ReactNode }) { return <div className="space-y-1"><Label className="text-xs text-muted-foreground">{label}</Label>{children}</div>; }
+function Th({ children }: { children: React.ReactNode }) { return <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</th>; }

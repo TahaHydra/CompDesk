@@ -6,6 +6,7 @@ import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { parseDashboardLinks } from '@/lib/dashboard-links';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
+import { broadestTicketView } from '@/lib/ticket-search';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -17,44 +18,14 @@ export async function GET() {
         const role = session.user.role;
 
         let whereClause: Prisma.TicketWhereInput = {};
-
         if (role === 'USER') {
-            // End users see only their own tickets
             whereClause = { requesterId: userId };
-        } else if (role === 'AGENT') {
-            // Agents see tickets in their departments (via groups and direct memberships)
-            const [groupDepts, directDepts] = await Promise.all([
-                prisma.queueGroup.findMany({
-                    where: {
-                        group: { members: { some: { userId } } },
-                        role: 'agent',
-                    },
-                    select: { queueId: true },
-                }),
-                prisma.queueMember.findMany({
-                    where: { userId, role: 'agent' },
-                    select: { queueId: true },
-                })
-            ]);
-            const deptIds = [...new Set([
-                ...groupDepts.map((d: { queueId: string }) => d.queueId),
-                ...directDepts.map((d: { queueId: string }) => d.queueId)
-            ])];
-
-            if (deptIds.length > 0) {
-                whereClause = { queueId: { in: deptIds } };
-            } else {
-                // Agent not assigned to any department — show only assigned
-                whereClause = { assigneeId: userId };
-            }
-        } else if (role === 'ADMIN') {
+        } else if (role !== 'SUPER_ADMIN') {
             const departmentIds = await getQueueInboxQueueIds(userId, role);
             whereClause = departmentIds?.length
                 ? { queueId: { in: departmentIds } }
                 : { queueId: { in: ['__none__'] } };
         }
-        // SUPER_ADMIN: no filter, see all tickets
-
         const dashboardLinksEnabled = await getFeatureFlag('feature_dashboard_links_enabled');
 
         const [total, open, pending, resolved, urgent, recentTickets, escalated, dashboardLinksSetting] = await Promise.all([
@@ -94,6 +65,7 @@ return NextResponse.json({
             stats: { total, open, pending, resolved, urgent, escalated },
             recentTickets,
             customLinks,
+            ticketView: broadestTicketView(role),
         });
     } catch (error) {
         logger.error('Failed to fetch dashboard stats', { error });
