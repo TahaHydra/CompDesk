@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { submitCredentialsOnce } from '@/lib/signin-submission';
 
 function MicrosoftMark() {
     return (
@@ -26,24 +27,33 @@ function SignInForm() {
     const branding = useBranding();
     const searchParams = useSearchParams();
     const authError = searchParams.get('error');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const submissionLock = useRef(false);
     const [localError, setLocalError] = useState('');
     const microsoftVisible = branding.showMicrosoftLogin && branding.microsoftLoginConfigured;
     const showDivider = microsoftVisible && branding.showLocalLogin;
 
-    const handleCredentials = async (event: React.FormEvent) => {
+    const handleCredentials = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        setLoading(true);
+        if (submissionLock.current) return;
+
         setLocalError('');
-        const result = await signIn('credentials', { email, password, redirect: false });
-        if (result?.error || !result?.ok) {
+        const outcome = await submitCredentialsOnce({
+            formData: new FormData(event.currentTarget),
+            lock: submissionLock,
+            setPending: setLoading,
+            authenticate: ({ email, password }) => signIn('credentials', {
+                email,
+                password,
+                redirect: false,
+            }),
+        });
+
+        if (outcome === 'failure') {
             setLocalError('Invalid email or password');
-            setLoading(false);
             return;
         }
-        window.location.href = '/dashboard';
+        if (outcome === 'success') window.location.assign('/dashboard');
     };
 
     return (
@@ -53,7 +63,7 @@ function SignInForm() {
                     <BrandLogo className="h-16 w-16 rounded-2xl shadow-lg shadow-primary/30" />
                 </div>
                 <CardTitle className="text-3xl font-bold gradient-text">{branding.loginHeading}</CardTitle>
-                <CardDescription className="mt-2 text-base">{branding.loginDescription}</CardDescription>
+                <CardDescription className="mt-2 whitespace-pre-line text-base">{branding.loginDescription}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 pt-4">
                 {microsoftVisible ? (
@@ -99,17 +109,17 @@ function SignInForm() {
                             <Label htmlFor="email">Email</Label>
                             <div className="relative">
                                 <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                <Input id="email" type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} className="h-11 pl-9" required />
+                                <Input id="email" name="email" type="email" autoComplete="email" placeholder="you@example.com" className="h-11 pl-9" required />
                             </div>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="password">Password</Label>
                             <div className="relative">
                                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                <Input id="password" type="password" autoComplete="current-password" placeholder="••••••••" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 pl-9" required />
+                                <Input id="password" name="password" type="password" autoComplete="current-password" placeholder="••••••••" className="h-11 pl-9" required />
                             </div>
                         </div>
-                        <Button type="submit" variant={microsoftVisible ? 'outline' : 'default'} className="h-11 w-full text-base" disabled={loading || !email || !password}>
+                        <Button type="submit" variant={microsoftVisible ? 'outline' : 'default'} className="h-11 w-full text-base" disabled={loading}>
                             {loading ? <span className="h-4 w-4 animate-spin rounded-full border-b-2 border-current" aria-label="Signing in" /> : 'Sign In'}
                         </Button>
                     </form>
