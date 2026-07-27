@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { PageHeader } from '@/components/layout/page-header';
 import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2 } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
@@ -767,9 +768,13 @@ function ApiClientsTab() {
                                     <Button type="button" variant="outline" size="sm" onClick={() => updateClient.mutate({ id: client.id, rotateKey: true })}>
                                         Rotate Key
                                     </Button>
-                                    <Button type="button" variant="destructive" size="sm" onClick={() => deleteClient.mutate(client.id)}>
-                                        Delete
-                                    </Button>
+                                    <ConfirmDestructiveAction
+                                        title="Delete API client?"
+                                        description={<>The client <strong>{client.name}</strong> will lose API access immediately. This cannot be undone.</>}
+                                        pending={deleteClient.isPending}
+                                        onConfirm={() => deleteClient.mutate(client.id)}
+                                        trigger={<Button type="button" variant="destructive" size="sm">Delete</Button>}
+                                    />
                                 </div>
                             </div>
                         ))

@@ -15,11 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import {
     ArrowLeft, MessageSquare, Lock, User, AlertTriangle,
     Send, Eye, Shield, XCircle, ArrowUpCircle,
     Paperclip, Download, FileIcon, Trash2, Upload,
-    Hand, Pencil, X, Check, Trash, ChevronDown,
+    Hand, Pencil, X, Check, ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -96,7 +97,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [escalateToId, setEscalateToId] = useState('');
     const [editingEventId, setEditingEventId] = useState<string | null>(null);
     const [editContent, setEditContent] = useState('');
-    const [deleteTicketOpen, setDeleteTicketOpen] = useState(false);
     const [timelineOpen, setTimelineOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -341,7 +341,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const imageAttachments = (ticket.attachments ?? []).filter((a: any) => isImageType(a.mimetype));
     const fileAttachments = (ticket.attachments ?? []).filter((a: any) => !isImageType(a.mimetype));
     const isRequester = ticket.requesterId === session?.user?.id;
-    const canDeleteTicket = isRequester && !ticket.assigneeId;
+    const canDeleteTicket = session?.user?.role === 'SUPER_ADMIN' || (isRequester && !ticket.assigneeId);
     const conversationEvents = (ticket.timeline ?? []).filter((event: any) => isConversationEvent(event));
     const timelineEvents = (ticket.timeline ?? []).filter((event: any) => !isConversationEvent(event));
 
@@ -403,10 +403,17 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     </Button>
                                 )}
                                 {showDeleteBtn && (
-                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                        onClick={() => deleteComment.mutate(event.id)}>
-                                        <Trash2 className="h-3 w-3" />
-                                    </Button>
+                                    <ConfirmDestructiveAction
+                                        title="Delete timeline entry?"
+                                        description="This comment or internal note will be permanently removed from the ticket history."
+                                        pending={deleteComment.isPending}
+                                        onConfirm={() => deleteComment.mutate(event.id)}
+                                        trigger={
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Delete timeline entry">
+                                                <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                        }
+                                    />
                                 )}
                             </div>
                         )}
@@ -468,27 +475,19 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         </Button>
                     )}
 
-                    {/* Delete ticket for requester when unassigned */}
+                    {/* Super administrators can delete any ticket; requesters can withdraw unassigned tickets. */}
                     {canDeleteTicket && (
-                        <Dialog open={deleteTicketOpen} onOpenChange={setDeleteTicketOpen}>
-                            <DialogTrigger asChild>
+                        <ConfirmDestructiveAction
+                            title="Delete ticket?"
+                            description={<>Ticket <strong>{ticket.key}</strong> and its attachments, timeline, tags, and watchers will be permanently deleted. This cannot be undone.</>}
+                            pending={deleteTicket.isPending}
+                            onConfirm={() => deleteTicket.mutate()}
+                            trigger={
                                 <Button variant="destructive" size="sm" className="gap-1.5">
-                                    <Trash className="h-3.5 w-3.5" /> Delete
+                                    <Trash2 className="h-3.5 w-3.5" /> Delete
                                 </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader><DialogTitle>Delete Ticket</DialogTitle></DialogHeader>
-                                <p className="text-sm text-muted-foreground">
-                                    Are you sure you want to delete ticket <strong>{ticket.key}</strong>? This action cannot be undone.
-                                </p>
-                                <DialogFooter>
-                                    <Button variant="outline" onClick={() => setDeleteTicketOpen(false)}>Cancel</Button>
-                                    <Button variant="destructive" onClick={() => deleteTicket.mutate()} disabled={deleteTicket.isPending}>
-                                        {deleteTicket.isPending ? 'Deleting...' : 'Delete'}
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
+                            }
+                        />
                     )}
 
                     {ticket.lockInfo && ticket.lockInfo.lockedBy !== session?.user?.name && (
@@ -530,9 +529,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                 </a>
                                                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                                     <Button asChild size="icon" variant="ghost" className="h-8 w-8 text-white"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-4 w-4" /></a></Button>
-                                                    <Button size="icon" variant="ghost" className="text-white h-8 w-8" onClick={() => deleteAttachment(att.id)}>
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    <ConfirmDestructiveAction
+                                                        title="Delete attachment?"
+                                                        description={<>The file <strong>{att.filename}</strong> will be permanently removed from this ticket.</>}
+                                                        onConfirm={() => void deleteAttachment(att.id)}
+                                                        trigger={<Button size="icon" variant="ghost" className="text-white h-8 w-8" aria-label={`Delete ${att.filename}`}><Trash2 className="h-4 w-4" /></Button>}
+                                                    />
                                                 </div>
                                                 <p className="text-xs truncate p-1.5 text-muted-foreground">{att.filename}</p>
                                             </div>
@@ -549,9 +551,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
                                         </div>
                                         <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
-                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteAttachment(att.id)}>
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
+                                        <ConfirmDestructiveAction
+                                            title="Delete attachment?"
+                                            description={<>The file <strong>{att.filename}</strong> will be permanently removed from this ticket.</>}
+                                            onConfirm={() => void deleteAttachment(att.id)}
+                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={`Delete ${att.filename}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                        />
                                     </div>
                                 ))}
                             </CardContent>

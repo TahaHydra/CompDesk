@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 
 const ASSETS: Array<{ field: BrandingAssetField; label: string; help: string }> = [
     { field: 'mainLogoUrl', label: 'Main logo', help: 'Default full-size logo' },
@@ -162,7 +163,7 @@ export function BrandingSettings() {
                                         <Upload className="mr-2 h-4 w-4" /> {uploading === asset.field ? 'Uploading…' : 'Upload'}
                                     </Button>
                                     <input id={`asset-${asset.field}`} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAsset(asset.field, file); event.target.value = ''; }} />
-                                    {url ? <Button type="button" variant="ghost" size="sm" disabled={uploading !== null} onClick={() => void resetAsset(asset.field)}><Trash2 className="mr-2 h-4 w-4" /> Reset</Button> : null}
+                                    {url ? <ConfirmDestructiveAction title={`Reset ${asset.label.toLowerCase()}?`} description="The uploaded image will be permanently removed and the default asset will be used." confirmLabel="Yes, reset" pendingLabel="Resetting…" pending={uploading === asset.field} disabled={uploading !== null} onConfirm={() => void resetAsset(asset.field)} trigger={<Button type="button" variant="ghost" size="sm"><Trash2 className="mr-2 h-4 w-4" /> Reset</Button>} /> : null}
                                 </div>
                             </div>
                         );
@@ -198,7 +199,7 @@ export function BrandingSettings() {
             </Card>
 
             <div className="flex flex-wrap justify-end gap-3">
-                <Button type="button" variant="outline" disabled={resetMutation.isPending} onClick={() => { if (window.confirm('Reset all branding and remove uploaded brand assets?')) resetMutation.mutate(); }}><RotateCcw className="mr-2 h-4 w-4" /> Reset all defaults</Button>
+                <ConfirmDestructiveAction title="Reset all branding?" description="All branding values will return to their defaults and every uploaded brand asset will be permanently removed." confirmLabel="Yes, reset all" pendingLabel="Resetting…" pending={resetMutation.isPending} onConfirm={() => resetMutation.mutate()} trigger={<Button type="button" variant="outline"><RotateCcw className="mr-2 h-4 w-4" /> Reset all defaults</Button>} />
                 <Button type="button" disabled={saveMutation.isPending || uploading !== null || demoInformationMissing} onClick={() => saveMutation.mutate()}><Save className="mr-2 h-4 w-4" /> Save branding</Button>
             </div>
         </div>

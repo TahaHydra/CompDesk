@@ -391,9 +391,10 @@ export default function AdminUsersPage() {
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={deleteUserMutation.isPending}
                             onClick={() => deleteUserMutation.mutate(deleteUser?.id)}
                         >
-                            Delete
+                            {deleteUserMutation.isPending ? 'Deleting…' : 'Yes, delete'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

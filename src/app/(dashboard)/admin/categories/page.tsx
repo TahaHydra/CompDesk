@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 
 interface Queue { id: string; name: string; defaultTemplateId: string | null; defaultTemplate?: { id: string; name: string } | null }
 interface Template { id: string; name: string; isSystemDefault: boolean; archivedAt: string | null }
@@ -212,7 +213,7 @@ export default function AdminCategoriesPage() {
                                                             <Button size="sm" variant="outline" onClick={() => restore(category)}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore</Button>
                                                         )}
                                                         {category._count.tickets === 0 ? (
-                                                            <Button size="sm" variant="destructive" onClick={() => window.confirm('Permanently delete this unused category?') && removeMutation.mutate({ category, mode: 'hard' })}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>
+                                                            <ConfirmDestructiveAction title="Delete category?" description={<>The unused category <strong>{category.name}</strong> will be permanently deleted.</>} pending={removeMutation.isPending} onConfirm={() => removeMutation.mutate({ category, mode: 'hard' })} trigger={<Button size="sm" variant="destructive"><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>} />
                                                         ) : null}
                                                     </>
                                                 ) : null}
