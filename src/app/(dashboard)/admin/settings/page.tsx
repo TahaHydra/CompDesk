@@ -51,6 +51,14 @@ function SmtpSettingsTab() {
         smtp_host: '', smtp_port: '587', smtp_user: '', smtp_password: '', smtp_from: '', smtp_secure: 'false',
     });
     const smtpPasswordConfigured = settings?.smtp_password_configured === 'true';
+    const hasUnsavedChanges = Boolean(settings) && (
+        smtp.smtp_password.length > 0
+        || smtp.smtp_host !== (settings?.smtp_host ?? '')
+        || smtp.smtp_port !== (settings?.smtp_port ?? '587')
+        || smtp.smtp_user !== (settings?.smtp_user ?? '')
+        || smtp.smtp_from !== (settings?.smtp_from ?? '')
+        || smtp.smtp_secure !== (settings?.smtp_secure ?? 'false')
+    );
 
     useEffect(() => {
         if (settings) {
@@ -68,7 +76,8 @@ function SmtpSettingsTab() {
     const saveMutation = useMutation({
         mutationFn: async () => updateSettings(smtp),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['settings'] });
+            setSmtp((current) => ({ ...current, smtp_password: '' }));
+            void queryClient.invalidateQueries({ queryKey: ['settings'] });
             toast({ title: 'SMTP settings saved' });
         },
         onError: (error: Error) => toast({ title: 'Failed to save SMTP settings', description: error.message, variant: 'destructive' }),
@@ -76,13 +85,18 @@ function SmtpSettingsTab() {
 
     const testMutation = useMutation({
         mutationFn: async () => {
-            const res = await fetch('/api/settings/test-email', { method: 'POST' });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
+            await updateSettings(smtp);
+            const response = await fetch('/api/settings/test-email', { method: 'POST' });
+            const data = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+            if (!response.ok) throw new Error(`Settings were saved, but the delivery test failed. ${data.error || 'Unknown SMTP error'}`);
             return data;
         },
-        onSuccess: (data) => toast({ title: '✅ Test email sent!', description: data.message }),
-        onError: (err: Error) => toast({ title: 'Test failed', description: err.message, variant: 'destructive' }),
+        onSuccess: (data) => {
+            setSmtp((current) => ({ ...current, smtp_password: '' }));
+            void queryClient.invalidateQueries({ queryKey: ['settings'] });
+            toast({ title: 'Test email sent', description: data.message });
+        },
+        onError: (err: Error) => toast({ title: 'SMTP test failed', description: err.message, variant: 'destructive' }),
     });
 
     return (
@@ -139,12 +153,16 @@ function SmtpSettingsTab() {
                             <p className="text-xs text-muted-foreground">Use STARTTLS with port 587 unless your provider explicitly requires implicit TLS on port 465.</p>
                         </div>
                     </div>
-                    <div className="flex gap-3 pt-2">
-                        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="gap-2">
-                            <Save className="h-4 w-4" /> Save Settings
+                    <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                        <p>This test opens a real SMTP connection and sends a message to the signed-in administrator. It saves the fields above first, so the values you see are the values being tested.</p>
+                        <p className="mt-1">Password: {smtpPasswordConfigured ? 'configured' : 'missing'}{hasUnsavedChanges ? ' · Unsaved changes' : ''}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-3 pt-2">
+                        <Button onClick={() => saveMutation.mutate()} disabled={!settings || saveMutation.isPending || testMutation.isPending} className="gap-2">
+                            <Save className="h-4 w-4" /> {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
                         </Button>
-                        <Button variant="outline" onClick={() => testMutation.mutate()} disabled={testMutation.isPending} className="gap-2">
-                            <Send className="h-4 w-4" /> {testMutation.isPending ? 'Sending...' : 'Send Test Email'}
+                        <Button variant="outline" onClick={() => testMutation.mutate()} disabled={!settings || testMutation.isPending || saveMutation.isPending} className="gap-2">
+                            <Send className="h-4 w-4" /> {testMutation.isPending ? 'Saving and sending...' : 'Save & Send Test Email'}
                         </Button>
                     </div>
                 </CardContent>
@@ -166,7 +184,7 @@ function EmailTogglesTab() {
     const toggles = [
         { key: 'email_on_ticket_created', label: 'Ticket Created', desc: 'Notify the requester and department agents when a ticket is created' },
         { key: 'email_on_ticket_assigned', label: 'Ticket Assigned', desc: 'Notify the agent when a ticket is assigned to them' },
-        { key: 'email_on_ticket_updated', label: 'Status Changed', desc: 'Notify requester when ticket status changes' },
+        { key: 'email_on_ticket_updated', label: 'Ticket Updated', desc: 'Notify watchers when tracked ticket fields change; this also controls escalation emails' },
         { key: 'email_on_new_comment', label: 'New Comment', desc: 'Notify watchers when a new comment is added' },
     ];
 

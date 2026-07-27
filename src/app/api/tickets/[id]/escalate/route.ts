@@ -96,7 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         // Notify the person it's escalated to
         if (escalateToId && updated.escalatedTo) {
-            sendTicketUpdatedEmail(
+            void sendTicketUpdatedEmail(
                 [updated.escalatedTo.email],
                 ticket.key,
                 ticket.title,
