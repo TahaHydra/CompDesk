@@ -6,12 +6,13 @@ import logger from '@/lib/logger';
 import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
-import { normalizeSettingValue, SettingsValidationError } from '@/lib/settings-validation';
+import { isValidSmtpFrom, normalizeSettingValue, SettingsValidationError, validateSmtpSecurityCombination } from '@/lib/settings-validation';
+import { encryptSettingSecret, hasSettingsEncryptionKey, isEncryptedSettingSecret, SettingsSecretError } from '@/lib/settings-secret';
 
 const SECRET_KEYS = new Set(['smtp_password', 'azure_ad_client_secret']);
 const ENV_ONLY_KEYS = new Set(['azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id']);
 const ALLOWED_KEYS = new Set([
-    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_password', 'smtp_from', 'smtp_secure',
+    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_password', 'smtp_from', 'smtp_secure', 'smtp_require_tls',
     'email_on_ticket_created', 'email_on_ticket_assigned', 'email_on_ticket_updated', 'email_on_new_comment',
     'azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id',
     'dashboard_links', 'login_local_enabled',
@@ -27,8 +28,16 @@ function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Rec
         azure_ad_client_secret: '',
         azure_ad_client_secret_configured: process.env.AZURE_AD_CLIENT_SECRET || managedEnv.azure_ad_client_secret ? 'true' : 'false',
         azure_ad_runtime_configured: process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID ? 'true' : 'false',
+        smtp_host: dbSettings.smtp_host || process.env.SMTP_HOST || '',
+        smtp_port: dbSettings.smtp_port || process.env.SMTP_PORT || '587',
+        smtp_user: dbSettings.smtp_user || process.env.SMTP_USER || '',
+        smtp_from: dbSettings.smtp_from || process.env.SMTP_FROM || '',
+        smtp_secure: dbSettings.smtp_secure || process.env.SMTP_SECURE || 'false',
         smtp_password: '',
         smtp_password_configured: dbSettings.smtp_password || process.env.SMTP_PASS || process.env.SMTP_PASSWORD ? 'true' : 'false',
+        smtp_password_migration_required: dbSettings.smtp_password && !isEncryptedSettingSecret(dbSettings.smtp_password) ? 'true' : 'false',
+        smtp_encryption_key_configured: hasSettingsEncryptionKey() ? 'true' : 'false',
+        smtp_require_tls: dbSettings.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? ((dbSettings.smtp_secure ?? process.env.SMTP_SECURE) === 'true' ? 'false' : 'true'),
     };
 }
 
@@ -98,10 +107,40 @@ export async function PATCH(request: Request) {
                 nextIcons = new Set(parsed.data.map((link) => link.iconUrl).filter(Boolean));
                 normalizedEntries.push([key, JSON.stringify(parsed.data)]);
             } else {
-                normalizedEntries.push([key, normalizeSettingValue(key, rawValue)]);
+                const normalized = normalizeSettingValue(key, rawValue);
+                if (key === 'smtp_password' && normalized.trim()) {
+                    normalizedEntries.push([key, encryptSettingSecret(normalized)]);
+                } else {
+                    normalizedEntries.push([key, normalized]);
+                }
             }
         }
 
+        const disablesLocalLogin = normalizedEntries.some(([key, value]) => key === 'login_local_enabled' && value === 'false');
+        if (disablesLocalLogin) {
+            const microsoftPolicy = await prisma.appSetting.findUnique({ where: { key: 'login_microsoft_enabled' }, select: { value: true } });
+            const providerConfigured = Boolean(process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID);
+            if (microsoftPolicy?.value !== 'true' || !providerConfigured) {
+                return NextResponse.json({ error: 'Local login can be disabled only while Microsoft login is enabled and configured in the running application.' }, { status: 409 });
+            }
+        }
+        const smtpEntries = new Map(normalizedEntries.filter(([key]) => key.startsWith('smtp_')));
+        if (smtpEntries.size > 0) {
+            const existingRows = await prisma.appSetting.findMany({ where: { key: { startsWith: 'smtp_' } } });
+            const existing = Object.fromEntries(existingRows.map((setting) => [setting.key, setting.value]));
+            const port = Number.parseInt(smtpEntries.get('smtp_port') ?? existing.smtp_port ?? process.env.SMTP_PORT ?? '587', 10);
+            const secure = (smtpEntries.get('smtp_secure') ?? existing.smtp_secure ?? process.env.SMTP_SECURE ?? 'false') === 'true';
+            const requireTLS = (smtpEntries.get('smtp_require_tls') ?? existing.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? 'true') === 'true';
+            validateSmtpSecurityCombination({ port, secure, requireTLS });
+        }
+        const enablingEmail = normalizedEntries.some(([key, value]) => key.startsWith('email_on_') && value === 'true');
+        if (enablingEmail) {
+            const existingFrom = await prisma.appSetting.findUnique({ where: { key: 'smtp_from' }, select: { value: true } });
+            const submittedFrom = normalizedEntries.find(([key]) => key === 'smtp_from')?.[1];
+            if (!isValidSmtpFrom(submittedFrom ?? existingFrom?.value ?? process.env.SMTP_FROM ?? '')) {
+                return NextResponse.json({ error: 'Configure a valid SMTP From address before enabling email notifications.' }, { status: 400 });
+            }
+        }
         let restartRequired = false;
         const entraEntries = normalizedEntries.filter(([key]) => ENV_ONLY_KEYS.has(key));
         if (entraEntries.length > 0) {
@@ -134,6 +173,9 @@ export async function PATCH(request: Request) {
         logger.error('Failed to update settings', { error });
         if (error instanceof SettingsValidationError) {
             return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        if (error instanceof SettingsSecretError) {
+            return NextResponse.json({ error: error.message }, { status: 409 });
         }
         if (error instanceof ManagedEnvironmentError) {
             return NextResponse.json({ error: error.message }, { status: 409 });
