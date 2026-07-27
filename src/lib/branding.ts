@@ -104,6 +104,9 @@ export async function getPublicBranding(): Promise<PublicBranding> {
 }
 
 export async function saveBrandingConfig(input: BrandingConfig): Promise<BrandingConfig> {
+    if (!input.showLocalLogin && (!input.showMicrosoftLogin || !process.env.AZURE_AD_CLIENT_ID || !process.env.AZURE_AD_CLIENT_SECRET || !process.env.AZURE_AD_TENANT_ID)) {
+        throw new Error('Local login can be disabled only while Microsoft login is enabled and configured in the running application.');
+    }
     const config = brandingConfigSchema.parse(input);
     const storedConfig = { ...config };
     delete (storedConfig as Partial<BrandingConfig>).showLocalLogin;

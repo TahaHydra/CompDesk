@@ -4,6 +4,7 @@ export class SettingsValidationError extends Error {}
 
 const booleanKeys = new Set([
     'smtp_secure',
+    'smtp_require_tls',
     'email_on_ticket_created',
     'email_on_ticket_assigned',
     'email_on_ticket_updated',
@@ -59,4 +60,14 @@ export function normalizeSettingValue(key: string, rawValue: unknown): string {
         throw new SettingsValidationError(parsed.error.issues[0]?.message || `Invalid value for ${key}`);
     }
     return String(parsed.data);
+}
+export function isValidSmtpFrom(value: string): boolean {
+    return Boolean(value.trim()) && smtpFromSchema.safeParse(value).success;
+}
+
+export function validateSmtpSecurityCombination(input: { port: number; secure: boolean; requireTLS: boolean }): void {
+    if (input.port === 465 && !input.secure) throw new SettingsValidationError('SMTP port 465 requires implicit TLS (Secure must be enabled).');
+    if (input.port === 587 && input.secure) throw new SettingsValidationError('SMTP port 587 uses STARTTLS, so Secure must be disabled.');
+    if (input.port === 587 && !input.requireTLS) throw new SettingsValidationError('SMTP port 587 must require STARTTLS.');
+    if (input.secure && input.requireTLS) throw new SettingsValidationError('Implicit TLS and Require STARTTLS cannot both be enabled.');
 }

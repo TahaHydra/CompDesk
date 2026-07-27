@@ -395,3 +395,15 @@ See [SETUP.md](SETUP.md#seed-accounts-and-demo-data) for exact Windows and Unix 
 ## License
 
 MIT
+### SMTP secret encryption and key rotation
+
+Database-backed SMTP passwords are stored as versioned AES-256-GCM envelopes (`enc:v1`). Configure `APP_SETTINGS_ENCRYPTION_KEY` as 32 random bytes encoded in base64 or as 64 hexadecimal characters. Existing plaintext values are reported in Super Admin Settings and can be migrated once with **Encrypt existing password**. Environment-provided `SMTP_PASS`/`SMTP_PASSWORD` values are never copied to the database.
+
+Rotate the encryption key without downtime:
+
+1. Move the current key to `APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS` and install the new key as `APP_SETTINGS_ENCRYPTION_KEY`.
+2. Restart the application; reads accept either key while every new save uses the new key.
+3. In SMTP Settings, enter and save the SMTP password once to re-encrypt it with the new key.
+4. Verify SMTP, then remove `APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS` and restart.
+
+Never derive this key from `AUTH_SECRET`. If the settings database is unavailable, login policy uses the last validated in-process value, then `LOGIN_LOCAL_ENABLED` / `LOGIN_MICROSOFT_ENABLED`. With neither available, Microsoft login is disabled and local credentials are retained as the documented break-glass path. Deployments that deliberately disable local login must set `LOGIN_LOCAL_ENABLED=false`.

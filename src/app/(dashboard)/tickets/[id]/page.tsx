@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import {
-    ArrowLeft, MessageSquare, Lock, User, AlertTriangle,
+    ArrowLeft, MessageSquare, User, AlertTriangle,
     Send, Eye, Shield, XCircle, ArrowUpCircle,
     Paperclip, Download, FileIcon, Trash2, Upload,
     Hand, Pencil, X, Check, ChevronDown,
@@ -26,6 +26,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
+import { parseTicketContent } from '@/lib/ticket-content';
 
 function formatFileSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
@@ -57,34 +58,14 @@ function PriorityBadge({ value }: { value: string }) {
     );
 }
 
-// Render description with inline images (markdown ![alt](url) syntax)
 function RenderDescription({ text }: { text: string }) {
-    const parts = text.split(/(!\[.*?\]\(.*?\))/g);
-    return (
-        <div className="text-sm space-y-2">
-            {parts.map((part, i) => {
-                const match = part.match(/^!\[(.*?)\]\((.*?)\)$/);
-                if (match) {
-                    return (
-                        <div key={i} className="my-2">
-                            <img
-                                src={match[2]}
-                                alt={match[1]}
-                                className="max-w-full max-h-96 rounded-lg border shadow-sm"
-                            />
-                            {match[1] && <p className="text-xs text-muted-foreground mt-1">{match[1]}</p>}
-                        </div>
-                    );
-                }
-                if (part.trim()) {
-                    return <p key={i} className="whitespace-pre-wrap">{part}</p>;
-                }
-                return null;
-            })}
-        </div>
-    );
+    return <div className="space-y-2 text-sm">{parseTicketContent(text).map((part, index) => {
+        if (part.kind === 'inline-image') return <div key={index} className="my-2"><img src={part.url} alt={part.alt} className="max-h-96 max-w-full rounded-lg border shadow-sm" />{part.alt ? <p className="mt-1 text-xs text-muted-foreground">{part.alt}</p> : null}</div>;
+        if (part.kind === 'external-image-link') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs">Remote image blocked. <a href={part.url} target="_blank" rel="noopener noreferrer" className="underline">Open link</a>{part.alt ? `: ${part.alt}` : ''}</p>;
+        if (part.kind === 'blocked-image') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">Unsafe image reference blocked{part.alt ? `: ${part.alt}` : ''}.</p>;
+        return part.value ? <p key={index} className="whitespace-pre-wrap">{part.value}</p> : null;
+    })}</div>;
 }
-
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const { data: session } = useSession();
@@ -491,9 +472,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         />
                     )}
 
-                    {ticket.lockInfo && ticket.lockInfo.lockedBy !== session?.user?.name && (
-                        <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300">
-                            <Lock className="h-3 w-3" /> Being viewed by {ticket.lockInfo.lockedBy}
+                    {ticket.presenceInfo && ticket.presenceInfo.lastViewer !== session?.user?.name && (
+                        <Badge variant="outline" className="gap-1 text-muted-foreground">
+                            <Eye className="h-3 w-3" /> Recently viewed by {ticket.presenceInfo.lastViewer} · non-exclusive activity
                         </Badge>
                     )}
                 </div>

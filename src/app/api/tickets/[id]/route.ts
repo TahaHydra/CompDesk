@@ -104,8 +104,8 @@ export async function GET(
             };
         }
 
-        // Lock indicator
-        let lockInfo = null;
+        // Non-exclusive recent-viewer presence indicator. Never used for authorization.
+        let presenceInfo = null;
         if (ticket.lockedBy && ticket.lockedAt) {
             const lockAge = (Date.now() - new Date(ticket.lockedAt).getTime()) / 60000;
             if (lockAge < 5) { // Lock expires after 5 minutes
@@ -113,11 +113,11 @@ export async function GET(
                     where: { id: ticket.lockedBy },
                     select: { name: true },
                 });
-                lockInfo = { lockedBy: lockUser?.name, lockedAt: ticket.lockedAt };
+                presenceInfo = { lastViewer: lockUser?.name, lastViewedAt: ticket.lockedAt, exclusive: false };
             }
         }
 
-        // Update lock for current user (if agent)
+        // Record recent viewer activity for agents. This is not a lock.
         if (isAgentOrAbove(session.user.role)) {
             await prisma.ticket.update({
                 where: { id },
@@ -146,7 +146,7 @@ export async function GET(
         return NextResponse.json({
             ...safeTicket,
             slaInfo,
-            lockInfo,
+            presenceInfo,
             historicalForm: snapshot ? {
                 templateId: snapshot.templateId,
                 templateName: snapshot.templateName,
