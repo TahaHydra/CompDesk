@@ -7,6 +7,10 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { auditLog } from '@/lib/audit';
 import type { Role } from '@prisma/client';
+import { isLoginMethodEnabled } from '@/lib/login-policy';
+import { scheduleEntraStartupDiagnostic } from '@/lib/entra-diagnostic';
+
+scheduleEntraStartupDiagnostic();
 
 declare module 'next-auth' {
     interface Session {
@@ -32,19 +36,6 @@ declare module 'next-auth' {
         role: Role;
         entraObjectId?: string | null;
         groupIds: string[];
-    }
-}
-
-// Check if local login is enabled via app settings
-async function isLoginMethodEnabled(key: 'login_local_enabled' | 'login_microsoft_enabled'): Promise<boolean> {
-    try {
-        const setting = await prisma.appSetting.findUnique({
-            where: { key },
-        });
-        // Default to true if setting doesn't exist
-        return setting ? setting.value !== 'false' : true;
-    } catch {
-        return true; // Fail open
     }
 }
 

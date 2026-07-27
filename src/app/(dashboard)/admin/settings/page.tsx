@@ -41,137 +41,54 @@ async function updateSettings(data: Record<string, string>): Promise<{ success: 
 function SmtpSettingsTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
-
-    const { data: settings } = useQuery<SettingsMap>({
-        queryKey: ['settings'],
-        queryFn: loadSettings,
-        throwOnError: true,
-    });
-
-    const [smtp, setSmtp] = useState({
-        smtp_host: '', smtp_port: '587', smtp_user: '', smtp_password: '', smtp_from: '', smtp_secure: 'false',
-    });
+    const { data: settings } = useQuery<SettingsMap>({ queryKey: ['settings'], queryFn: loadSettings, throwOnError: true });
+    const [smtp, setSmtp] = useState({ smtp_host: '', smtp_port: '587', smtp_user: '', smtp_password: '', smtp_from: '', smtp_secure: 'false', smtp_require_tls: 'true' });
+    const [diagnostic, setDiagnostic] = useState<{ success: boolean; correlationId: string; message?: string; error?: string; category?: string; fromAccepted?: boolean | null } | null>(null);
     const smtpPasswordConfigured = settings?.smtp_password_configured === 'true';
-    const hasUnsavedChanges = Boolean(settings) && (
-        smtp.smtp_password.length > 0
-        || smtp.smtp_host !== (settings?.smtp_host ?? '')
-        || smtp.smtp_port !== (settings?.smtp_port ?? '587')
-        || smtp.smtp_user !== (settings?.smtp_user ?? '')
-        || smtp.smtp_from !== (settings?.smtp_from ?? '')
-        || smtp.smtp_secure !== (settings?.smtp_secure ?? 'false')
-    );
+    const migrationRequired = settings?.smtp_password_migration_required === 'true';
+    const encryptionReady = settings?.smtp_encryption_key_configured === 'true';
 
-    useEffect(() => {
-        if (settings) {
-            setSmtp((prev) => ({
-                smtp_host: settings.smtp_host ?? prev.smtp_host,
-                smtp_port: settings.smtp_port ?? prev.smtp_port,
-                smtp_user: settings.smtp_user ?? prev.smtp_user,
-                smtp_password: settings.smtp_password ?? prev.smtp_password,
-                smtp_from: settings.smtp_from ?? prev.smtp_from,
-                smtp_secure: settings.smtp_secure ?? prev.smtp_secure,
-            }));
-        }
-    }, [settings]);
+    useEffect(() => { if (settings) setSmtp((current) => ({
+        smtp_host: settings.smtp_host ?? current.smtp_host,
+        smtp_port: settings.smtp_port ?? current.smtp_port,
+        smtp_user: settings.smtp_user ?? current.smtp_user,
+        smtp_password: '',
+        smtp_from: settings.smtp_from ?? current.smtp_from,
+        smtp_secure: settings.smtp_secure ?? current.smtp_secure,
+        smtp_require_tls: settings.smtp_require_tls ?? 'true',
+    })); }, [settings]);
 
-    const saveMutation = useMutation({
-        mutationFn: async () => updateSettings(smtp),
-        onSuccess: () => {
-            setSmtp((current) => ({ ...current, smtp_password: '' }));
-            void queryClient.invalidateQueries({ queryKey: ['settings'] });
-            toast({ title: 'SMTP settings saved' });
-        },
-        onError: (error: Error) => toast({ title: 'Failed to save SMTP settings', description: error.message, variant: 'destructive' }),
-    });
+    const save = async () => {
+        await updateSettings(smtp);
+        setSmtp((current) => ({ ...current, smtp_password: '' }));
+        await queryClient.invalidateQueries({ queryKey: ['settings'] });
+    };
+    const saveMutation = useMutation({ mutationFn: save, onSuccess: () => toast({ title: 'SMTP settings saved' }), onError: (error: Error) => toast({ title: 'Failed to save SMTP settings', description: error.message, variant: 'destructive' }) });
+    const runDiagnostic = async (path: string) => {
+        await save();
+        const response = await fetch(path, { method: 'POST' });
+        const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+        setDiagnostic(payload);
+        if (!response.ok) throw new Error(payload.error || 'SMTP diagnostic failed');
+        return payload;
+    };
+    const verifyMutation = useMutation({ mutationFn: () => runDiagnostic('/api/settings/verify-smtp'), onSuccess: (data) => toast({ title: 'SMTP verification succeeded', description: data.message }), onError: (error: Error) => toast({ title: 'SMTP verification failed', description: error.message, variant: 'destructive' }) });
+    const sendMutation = useMutation({ mutationFn: () => runDiagnostic('/api/settings/test-email'), onSuccess: (data) => toast({ title: 'Real test message submitted', description: data.message }), onError: (error: Error) => toast({ title: 'SMTP delivery test failed', description: error.message, variant: 'destructive' }) });
+    const migrateMutation = useMutation({ mutationFn: async () => { const response = await fetch('/api/settings/migrate-smtp-secret', { method: 'POST' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Migration failed'); return payload; }, onSuccess: async (data) => { await queryClient.invalidateQueries({ queryKey: ['settings'] }); toast({ title: 'SMTP secret migration', description: data.message }); }, onError: (error: Error) => toast({ title: 'Migration failed', description: error.message, variant: 'destructive' }) });
+    const pending = saveMutation.isPending || verifyMutation.isPending || sendMutation.isPending || migrateMutation.isPending;
+    const validFrom = /^(?:.*<)?[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>?$/.test(smtp.smtp_from.trim());
 
-    const testMutation = useMutation({
-        mutationFn: async () => {
-            await updateSettings(smtp);
-            const response = await fetch('/api/settings/test-email', { method: 'POST' });
-            const data = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
-            if (!response.ok) throw new Error(`Settings were saved, but the delivery test failed. ${data.error || 'Unknown SMTP error'}`);
-            return data;
-        },
-        onSuccess: (data) => {
-            setSmtp((current) => ({ ...current, smtp_password: '' }));
-            void queryClient.invalidateQueries({ queryKey: ['settings'] });
-            toast({ title: 'Test email sent', description: data.message });
-        },
-        onError: (err: Error) => toast({ title: 'SMTP test failed', description: err.message, variant: 'destructive' }),
-    });
-
-    return (
-        <div className="space-y-6">
-            <Card className="border-0 shadow-sm">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                        <Mail className="h-4 w-4" /> SMTP Configuration
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>SMTP Host</Label>
-                            <Input placeholder="smtp.office365.com" value={smtp.smtp_host}
-                                onChange={(e) => setSmtp({ ...smtp, smtp_host: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Port</Label>
-                            <Input placeholder="587" value={smtp.smtp_port}
-                                onChange={(e) => setSmtp({ ...smtp, smtp_port: e.target.value })} />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>Username / Email</Label>
-                            <Input placeholder="noreply@example.com" value={smtp.smtp_user}
-                                onChange={(e) => setSmtp({ ...smtp, smtp_user: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Password</Label>
-                            <Input
-                                type="password"
-                                placeholder={smtpPasswordConfigured ? 'Saved password configured. Enter a new one to replace it.' : '••••••••'}
-                                value={smtp.smtp_password}
-                                onChange={(e) => setSmtp({ ...smtp, smtp_password: e.target.value })} />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label>From Address</Label>
-                            <Input placeholder="noreply@example.com" value={smtp.smtp_from}
-                                onChange={(e) => setSmtp({ ...smtp, smtp_from: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Secure (TLS)</Label>
-                            <Select value={smtp.smtp_secure} onValueChange={(v) => setSmtp({ ...smtp, smtp_secure: v })}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="false">STARTTLS (port 587)</SelectItem>
-                                    <SelectItem value="true">SSL/TLS (port 465)</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <p className="text-xs text-muted-foreground">Use STARTTLS with port 587 unless your provider explicitly requires implicit TLS on port 465.</p>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                        <p>This test opens a real SMTP connection and sends a message to the signed-in administrator. It saves the fields above first, so the values you see are the values being tested.</p>
-                        <p className="mt-1">Password: {smtpPasswordConfigured ? 'configured' : 'missing'}{hasUnsavedChanges ? ' · Unsaved changes' : ''}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-3 pt-2">
-                        <Button onClick={() => saveMutation.mutate()} disabled={!settings || saveMutation.isPending || testMutation.isPending} className="gap-2">
-                            <Save className="h-4 w-4" /> {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
-                        </Button>
-                        <Button variant="outline" onClick={() => testMutation.mutate()} disabled={!settings || testMutation.isPending || saveMutation.isPending} className="gap-2">
-                            <Send className="h-4 w-4" /> {testMutation.isPending ? 'Saving and sending...' : 'Save & Send Test Email'}
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
-    );
+    return <div className="space-y-6"><Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Mail className="h-4 w-4" /> SMTP Configuration</CardTitle></CardHeader><CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>SMTP Host</Label><Input value={smtp.smtp_host} onChange={(event) => setSmtp({ ...smtp, smtp_host: event.target.value })} /></div><div className="space-y-2"><Label>Port</Label><Input value={smtp.smtp_port} onChange={(event) => setSmtp({ ...smtp, smtp_port: event.target.value })} /></div></div>
+        <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Username / Email</Label><Input value={smtp.smtp_user} onChange={(event) => setSmtp({ ...smtp, smtp_user: event.target.value })} /></div><div className="space-y-2"><Label>Password</Label><Input type="password" placeholder={smtpPasswordConfigured ? 'Configured; enter a replacement only' : 'Required'} value={smtp.smtp_password} onChange={(event) => setSmtp({ ...smtp, smtp_password: event.target.value })} /><p className="text-xs text-muted-foreground">Database passwords use an authenticated enc:v1 AES-256-GCM envelope. Environment passwords remain supported.</p></div></div>
+        <div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><Label>From Address</Label><Input value={smtp.smtp_from} onChange={(event) => setSmtp({ ...smtp, smtp_from: event.target.value })} aria-invalid={Boolean(smtp.smtp_from && !validFrom)} /><p className="text-xs text-muted-foreground">Required before notifications or a real-send test.</p></div><div className="space-y-2"><Label>Transport security</Label><Select value={smtp.smtp_secure} onValueChange={(value) => setSmtp({ ...smtp, smtp_secure: value, smtp_require_tls: value === 'true' ? 'false' : 'true' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="false">STARTTLS</SelectItem><SelectItem value="true">Implicit TLS</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Require STARTTLS</Label><Select value={smtp.smtp_require_tls} disabled={smtp.smtp_secure === 'true'} onValueChange={(value) => setSmtp({ ...smtp, smtp_require_tls: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true">Required</SelectItem><SelectItem value="false">Not required</SelectItem></SelectContent></Select></div></div>
+        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">Port 587 requires STARTTLS and keeps certificate verification enabled. Port 465 requires implicit TLS. Connection verification cannot establish whether the configured From address will be accepted; only the real-send test can.</div>
+        {!encryptionReady ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">APP_SETTINGS_ENCRYPTION_KEY is missing. A database SMTP password cannot be saved until a 32-byte key is configured.</div> : null}
+        {migrationRequired ? <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><span>An existing plaintext SMTP password requires one-time encryption.</span><Button variant="outline" size="sm" onClick={() => migrateMutation.mutate()} disabled={pending || !encryptionReady}>Encrypt existing password</Button></div> : null}
+        {diagnostic ? <div className={`rounded-lg border p-3 text-sm ${diagnostic.success ? 'border-green-300 bg-green-50 text-green-900' : 'border-destructive/30 bg-destructive/5 text-destructive'}`}><p>{diagnostic.message ?? diagnostic.error}</p><p className="mt-1 text-xs">Correlation ID: {diagnostic.correlationId}{diagnostic.category ? ` · ${diagnostic.category}` : ''}</p>{diagnostic.fromAccepted === null ? <p className="mt-1 text-xs">From address was not tested.</p> : null}</div> : null}
+        <div className="flex flex-wrap gap-3"><Button onClick={() => saveMutation.mutate()} disabled={!settings || pending || Boolean(smtp.smtp_password && !encryptionReady)}><Save className="mr-2 h-4 w-4" />Save Settings</Button><Button variant="outline" onClick={() => verifyMutation.mutate()} disabled={!settings || pending || Boolean(smtp.smtp_password && !encryptionReady)}><Shield className="mr-2 h-4 w-4" />Verify Connection & Authentication</Button><Button variant="outline" onClick={() => sendMutation.mutate()} disabled={!settings || pending || !validFrom || Boolean(smtp.smtp_password && !encryptionReady)}><Send className="mr-2 h-4 w-4" />Send Real Test Message</Button></div>
+    </CardContent></Card></div>;
 }
-
 function EmailTogglesTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -199,7 +116,7 @@ function EmailTogglesTab() {
     });
 
     const handleToggle = (key: string) => {
-        const current = settings?.[key] !== 'false'; // default true
+        const current = settings?.[key] === 'true';
         saveMutation.mutate({ [key]: String(!current) });
     };
 
@@ -212,7 +129,7 @@ function EmailTogglesTab() {
             </CardHeader>
             <CardContent className="space-y-4">
                 {toggles.map((t) => {
-                    const enabled = settings?.[t.key] !== 'false';
+                    const enabled = settings?.[t.key] === 'true';
                     return (
                         <div key={t.key} className="flex items-center justify-between p-3 rounded-lg border">
                             <div>
@@ -223,7 +140,7 @@ function EmailTogglesTab() {
                                 variant={enabled ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => handleToggle(t.key)}
-                                disabled={saveMutation.isPending}
+                                disabled={saveMutation.isPending || (!enabled && !settings?.smtp_from)}
                                 className="gap-1.5 min-w-[80px]"
                             >
                                 {enabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
@@ -276,6 +193,18 @@ function EntraSettingsTab() {
         onError: (error: Error) => toast({ title: 'Entra ID settings could not be saved', description: error.message, variant: 'destructive' }),
     });
 
+    const [diagnostic, setDiagnostic] = useState<{ success: boolean; correlationId: string; stage: string; message?: string; error?: string; expectedCallbackUri?: string | null } | null>(null);
+    const diagnosticMutation = useMutation({
+        mutationFn: async () => {
+            const response = await fetch('/api/settings/entra-diagnostic', { method: 'POST' });
+            const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+            setDiagnostic(payload);
+            if (!response.ok) throw new Error(payload.message || payload.error || 'Entra diagnostic failed');
+            return payload;
+        },
+        onSuccess: (result) => toast({ title: 'Entra diagnostic succeeded', description: `${result.message} Correlation ID: ${result.correlationId}` }),
+        onError: (error: Error) => toast({ title: 'Entra diagnostic failed', description: error.message, variant: 'destructive' }),
+    });
     return (
         <div className="space-y-4">
             <Card className="border-0 shadow-sm">
@@ -329,7 +258,8 @@ function EntraSettingsTab() {
                         <span>Client ID: {settings?.azure_ad_client_id ? 'configured' : 'missing'}</span>
                         <span>Client secret: {entraSecretConfigured ? 'configured' : 'missing'}</span>
                         <span>Tenant ID: {settings?.azure_ad_tenant_id ? 'configured' : 'missing'}</span>
-                    </div>
+                    </div>                    <Button variant="outline" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending} className="gap-2"><Shield className="h-4 w-4" />{diagnosticMutation.isPending ? 'Testing running configuration…' : 'Diagnose Running Entra Configuration'}</Button>
+                    {diagnostic ? <div className={`rounded-lg border p-3 text-sm ${diagnostic.success ? 'border-green-300 bg-green-50 text-green-900' : 'border-destructive/30 bg-destructive/5 text-destructive'}`}><p>{diagnostic.message ?? diagnostic.error}</p><p className="mt-1 text-xs">Stage: {diagnostic.stage} · Correlation ID: {diagnostic.correlationId}</p>{diagnostic.expectedCallbackUri ? <p className="mt-1 break-all text-xs">Expected callback: {diagnostic.expectedCallbackUri}</p> : null}<p className="mt-2 text-xs">Values are never returned: only presence, format validity, and metadata checks are reported.</p></div> : null}
                 </CardContent>
             </Card>
         </div>

@@ -3,6 +3,9 @@ import logger from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { getBrandingConfig, type BrandingConfig } from '@/lib/branding';
 import { auditLog } from '@/lib/audit';
+import { classifyNetworkError } from '@/lib/network-error';
+import { decryptSettingSecret } from '@/lib/settings-secret';
+import { isValidSmtpFrom, validateSmtpSecurityCombination } from '@/lib/settings-validation';
 
 interface EmailOptions {
     to: string | string[];
@@ -11,66 +14,94 @@ interface EmailOptions {
     text?: string;
 }
 
+export interface SmtpConfig {
+    host: string;
+    port: number;
+    secure: boolean;
+    requireTLS: boolean;
+    user?: string;
+    pass?: string;
+    from: string;
+}
+
 function escapeHtml(value: string): string {
     return value.replace(/[&<>'"]/g, (character) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
     })[character] ?? character);
 }
 
-export async function getSmtpConfig(branding: BrandingConfig) {
-    try {
-        const settings = await prisma.appSetting.findMany({ where: { key: { startsWith: 'smtp_' } } });
-        const config = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
-        return {
-            host: config.smtp_host || process.env.SMTP_HOST || 'smtp.office365.com',
-            port: Number.parseInt(config.smtp_port || process.env.SMTP_PORT || '587', 10),
-            secure: (config.smtp_secure || process.env.SMTP_SECURE) === 'true',
-            user: config.smtp_user || process.env.SMTP_USER,
-            pass: config.smtp_password || process.env.SMTP_PASS || process.env.SMTP_PASSWORD,
-            from: config.smtp_from || process.env.SMTP_FROM || `${branding.applicationName} <noreply@example.com>`,
-        };
-    } catch {
-        return {
-            host: process.env.SMTP_HOST || 'smtp.office365.com',
-            port: Number.parseInt(process.env.SMTP_PORT || '587', 10),
-            secure: process.env.SMTP_SECURE === 'true',
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD,
-            from: process.env.SMTP_FROM || `${branding.applicationName} <noreply@example.com>`,
-        };
-    }
+function booleanSetting(value: string | undefined, fallback: boolean): boolean {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return fallback;
 }
 
-export function createSmtpTransport(smtp: Awaited<ReturnType<typeof getSmtpConfig>>) {
+export async function getSmtpConfig(branding: BrandingConfig): Promise<SmtpConfig> {
+    void branding;
+    let config: Record<string, string> = {};
+    try {
+        const settings = await prisma.appSetting.findMany({ where: { key: { startsWith: 'smtp_' } } });
+        config = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
+    } catch {
+        config = {};
+    }
+    const secure = booleanSetting(config.smtp_secure ?? process.env.SMTP_SECURE, false);
+    const requireTLS = booleanSetting(config.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS, !secure);
+    const storedPassword = config.smtp_password ? decryptSettingSecret(config.smtp_password) : undefined;
+    return {
+        host: config.smtp_host || process.env.SMTP_HOST || 'smtp.office365.com',
+        port: Number.parseInt(config.smtp_port || process.env.SMTP_PORT || '587', 10),
+        secure,
+        requireTLS,
+        user: config.smtp_user || process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || storedPassword,
+        from: config.smtp_from || process.env.SMTP_FROM || '',
+    };
+}
+
+export function createSmtpTransport(smtp: SmtpConfig) {
     if (!smtp.host || !smtp.user || !smtp.pass) throw new Error('SMTP is not configured. Fill in the host, user, and password.');
     if (!Number.isInteger(smtp.port) || smtp.port < 1 || smtp.port > 65535) throw new Error('SMTP port must be between 1 and 65535.');
+    validateSmtpSecurityCombination(smtp);
     return nodemailer.createTransport({
         host: smtp.host,
         port: smtp.port,
         secure: smtp.secure,
+        requireTLS: smtp.requireTLS,
         auth: { user: smtp.user, pass: smtp.pass },
+        tls: { rejectUnauthorized: true },
         connectionTimeout: 10000,
         greetingTimeout: 10000,
         socketTimeout: 10000,
     });
 }
 
-export function formatSmtpError(error: unknown, smtp?: { host: string; port: number }): string {
-    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-    const target = smtp ? `${smtp.host}:${smtp.port}` : 'the SMTP server';
-    if (code === 'EACCES') return `Connection to ${target} was blocked by the operating system or container network policy. Allow outbound TCP access for the application process, then retry.`;
-    if (code === 'ECONNREFUSED') return `Connection to ${target} was refused. Check the host, port, firewall, and whether the SMTP service is listening.`;
-    if (code === 'ETIMEDOUT' || code === 'ESOCKET') return `Connection to ${target} timed out. Check outbound network access, DNS, firewall rules, and the selected SMTP port.`;
-    if (code === 'EAUTH') return 'The SMTP server rejected the username or password. Check the credentials and whether SMTP authentication is enabled for the mailbox.';
-    return error instanceof Error ? error.message : 'Unknown mail transport error';
+export function requireValidSmtpFrom(smtp: SmtpConfig): void {
+    if (!isValidSmtpFrom(smtp.from)) throw new Error('A valid SMTP From address is required before sending email.');
 }
 
+export function formatSmtpError(error: unknown, smtp?: { host: string; port: number }): string {
+    const target = smtp ? `${smtp.host}:${smtp.port}` : 'the SMTP server';
+    const failure = classifyNetworkError(error);
+    if (failure.code === 'EACCES') return `Connection to ${target} was blocked by the operating system or container network policy. Allow outbound TCP access for the application process, then retry.`;
+    if (failure.category === 'dns') return `DNS resolution failed for ${target}. Check the SMTP host name.`;
+    if (failure.category === 'tcp_connectivity') return `TCP connectivity to ${target} failed. Check the port, outbound network policy, and service availability.`;
+    if (failure.category === 'timeout') return `Connection to ${target} timed out. Check outbound network access and firewall rules.`;
+    if (failure.category === 'tls_certificate') return `TLS or certificate validation failed for ${target}. Certificate verification remains enabled.`;
+    if (failure.category === 'authentication') return 'The SMTP server rejected authentication. Check the account and whether SMTP authentication is enabled.';
+    if (failure.category === 'proxy_connect') return `A proxy or CONNECT tunnel failed while reaching ${target}.`;
+    return error instanceof Error && !/pass(word)?|secret|token/i.test(error.message) ? error.message : 'Unknown mail transport error';
+}
+
+export function smtpFailureCategory(error: unknown) {
+    return classifyNetworkError(error).category;
+}
 async function isEmailEventEnabled(eventKey: string): Promise<boolean> {
     try {
         const setting = await prisma.appSetting.findUnique({ where: { key: eventKey } });
-        return setting?.value !== 'false';
+        return setting?.value === 'true';
     } catch {
-        return true;
+        return false;
     }
 }
 
@@ -103,6 +134,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     try {
         const branding = await getBrandingConfig();
         smtp = await getSmtpConfig(branding);
+        requireValidSmtpFrom(smtp);
         if (!smtp.user || !smtp.pass) {
             const message = 'SMTP credentials not configured, skipping email send';
             logger.warn(message, { subject: options.subject, recipientCount: recipients.length });
