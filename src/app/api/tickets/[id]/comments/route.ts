@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createCommentSchema } from '@/lib/validations';
 import { sanitizeHtml, isAgentOrAbove } from '@/lib/utils';
-import { sendTicketUpdatedEmail } from '@/lib/email';
+import { sendNewCommentEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessTicket } from '@/lib/permissions';
@@ -71,7 +71,7 @@ export async function POST(
             });
             const emails = watchers.map((w) => w.user.email).filter(Boolean);
             if (emails.length > 0) {
-                sendTicketUpdatedEmail(emails, ticket.key, ticket.title, 'New Comment', content.substring(0, 200));
+                void sendNewCommentEmail(emails, ticket.key, ticket.title, content.substring(0, 200));
             }
         }
 
