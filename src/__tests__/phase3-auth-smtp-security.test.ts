@@ -17,7 +17,9 @@ jest.mock('@/lib/managed-env', () => ({ readManagedEnvironment: jest.fn().mockRe
 jest.mock('@/lib/uploaded-image', () => ({ removeUploadedImage: jest.fn() }));
 jest.mock('nodemailer', () => ({ __esModule: true, default: { createTransport: (...args: unknown[]) => mockCreateTransport(...args) } }));
 
+import { execFileSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { diagnoseEntraRuntime } from '@/lib/entra-diagnostic';
 
@@ -175,5 +177,35 @@ describe('Phase 3 ticket-content and presence safety', () => {
         expect(api).toContain('Never used for authorization');
         expect(page).toContain('non-exclusive activity');
         expect(page).not.toContain('Being viewed by');
+    });
+});
+describe('Phase 3 settings-key startup wiring', () => {
+    it('loads .env in the standalone server process and passes keys into Docker', () => {
+        const packageJson = JSON.parse(source('package.json'));
+        expect(packageJson.scripts.start).toContain('scripts/start-standalone.mjs');
+        expect(source('scripts/start-standalone.mjs')).toContain('loadEnvConfig(root)');
+        const compose = source('docker-compose.yml');
+        expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:-}');
+        expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS: ${APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS:-}');
+    });
+
+    it('generates a settings key once without printing or overwriting it', () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-settings-key-'));
+        const envPath = path.join(directory, '.env');
+        const scriptPath = path.join(process.cwd(), 'scripts', 'generate-settings-key.mjs');
+        try {
+            const firstOutput = execFileSync(process.execPath, [scriptPath, envPath], { encoding: 'utf8' });
+            const firstContent = fs.readFileSync(envPath, 'utf8');
+            const key = firstContent.match(/^APP_SETTINGS_ENCRYPTION_KEY="([^"]+)"$/m)?.[1];
+            expect(key).toBeDefined();
+            expect(Buffer.from(key!, 'base64')).toHaveLength(32);
+            expect(firstOutput).not.toContain(key!);
+
+            const secondOutput = execFileSync(process.execPath, [scriptPath, envPath], { encoding: 'utf8' });
+            expect(fs.readFileSync(envPath, 'utf8')).toBe(firstContent);
+            expect(secondOutput).toContain('no changes made');
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
     });
 });

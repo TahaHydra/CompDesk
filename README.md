@@ -397,7 +397,7 @@ See [SETUP.md](SETUP.md#seed-accounts-and-demo-data) for exact Windows and Unix 
 MIT
 ### SMTP secret encryption and key rotation
 
-Database-backed SMTP passwords are stored as versioned AES-256-GCM envelopes (`enc:v1`). Configure `APP_SETTINGS_ENCRYPTION_KEY` as 32 random bytes encoded in base64 or as 64 hexadecimal characters. Existing plaintext values are reported in Super Admin Settings and can be migrated once with **Encrypt existing password**. Environment-provided `SMTP_PASS`/`SMTP_PASSWORD` values are never copied to the database.
+Database-backed SMTP passwords are stored as versioned AES-256-GCM envelopes (`enc:v1`). Configure `APP_SETTINGS_ENCRYPTION_KEY` as 32 random bytes encoded in base64 or as 64 hexadecimal characters. Run `npm run generate:settings-key` once to create and persist a missing local `.env` key without printing it. `npm start` loads the persisted key into the standalone server process, while Docker Compose passes it into the app container. Existing plaintext values are reported in Super Admin Settings and can be migrated once with **Encrypt existing password**. Environment-provided `SMTP_PASS`/`SMTP_PASSWORD` values are never copied to the database.
 
 Rotate the encryption key without downtime:
 
