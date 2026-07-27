@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { updateTicketSchema } from '@/lib/validations';
 import { canTransition, isAgentOrAbove } from '@/lib/utils';
-import { sendTicketUpdatedEmail, sendTicketAssignedEmail } from '@/lib/email';
+import { sendTicketUpdatedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
@@ -31,7 +31,10 @@ export async function GET(
                 queue: true,
                 category: true,
                 requester: { select: { id: true, name: true, email: true, image: true } },
-                assignee: { select: { id: true, name: true, email: true, image: true } },
+                assignments: {
+                    include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } },
+                    orderBy: { assignedAt: 'asc' },
+                },
                 tags: { include: { tag: true } },
                 watchers: { include: { user: { select: { id: true, name: true, email: true } } } },
                 timeline: {
@@ -130,7 +133,11 @@ export async function GET(
             ...(session.user.role === 'USER' ? {
                 queue: { id: ticket.queue.id, name: ticket.queue.name, description: ticket.queue.description },
                 category: ticket.category ? { id: ticket.category.id, name: ticket.category.name, description: ticket.category.description } : null,
-                assignee: ticket.assignee ? { id: ticket.assignee.id, name: ticket.assignee.name, image: ticket.assignee.image } : null,
+                assignments: ticket.assignments.map((assignment) => ({
+                    id: assignment.id,
+                    userId: assignment.userId,
+                    user: { id: assignment.user.id, name: assignment.user.name, image: assignment.user.image },
+                })),
             } : {}),
             watchers: session.user.role === 'USER' ? [] : ticket.watchers.map((watcher) => ({
                 id: watcher.id,
@@ -191,7 +198,7 @@ export async function PATCH(
 
         const data = parsed.data;
         if (session.user.role === 'USER') {
-            const protectedKeys = ['title', 'description', 'status', 'queueId', 'categoryId', 'assigneeId', 'priority', 'severity', 'tagIds'] as const;
+            const protectedKeys = ['title', 'description', 'status', 'queueId', 'categoryId', 'priority', 'severity', 'tagIds'] as const;
             if (protectedKeys.some((key) => data[key] !== undefined)) {
                 return NextResponse.json({ error: 'Only agents can change ticket content, status, routing, assignment, priority, severity, or tags' }, { status: 403 });
             }
@@ -206,17 +213,15 @@ export async function PATCH(
         }
 
         const targetQueueId = data.queueId ?? existingTicket.queueId;
-        const targetAssigneeId = data.assigneeId !== undefined ? data.assigneeId : existingTicket.assigneeId;
-        if (targetAssigneeId && (data.assigneeId !== undefined || data.queueId !== undefined)) {
-            const targetAssignee = await prisma.user.findUnique({
-                where: { id: targetAssigneeId },
-                select: { id: true, role: true, isActive: true },
+        if (data.queueId && data.queueId !== existingTicket.queueId) {
+            const currentAssignees = await prisma.ticketAssignee.findMany({
+                where: { ticketId: id },
+                include: { user: { select: { id: true, role: true, isActive: true } } },
             });
-            if (!targetAssignee || !targetAssignee.isActive || targetAssignee.role === 'USER') {
-                return NextResponse.json({ error: 'The assignee must be an active agent or administrator' }, { status: 400 });
-            }
-            if (!(await canAccessQueue(targetAssignee.id, targetAssignee.role, targetQueueId))) {
-                return NextResponse.json({ error: 'The assignee does not have access to the ticket department' }, { status: 400 });
+            for (const assignment of currentAssignees) {
+                if (!assignment.user.isActive || !(await canAccessQueue(assignment.user.id, assignment.user.role, targetQueueId))) {
+                    return NextResponse.json({ error: 'Remove assignees who cannot access the destination department before moving this ticket' }, { status: 409 });
+                }
             }
         }
         const targetCategoryId = data.categoryId !== undefined ? data.categoryId : existingTicket.categoryId;
@@ -259,23 +264,6 @@ export async function PATCH(
             }
         }
 
-        // Assignment change
-        if (data.assigneeId !== undefined && data.assigneeId !== existingTicket.assigneeId) {
-            const assigneeName = data.assigneeId
-                ? (await prisma.user.findUnique({ where: { id: data.assigneeId }, select: { name: true } }))?.name
-                : 'Unassigned';
-            timelineEvents.push({
-                type: 'ASSIGNMENT_CHANGE',
-                content: `Assigned to ${assigneeName}`,
-                metadata: { from: existingTicket.assigneeId, to: data.assigneeId },
-            });
-
-            // First response tracking
-            if (data.assigneeId && !existingTicket.firstResponseAt) {
-                (data as any).firstResponseAt = new Date();
-            }
-        }
-
         // Priority change
         if (data.priority && data.priority !== existingTicket.priority) {
             timelineEvents.push({
@@ -311,7 +299,7 @@ export async function PATCH(
                 include: {
                     queue: true,
                     requester: true,
-                    assignee: true,
+                    assignments: { include: { user: true } },
                 },
             });
 
@@ -328,20 +316,22 @@ export async function PATCH(
             }
             return updated;
         });
-        // Send notifications
-        if (data.assigneeId && data.assigneeId !== existingTicket.assigneeId && updatedTicket.assignee) {
-            void sendTicketAssignedEmail(updatedTicket.assignee.email, updatedTicket.key, updatedTicket.title);
-        }
-
         if (timelineEvents.length > 0) {
             const watchers = await prisma.ticketWatcher.findMany({
                 where: { ticketId: id, userId: { not: session.user.id } },
                 include: { user: { select: { id: true, email: true } } },
             });
-            const newlyAssignedUserId = data.assigneeId && data.assigneeId !== existingTicket.assigneeId ? updatedTicket.assignee?.id : null;
-            const emails = [...new Set(watchers
-                .filter((watcher) => watcher.user.id !== newlyAssignedUserId)
-                .map((watcher) => watcher.user.email)
+            const recipients = [
+                { id: updatedTicket.requester.id, email: updatedTicket.requester.email },
+                ...updatedTicket.assignments.map((assignment) => ({
+                    id: assignment.user.id,
+                    email: assignment.user.email,
+                })),
+                ...watchers.map((watcher) => watcher.user),
+            ];
+            const emails = [...new Set(recipients
+                .filter((recipient) => recipient.id !== session.user.id)
+                .map((recipient) => recipient.email)
                 .filter(Boolean))];
             if (emails.length > 0) {
                 const updateType = timelineEvents.map((e) => e.content).join(', ');
@@ -388,13 +378,16 @@ export async function DELETE(
 
         const { id } = await params;
 
-        const ticket = await prisma.ticket.findUnique({ where: { id }, include: { attachments: true } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: { attachments: true, _count: { select: { assignments: true } } },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
 
-        if (!canDeleteTicket(session.user.id, session.user.role, ticket)) {
-            if (ticket.requesterId === session.user.id && ticket.assigneeId) {
+        if (!canDeleteTicket(session.user.id, session.user.role, { requesterId: ticket.requesterId, assignmentCount: ticket._count.assignments })) {
+            if (ticket.requesterId === session.user.id && ticket._count.assignments > 0) {
                 return NextResponse.json({ error: 'Cannot delete a ticket that has been assigned. Contact an agent.' }, { status: 400 });
             }
             return NextResponse.json({ error: 'Only the ticket requester can delete this ticket' }, { status: 403 });
@@ -405,6 +398,7 @@ export async function DELETE(
             prisma.timelineEvent.deleteMany({ where: { ticketId: id } }),
             prisma.ticketWatcher.deleteMany({ where: { ticketId: id } }),
             prisma.ticketTag.deleteMany({ where: { ticketId: id } }),
+            prisma.ticketAssignee.deleteMany({ where: { ticketId: id } }),
             prisma.attachment.deleteMany({ where: { ticketId: id } }),
             prisma.ticket.delete({ where: { id } }),
         ]);

@@ -115,8 +115,8 @@ export async function canAccessTicket(
 export function canDeleteTicket(
     userId: string,
     role: Role,
-    ticket: { requesterId: string; assigneeId: string | null }
+    ticket: { requesterId: string; assignmentCount: number }
 ): boolean {
     if (role === 'SUPER_ADMIN') return true;
-    return ticket.requesterId === userId && !ticket.assigneeId;
+    return ticket.requesterId === userId && ticket.assignmentCount === 0;
 }

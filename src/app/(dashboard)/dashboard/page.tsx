@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
+import { AssigneeSummary } from '@/components/tickets/assignee-summary';
 import type { DashboardLink } from '@/lib/dashboard-links';
 
 interface RecentTicket {
@@ -32,7 +33,7 @@ interface RecentTicket {
     createdAt: string;
     slaBreached?: boolean;
     requester?: { name: string } | null;
-    assignee?: { name: string } | null;
+    assignments?: Array<{ user: { id: string; name: string } }>;
 }
 
 interface DashboardData {
@@ -127,7 +128,7 @@ export default function DashboardPage() {
                                             <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td>
                                             <td className="max-w-[200px] truncate px-4 py-3 font-medium">{ticket.title}</td>
                                             <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{ticket.requester?.name ?? '—'}</td>
-                                            <td className="hidden px-4 py-3 lg:table-cell">{ticket.assignee?.name ?? <span className="text-xs font-medium text-amber-700 dark:text-amber-300">{t('Unassigned')}</span>}</td>
+                                            <td className="hidden px-4 py-3 lg:table-cell"><AssigneeSummary assignees={(ticket.assignments ?? []).map((assignment) => assignment.user)} /></td>
                                             <td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>{ticket.status.replaceAll('_', ' ')}</Badge></td>
                                             <td className="hidden px-4 py-3 sm:table-cell"><Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>{ticket.priority}</Badge></td>
                                             <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-muted-foreground lg:table-cell">{dateFormatter.format(new Date(ticket.createdAt))}</td>

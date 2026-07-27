@@ -39,7 +39,10 @@ export async function GET() {
                 include: {
                     queue: { select: { name: true } },
                     requester: { select: { name: true } },
-                    assignee: { select: { name: true } },
+                    assignments: {
+                        select: { user: { select: { id: true, name: true } } },
+                        orderBy: { assignedAt: 'asc' },
+                    },
                 },
                 orderBy: { updatedAt: 'desc' },
                 take: 5,

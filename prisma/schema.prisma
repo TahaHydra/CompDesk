@@ -70,6 +70,13 @@ enum BuiltInTicketField {
   TAGS
 }
 
+enum AssignmentSource {
+  MANUAL
+  CLAIM
+  ESCALATION
+  AUTOMATION
+}
+
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
@@ -87,10 +94,11 @@ model User {
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  requestedTickets   Ticket[]        @relation("TicketRequester")
-  assignedTickets    Ticket[]        @relation("TicketAssignee")
-  escalatedByTickets Ticket[]        @relation("TicketEscalatedBy")
-  escalatedToTickets Ticket[]        @relation("TicketEscalatedTo")
+  requestedTickets   Ticket[]         @relation("TicketRequester")
+  ticketAssignments  TicketAssignee[] @relation("AssignedUser")
+  assignmentsCreated TicketAssignee[] @relation("AssignmentActor")
+  escalatedByTickets Ticket[]         @relation("TicketEscalatedBy")
+  escalatedToTickets Ticket[]         @relation("TicketEscalatedTo")
   watchedTickets     TicketWatcher[]
   timelineEvents     TimelineEvent[]
   groupMemberships   GroupMember[]
@@ -283,7 +291,6 @@ model Ticket {
   queueId                 String       @map("queue_id")
   categoryId              String?      @map("category_id")
   requesterId             String       @map("requester_id")
-  assigneeId              String?      @map("assignee_id")
   resolvedTemplateId      String       @map("resolved_template_id")
   resolvedTemplateVersion Int          @map("resolved_template_version")
   formSchemaSnapshot      Json         @map("form_schema_snapshot")
@@ -307,7 +314,7 @@ model Ticket {
   category         Category?          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   resolvedTemplate TicketFormTemplate @relation(fields: [resolvedTemplateId], references: [id], onDelete: Restrict)
   requester        User               @relation("TicketRequester", fields: [requesterId], references: [id])
-  assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  assignments      TicketAssignee[]
   escalatedBy      User?              @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
   escalatedTo      User?              @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
   tags             TicketTag[]
@@ -321,10 +328,29 @@ model Ticket {
   @@index([categoryId])
   @@index([resolvedTemplateId])
   @@index([requesterId])
-  @@index([assigneeId])
   @@index([createdAt])
   @@index([escalationLevel])
   @@map("tickets")
+}
+
+model TicketAssignee {
+  id           String           @id @default(uuid())
+  ticketId     String           @map("ticket_id")
+  userId       String           @map("user_id")
+  assignedById String           @map("assigned_by_id")
+  assignedAt   DateTime         @default(now()) @map("assigned_at")
+  source       AssignmentSource @default(MANUAL)
+
+  ticket     Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user       User   @relation("AssignedUser", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy User   @relation("AssignmentActor", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@unique([ticketId, userId])
+  @@index([ticketId])
+  @@index([userId])
+  @@index([userId, ticketId])
+  @@index([ticketId, assignedAt])
+  @@map("ticket_assignees")
 }
 
 model TicketWatcher {
@@ -547,6 +573,7 @@ model ApiClient {
   @@index([isActive])
   @@map("api_clients")
 }
+
 // ── App Settings ───────────────────────────────────────────────
 
 model AppSetting {

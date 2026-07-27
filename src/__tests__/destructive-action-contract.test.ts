@@ -38,7 +38,7 @@ describe('destructive action confirmation contract', () => {
     it('uses the centralized hard-delete permission in both API and UI', () => {
         const route = source('src/app/api/tickets/[id]/route.ts');
         const page = source('src/app/(dashboard)/tickets/[id]/page.tsx');
-        expect(route).toContain('canDeleteTicket(session.user.id, session.user.role, ticket)');
-        expect(page).toContain("session?.user?.role === 'SUPER_ADMIN' || (isRequester && !ticket.assigneeId)");
+        expect(route).toContain('canDeleteTicket(session.user.id, session.user.role, { requesterId: ticket.requesterId, assignmentCount: ticket._count.assignments })');
+        expect(page).toContain("session?.user?.role === 'SUPER_ADMIN' || (isRequester && assignments.length === 0)");
     });
 });

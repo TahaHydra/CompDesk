@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PageHeader } from '@/components/layout/page-header';
 import { Inbox, Search, AlertTriangle, SlidersHorizontal, X } from 'lucide-react';
+import { AssigneeSummary } from '@/components/tickets/assignee-summary';
 
 const DEFAULT_LIMIT = 20;
 const PAGE_LIMITS = [10, 20, 50] as const;
@@ -239,11 +240,7 @@ export default function QueueInboxPage() {
                                                 {ticket.requester?.name ?? '—'}
                                             </td>
                                             <td className="px-4 py-3 hidden lg:table-cell">
-                                                {ticket.assignee ? (
-                                                    <span className="text-sm">{ticket.assignee.name}</span>
-                                                ) : (
-                                                    <span className="text-xs text-amber-600 font-medium">Unassigned</span>
-                                                )}
+                                                <AssigneeSummary assignees={ticket.assignees} className="text-sm" />
                                             </td>
                                             <td className="px-4 py-3">
                                                 <Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>

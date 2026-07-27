@@ -88,7 +88,9 @@ export async function GET(req: NextRequest) {
         if (requesterId && requesterId !== 'all') conditions.push({ requesterId });
         const assigneeId = searchParams.get('assigneeId');
         if (assigneeId && assigneeId !== 'all') {
-            conditions.push({ assigneeId: assigneeId === 'unassigned' ? null : assigneeId });
+            conditions.push(assigneeId === 'unassigned'
+                ? { assignments: { none: {} } }
+                : { assignments: { some: { userId: assigneeId } } });
         }
 
         const ticketId = searchParams.get('ticketId')?.trim();
@@ -108,7 +110,10 @@ export async function GET(req: NextRequest) {
                     queue: { select: { id: true, name: true } },
                     category: { select: { id: true, name: true } },
                     requester: { select: { id: true, name: true, email: true } },
-                    assignee: { select: { id: true, name: true, email: true } },
+                    assignments: {
+                        select: { user: { select: { id: true, name: true, email: true, role: true } } },
+                        orderBy: { assignedAt: 'asc' },
+                    },
                     tags: { include: { tag: true } },
                     _count: { select: { timeline: true } },
                 },
@@ -136,7 +141,7 @@ export async function GET(req: NextRequest) {
                     slaBreached = (now - new Date(ticket.createdAt).getTime()) / 60000 > resolutionMinutes;
                 }
             }
-            return { ...ticket, slaBreached };
+            return { ...ticket, assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
         });
 
         return NextResponse.json({
@@ -186,7 +191,7 @@ export async function POST(req: NextRequest) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && requesterId && idempotencyKey) {
             const existing = await prisma.ticket.findFirst({
                 where: { requesterId, idempotencyKey },
-                include: { queue: true, requester: true, assignee: true },
+                include: { queue: true, requester: true, assignments: { include: { user: true } } },
             });
             if (existing) return NextResponse.json(existing);
         }
