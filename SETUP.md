@@ -224,6 +224,17 @@ npm run db:seed
 ```
 
 The seed assigns the department administrator to all three demo departments, gives each department a matching default Ticket Template, and applies the Access & Permission template to relevant category overrides. Known legacy demo category aliases are renamed in place so referenced tickets retain history. Known misplaced zero-ticket demo categories are removed; referenced categories are archived instead.
+
+## Settings encryption key
+
+Generate the database-settings encryption key once after creating `.env`:
+
+```bash
+npm run generate:settings-key
+```
+
+The command is idempotent: it never prints or overwrites a valid existing key. Restart `npm start` after changing the key. Docker Compose passes the key into the application container. Never generate a new key on every build or startup because existing `enc:v1` SMTP passwords require the original key (or the documented previous rotation key) to decrypt.
+
 ## Upgrading an existing CompDesk database
 
 Never reset the database. Back it up, then use the production migration command:
