@@ -17,7 +17,7 @@ import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link a
 import { BrandingSettings } from '@/components/admin/branding-settings';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
-import type { DashboardLink } from '@/lib/dashboard-links';
+import { parseDashboardLinks, type DashboardLink } from '@/lib/dashboard-links';
 
 type SettingsMap = Record<string, string>;
 
@@ -339,118 +339,74 @@ function EntraSettingsTab() {
 function DashboardLinksTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const { data: settings } = useQuery<SettingsMap>({
-        queryKey: ['settings'],
-        queryFn: loadSettings,
-        throwOnError: true,
+    const { data: settings } = useQuery<SettingsMap>({ queryKey: ['settings'], queryFn: loadSettings, throwOnError: true });
+    const { data: queues = [] } = useQuery<Array<{ id: string; name: string }>>({
+        queryKey: ['queues', 'quick-links'],
+        queryFn: async () => { const response = await fetch('/api/queues?accessible=true'); if (!response.ok) throw new Error('Failed to load departments'); return response.json(); },
+    });
+    const { data: categories = [] } = useQuery<Array<{ id: string; name: string; queueId: string }>>({
+        queryKey: ['categories', 'quick-links'],
+        queryFn: async () => { const response = await fetch('/api/categories'); if (!response.ok) throw new Error('Failed to load categories'); return response.json(); },
     });
     const [links, setLinks] = useState<DashboardLink[]>([]);
     const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (!settings?.dashboard_links) return;
-        try {
-            const parsed = JSON.parse(settings.dashboard_links) as Array<Partial<DashboardLink>>;
-            setLinks(parsed.map((link) => ({ title: link.title ?? '', url: link.url ?? '', iconUrl: link.iconUrl ?? '' })));
-        } catch {
-            setLinks([]);
-        }
-    }, [settings]);
+    useEffect(() => { if (settings?.dashboard_links) setLinks(parseDashboardLinks(settings.dashboard_links)); }, [settings]);
 
     const saveMutation = useMutation({
         mutationFn: async () => {
-            const response = await fetch('/api/settings', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dashboard_links: links }),
-            });
+            const response = await fetch('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dashboard_links: links }) });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || 'Failed to save dashboard links');
         },
         onSuccess: async () => {
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ['settings'] }),
-                queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] }),
-            ]);
+            await Promise.all([queryClient.invalidateQueries({ queryKey: ['settings'] }), queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })]);
             toast({ title: 'Dashboard links saved' });
         },
         onError: (error: Error) => toast({ title: 'Links could not be saved', description: error.message, variant: 'destructive' }),
     });
 
-    const addLink = () => setLinks((current) => [...current, { title: '', url: '', iconUrl: '' }]);
+    const addLink = () => setLinks((current) => [...current, { type: 'external', title: '', url: '', iconUrl: '' }]);
     const removeLink = (index: number) => setLinks((current) => current.filter((_, itemIndex) => itemIndex !== index));
-    const updateLink = (index: number, field: keyof DashboardLink, value: string) => {
-        setLinks((current) => current.map((link, itemIndex) => itemIndex === index ? { ...link, [field]: value } : link));
-    };
+    const updateCommon = (index: number, values: Partial<Pick<DashboardLink, 'title' | 'iconUrl'>>) => setLinks((current) => current.map((link, itemIndex) => itemIndex === index ? { ...link, ...values } : link));
+    const changeType = (index: number, type: DashboardLink['type']) => setLinks((current) => current.map((link, itemIndex) => {
+        if (itemIndex !== index || link.type === type) return link;
+        return type === 'external'
+            ? { type: 'external', title: link.title, url: '', iconUrl: link.iconUrl }
+            : { type: 'ticket_form', title: link.title, queueId: '', iconUrl: link.iconUrl };
+    }));
     const uploadIcon = async (index: number, file?: File) => {
         if (!file) return;
         const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/x-icon', 'image/vnd.microsoft.icon']);
-        if (!allowedTypes.has(file.type)) {
-            toast({ title: 'Icon could not be uploaded', description: 'Choose a PNG, JPEG, WebP, GIF, or ICO image.', variant: 'destructive' });
-            return;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-            toast({ title: 'Icon could not be uploaded', description: 'The source image must be 5 MB or smaller.', variant: 'destructive' });
-            return;
-        }
+        if (!allowedTypes.has(file.type) || file.size > 5 * 1024 * 1024) { toast({ title: 'Icon could not be uploaded', description: 'Choose a supported image no larger than 5 MB.', variant: 'destructive' }); return; }
         setUploadingIndex(index);
         try {
-            const form = new FormData();
-            form.set('file', file);
+            const form = new FormData(); form.set('file', file);
             const response = await fetch('/api/settings/quick-link-icons', { method: 'POST', body: form });
-            const payload = await response.json() as { url?: string; width?: number; height?: number; size?: number; error?: string };
+            const payload = await response.json() as { url?: string; error?: string };
             if (!response.ok || !payload.url) throw new Error(payload.error || 'Icon upload failed');
-            updateLink(index, 'iconUrl', payload.url);
-            const dimensions = payload.width && payload.height ? `${payload.width}×${payload.height}` : 'compact';
-            const size = payload.size ? `${Math.max(1, Math.ceil(payload.size / 1024))} KB` : 'optimized';
-            toast({ title: 'Icon ready', description: `${dimensions} WebP · ${size}. Save links to publish it.` });
-        } catch (error) {
-            toast({ title: 'Icon could not be uploaded', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
-        } finally {
-            setUploadingIndex(null);
-        }
+            updateCommon(index, { iconUrl: payload.url });
+            toast({ title: 'Icon ready', description: 'Save links to publish it.' });
+        } catch (error) { toast({ title: 'Icon could not be uploaded', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }); }
+        finally { setUploadingIndex(null); }
     };
+    const invalid = links.some((link) => !link.title.trim() || (link.type === 'external' ? !link.url.trim() : !link.queueId || Boolean(link.categoryId && !categories.some((category) => category.id === link.categoryId && category.queueId === link.queueId))));
 
     return (
-        <Card className="border-0 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-base"><LinkIcon className="h-4 w-4" /> Custom Dashboard Links</CardTitle>
-                <Button variant="outline" size="sm" onClick={addLink} disabled={links.length >= 16} className="h-8 gap-1"><Plus className="h-3.5 w-3.5" /> Add Link</Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <p className="rounded-lg border bg-muted/35 p-3 text-sm text-muted-foreground">
-                    Add up to 16 useful resources. Upload a PNG, JPEG, WebP, GIF, or ICO image up to 5 MB. It is safely resized inside 128×128, keeps its proportions, and is stored as a compact WebP.
-                </p>
-                {!links.length ? (
-                    <div className="rounded-lg border border-dashed py-8 text-center text-muted-foreground">No custom links added yet.</div>
-                ) : (
-                    <div className="space-y-3">
-                        {links.map((link, index) => (
-                            <div key={index} className="grid gap-3 rounded-lg border bg-muted/25 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_220px_auto] lg:items-end">
-                                <div className="space-y-1"><Label className="text-xs text-muted-foreground">Title</Label><Input placeholder="Leave request" value={link.title} onChange={(event) => updateLink(index, 'title', event.target.value)} /></div>
-                                <div className="space-y-1"><Label className="text-xs text-muted-foreground">URL</Label><Input placeholder="https://intranet.example.com" value={link.url} onChange={(event) => updateLink(index, 'url', event.target.value)} /></div>
-                                <div className="space-y-1">
-                                    <Label className="text-xs text-muted-foreground">Small icon (optional)</Label>
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-card">
-                                            {link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}
-                                        </div>
-                                        <label className="inline-flex h-9 cursor-pointer items-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-accent">
-                                            {uploadingIndex === index ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
-                                            Upload
-                                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico" className="sr-only" disabled={uploadingIndex !== null} onChange={(event) => uploadIcon(index, event.target.files?.[0])} />
-                                        </label>
-                                        {link.iconUrl ? <Button type="button" variant="ghost" size="icon" className="h-9 w-9" onClick={() => updateLink(index, 'iconUrl', '')} aria-label="Remove icon"><X className="h-4 w-4" /></Button> : null}
-                                    </div>
-                                </div>
-                                <Button variant="ghost" size="icon" className="self-end text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeLink(index)} aria-label="Remove link"><X className="h-4 w-4" /></Button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                <div className="pt-2"><Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || uploadingIndex !== null || links.some((link) => !link.title.trim() || !link.url.trim())} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button></div>
-            </CardContent>
-        </Card>
+        <Card className="border-0 shadow-sm"><CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2 text-base"><LinkIcon className="h-4 w-4" /> Custom Dashboard Links</CardTitle><Button variant="outline" size="sm" onClick={addLink} disabled={links.length >= 16} className="h-8 gap-1"><Plus className="h-3.5 w-3.5" /> Add Link</Button></CardHeader>
+            <CardContent className="space-y-4"><p className="rounded-lg border bg-muted/35 p-3 text-sm text-muted-foreground">External resources open in a new tab. Ticket-form links preselect routing and always use the current server-resolved form template.</p>
+                {!links.length ? <div className="rounded-lg border border-dashed py-8 text-center text-muted-foreground">No custom links added yet.</div> : <div className="space-y-3">{links.map((link, index) => {
+                    const departmentCategories = categories.filter((category) => link.type === 'ticket_form' && category.queueId === link.queueId);
+                    return <div key={index} className="grid gap-3 rounded-lg border bg-muted/25 p-3 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,2fr)_220px_auto] lg:items-end">
+                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Type</Label><Select value={link.type} onValueChange={(value) => changeType(index, value as DashboardLink['type'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="external">External resource</SelectItem><SelectItem value="ticket_form">Ticket form</SelectItem></SelectContent></Select></div>
+                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Title</Label><Input value={link.title} onChange={(event) => updateCommon(index, { title: event.target.value })} /></div>
+                        {link.type === 'external' ? <div className="space-y-1"><Label className="text-xs text-muted-foreground">URL</Label><Input placeholder="https://intranet.example.com" value={link.url} onChange={(event) => setLinks((current) => current.map((item, itemIndex) => itemIndex === index && item.type === 'external' ? { ...item, url: event.target.value } : item))} /></div> : <div className="grid gap-2 sm:grid-cols-2"><div className="space-y-1"><Label className="text-xs text-muted-foreground">Department</Label><Select value={link.queueId || undefined} onValueChange={(queueId) => setLinks((current) => current.map((item, itemIndex) => itemIndex === index && item.type === 'ticket_form' ? { ...item, queueId, categoryId: undefined } : item))}><SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{queues.map((queue) => <SelectItem key={queue.id} value={queue.id}>{queue.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label className="text-xs text-muted-foreground">Category (optional)</Label><Select value={link.categoryId ?? 'none'} disabled={!link.queueId} onValueChange={(categoryId) => setLinks((current) => current.map((item, itemIndex) => itemIndex === index && item.type === 'ticket_form' ? { ...item, categoryId: categoryId === 'none' ? undefined : categoryId } : item))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Department default</SelectItem>{departmentCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div></div>}
+                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Icon (optional)</Label><div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border bg-card">{link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}</div><label className="inline-flex h-9 cursor-pointer items-center rounded-md border bg-background px-3 text-xs font-medium">{uploadingIndex === index ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}Upload<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico" className="sr-only" disabled={uploadingIndex !== null} onChange={(event) => uploadIcon(index, event.target.files?.[0])} /></label>{link.iconUrl ? <Button type="button" variant="ghost" size="icon" onClick={() => updateCommon(index, { iconUrl: '' })}><X className="h-4 w-4" /></Button> : null}</div></div>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeLink(index)} aria-label="Remove link"><X className="h-4 w-4" /></Button>
+                    </div>;
+                })}</div>}
+                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || uploadingIndex !== null || invalid} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button>
+            </CardContent></Card>
     );
 }
 function SecuritySettingsTab() {

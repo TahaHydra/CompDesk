@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, Loader2, Route, Send, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -46,16 +46,22 @@ function compatibleValues(current: Record<string, unknown>, previousFields: Tick
 
 export default function NewTicketPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { t } = useLanguage();
     const idempotencyKey = useRef(crypto.randomUUID());
     const previousFields = useRef<TicketFormFieldDefinition[]>([]);
+    const routingApplied = useRef(false);
+    const categoryApplied = useRef(false);
     const [queueId, setQueueId] = useState('');
     const [categoryId, setCategoryId] = useState('');
     const [values, setValues] = useState<Record<string, unknown>>({});
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [filesUploading, setFilesUploading] = useState(false);
+    const [routingMessage, setRoutingMessage] = useState('');
+    const requestedQueueId = searchParams.get('queueId')?.trim() ?? '';
+    const requestedCategoryId = searchParams.get('categoryId')?.trim() ?? '';
 
     const departmentsQuery = useQuery<Department[]>({
         queryKey: ['queues', 'ticket-routing'],
@@ -65,6 +71,31 @@ export default function NewTicketPage() {
         queryKey: ['categories', queueId], enabled: Boolean(queueId),
         queryFn: async () => { const response = await fetch(`/api/categories?queueId=${encodeURIComponent(queueId)}`); if (!response.ok) throw new Error('Failed to load categories'); return response.json(); },
     });
+    useEffect(() => {
+        if (routingApplied.current || !departmentsQuery.data) return;
+        routingApplied.current = true;
+        if (!requestedQueueId) {
+            if (requestedCategoryId) setRoutingMessage('A category preselection requires a valid department. Please choose the routing below.');
+            return;
+        }
+        const department = departmentsQuery.data.find((item) => item.id === requestedQueueId);
+        if (!department) {
+            setRoutingMessage('The requested department is inactive or not available to your account. Please choose an authorized department.');
+            return;
+        }
+        setQueueId(department.id);
+    }, [departmentsQuery.data, requestedCategoryId, requestedQueueId]);
+
+    useEffect(() => {
+        if (categoryApplied.current || !routingApplied.current || !requestedCategoryId || !queueId || !categoriesQuery.data) return;
+        categoryApplied.current = true;
+        const category = categoriesQuery.data.find((item) => item.id === requestedCategoryId);
+        if (!category) {
+            setRoutingMessage('The requested category is inactive or does not belong to the selected department. The department remains selected; choose a valid category.');
+            return;
+        }
+        setCategoryId(category.id);
+    }, [categoriesQuery.data, queueId, requestedCategoryId]);
     const tagsQuery = useQuery<TagOption[]>({
         queryKey: ['tags'], queryFn: async () => { const response = await fetch('/api/tags'); return response.ok ? response.json() : []; },
     });
@@ -149,6 +180,7 @@ export default function NewTicketPage() {
                 <div><h1 className="text-3xl font-bold tracking-tight">{t('New Ticket')}</h1><p className="mt-1 text-muted-foreground">{t('Choose where the request belongs, then complete the resolved form.')}</p></div>
             </div>
 
+            {routingMessage ? <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{routingMessage}</div> : null}
             <Card className="border shadow-sm">
                 <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Route className="h-5 w-5 text-primary" />{t('1. Route the request')}</CardTitle></CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">

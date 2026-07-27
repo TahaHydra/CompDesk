@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
-import { dashboardLinksSchema, parseDashboardLinks } from '@/lib/dashboard-links';
+import { normalizeDashboardLinks, parseDashboardLinks } from '@/lib/dashboard-links';
 import logger from '@/lib/logger';
 import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
 import { prisma } from '@/lib/prisma';
@@ -72,12 +72,27 @@ export async function PATCH(request: Request) {
                     candidate = candidate.map((link) => {
                         if (!link || typeof link !== 'object' || Array.isArray(link)) return link;
                         const item = link as Record<string, unknown>;
+                        const type = item.type ?? 'external';
+                        if (type === 'ticket_form') return { ...item, type, iconUrl: item.iconUrl ?? '' };
                         const url = typeof item.url === 'string' && !/^https?:\/\//i.test(item.url) ? `https://${item.url}` : item.url;
-                        return { ...item, url, iconUrl: item.iconUrl ?? '' };
+                        return { ...item, type, url, iconUrl: item.iconUrl ?? '' };
                     });
                 }
-                const parsed = dashboardLinksSchema.safeParse(candidate);
+                const parsed = normalizeDashboardLinks(candidate);
                 if (!parsed.success) return NextResponse.json({ error: 'Dashboard link validation failed', details: parsed.error.flatten() }, { status: 400 });
+                for (const link of parsed.data) {
+                    if (link.type !== 'ticket_form') continue;
+                    const queue = await prisma.queue.findFirst({ where: { id: link.queueId, isActive: true }, select: { id: true } });
+                    const category = link.categoryId
+                        ? await prisma.category.findFirst({
+                            where: { id: link.categoryId, queueId: link.queueId, isActive: true, archivedAt: null },
+                            select: { id: true },
+                        })
+                        : null;
+                    if (!queue || (link.categoryId && !category)) {
+                        return NextResponse.json({ error: 'Ticket-form links must use an active department and a category from that department' }, { status: 400 });
+                    }
+                }
                 const previous = await prisma.appSetting.findUnique({ where: { key: 'dashboard_links' } });
                 previousIcons = new Set(parseDashboardLinks(previous?.value).map((link) => link.iconUrl).filter(Boolean));
                 nextIcons = new Set(parsed.data.map((link) => link.iconUrl).filter(Boolean));
