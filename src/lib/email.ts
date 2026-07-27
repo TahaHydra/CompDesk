@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getBrandingConfig, type BrandingConfig } from '@/lib/branding';
 import { auditLog } from '@/lib/audit';
 import { classifyNetworkError } from '@/lib/network-error';
-import { decryptSettingSecret } from '@/lib/settings-secret';
+import { decryptSettingSecret, getEnvironmentSmtpPassword } from '@/lib/settings-secret';
 import { isValidSmtpFrom, validateSmtpSecurityCombination } from '@/lib/settings-validation';
 
 interface EmailOptions {
@@ -48,13 +48,14 @@ export async function getSmtpConfig(branding: BrandingConfig): Promise<SmtpConfi
     const secure = booleanSetting(config.smtp_secure ?? process.env.SMTP_SECURE, false);
     const requireTLS = booleanSetting(config.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS, !secure);
     const storedPassword = config.smtp_password ? decryptSettingSecret(config.smtp_password) : undefined;
+    const environmentPassword = getEnvironmentSmtpPassword();
     return {
         host: config.smtp_host || process.env.SMTP_HOST || 'smtp.office365.com',
         port: Number.parseInt(config.smtp_port || process.env.SMTP_PORT || '587', 10),
         secure,
         requireTLS,
         user: config.smtp_user || process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || storedPassword,
+        pass: environmentPassword || storedPassword,
         from: config.smtp_from || process.env.SMTP_FROM || '',
     };
 }

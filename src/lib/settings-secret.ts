@@ -3,6 +3,19 @@ import crypto from 'crypto';
 const PREFIX = 'enc:v1:';
 export class SettingsSecretError extends Error {}
 
+const DOCUMENTED_PLACEHOLDER = /^(?:your-smtp-password|change-me|replace-with|example-secret)$/i;
+
+export function getEnvironmentSmtpPassword(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const value = env.SMTP_PASS || env.SMTP_PASSWORD;
+    if (!value?.trim() || DOCUMENTED_PLACEHOLDER.test(value.trim())) return undefined;
+    return value;
+}
+
+export function hasIgnoredEnvironmentSmtpPlaceholder(env: NodeJS.ProcessEnv = process.env): boolean {
+    const value = env.SMTP_PASS || env.SMTP_PASSWORD;
+    return Boolean(value?.trim() && DOCUMENTED_PLACEHOLDER.test(value.trim()));
+}
+
 function decodeKey(value: string | undefined): Buffer | null {
     if (!value?.trim()) return null;
     const input = value.trim();
