@@ -39,7 +39,10 @@ export async function GET(req: NextRequest) {
                 queue: { select: { id: true, name: true } },
                 category: { select: { id: true, name: true } },
                 requester: { select: { name: true, email: true } },
-                assignee: { select: { name: true, email: true } },
+                assignments: {
+                    select: { user: { select: { id: true, name: true, email: true, role: true } } },
+                    orderBy: { assignedAt: 'asc' },
+                },
             },
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,

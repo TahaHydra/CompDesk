@@ -1,4 +1,5 @@
 import {
+    AssignmentSource,
     BuiltInTicketField,
     FormFieldType,
     Prisma,
@@ -495,7 +496,7 @@ async function main() {
             description: 'The VPN connects for a few seconds, then disconnects with error 812.',
             status: TicketStatus.OPEN, priority: Priority.HIGH, queueId: itQueue.id,
             categoryId: categories.get(`${itQueue.id}:Network & connectivity`)!.id,
-            requesterId: user1.id, assigneeId: agent1.id, template: itTemplate,
+            requesterId: user1.id, assigneeUserId: agent1.id, template: itTemplate,
             values: { title: 'VPN disconnects after authentication', description: 'The VPN connects for a few seconds, then disconnects with error 812.', priority: 'HIGH', device_type: 'Laptop', work_location: 'Remote', business_impact: 'One person', error_message: 'Error 812 after authentication.' },
         },
         {
@@ -503,7 +504,7 @@ async function main() {
             description: 'Read-only access is required for monthly management reporting.',
             status: TicketStatus.NEW, priority: Priority.NORMAL, queueId: itQueue.id,
             categoryId: categories.get(`${itQueue.id}:Access & permissions`)!.id,
-            requesterId: user2.id, assigneeId: null, template: accessTemplate,
+            requesterId: user2.id, assigneeUserId: null, template: accessTemplate,
             values: { title: 'Access to Finance reporting workspace', description: 'Read-only access is required for monthly management reporting.', priority: 'NORMAL', application_name: 'Finance reporting workspace', access_action: 'Grant access', access_level: 'Read-only', approver: 'Nadia Admin', business_justification: 'Required to prepare the monthly reporting pack.' },
         },
         {
@@ -511,7 +512,7 @@ async function main() {
             description: 'Please provide an employment certificate showing my position and start date.',
             status: TicketStatus.PENDING_AGENT, priority: Priority.NORMAL, queueId: hrQueue.id,
             categoryId: categories.get(`${hrQueue.id}:Employee documents`)!.id,
-            requesterId: user1.id, assigneeId: agent2.id, template: hrTemplate,
+            requesterId: user1.id, assigneeUserId: agent2.id, template: hrTemplate,
             values: { title: 'Employment certificate for rental application', description: 'Please provide an employment certificate showing my position and start date.', priority: 'NORMAL', hr_request_type: 'Employee document', confidential: false },
         },
         {
@@ -519,7 +520,7 @@ async function main() {
             description: 'The approved report has not yet appeared in this month’s payment.',
             status: TicketStatus.PENDING_AGENT, priority: Priority.NORMAL, queueId: financeQueue.id,
             categoryId: categories.get(`${financeQueue.id}:Expenses & reimbursements`)!.id,
-            requesterId: user2.id, assigneeId: agent2.id, template: financeTemplate,
+            requesterId: user2.id, assigneeUserId: agent2.id, template: financeTemplate,
             values: { title: 'Expense report ER-1048 reimbursement', description: 'The approved report has not yet appeared in this month’s payment.', priority: 'NORMAL', finance_request_type: 'Expense reimbursement', reference_number: 'ER-1048', amount: '284.50', currency: 'EUR', cost_center: 'CONSULTING' },
         },
         {
@@ -527,7 +528,7 @@ async function main() {
             description: 'The microphone in meeting room Atlas is not available in Teams.',
             status: TicketStatus.RESOLVED, priority: Priority.HIGH, queueId: itQueue.id,
             categoryId: categories.get(`${itQueue.id}:Hardware & devices`)!.id,
-            requesterId: user1.id, assigneeId: agent1.id, template: itTemplate,
+            requesterId: user1.id, assigneeUserId: agent1.id, template: itTemplate,
             values: { title: 'Teams meeting room microphone not detected', description: 'The microphone in meeting room Atlas is not available in Teams.', priority: 'HIGH', device_type: 'Other', work_location: 'Paris office - Atlas', business_impact: 'Several people', error_message: 'USB conference device was not listed in Teams.' },
         },
     ];
@@ -538,12 +539,24 @@ async function main() {
             create: {
                 key: item.key, title: item.title, description: item.description, status: item.status,
                 priority: item.priority, queueId: item.queueId, categoryId: item.categoryId,
-                requesterId: item.requesterId, assigneeId: item.assigneeId,
+                requesterId: item.requesterId,
                 resolvedTemplateId: item.template.id, resolvedTemplateVersion: item.template.version,
                 formSchemaSnapshot: snapshot(item.template), submittedFormValues: item.values,
                 resolvedAt: item.status === TicketStatus.RESOLVED ? new Date() : null,
             },
         });
+        if (item.assigneeUserId) {
+            await prisma.ticketAssignee.upsert({
+                where: { ticketId_userId: { ticketId: ticket.id, userId: item.assigneeUserId } },
+                update: {},
+                create: {
+                    ticketId: ticket.id,
+                    userId: item.assigneeUserId,
+                    assignedById: item.assigneeUserId,
+                    source: AssignmentSource.AUTOMATION,
+                },
+            });
+        }
         await prisma.ticketWatcher.upsert({
             where: { ticketId_userId: { ticketId: ticket.id, userId: item.requesterId } },
             update: {}, create: { ticketId: ticket.id, userId: item.requesterId },

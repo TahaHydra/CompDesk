@@ -299,12 +299,14 @@ export async function DELETE(req: NextRequest) {
             }
         }
 
-        // Check if user has tickets — if so, deactivate instead of hard delete
-        const ticketCount = await prisma.ticket.count({
-            where: { OR: [{ requesterId: id }, { assigneeId: id }] },
-        });
+        // Restrictive assignment history and requested tickets require deactivation.
+        const [ticketCount, assignmentHistoryCount] = await Promise.all([
+            prisma.ticket.count({ where: { requesterId: id } }),
+            prisma.ticketAssignee.count({ where: { OR: [{ userId: id }, { assignedById: id }] } }),
+        ]);
+        const dependencyCount = ticketCount + assignmentHistoryCount;
 
-        if (ticketCount > 0) {
+        if (dependencyCount > 0) {
             // Soft delete — deactivate the user
             await prisma.user.update({
                 where: { id },
@@ -317,14 +319,14 @@ export async function DELETE(req: NextRequest) {
                 action: 'user.deactivated',
                 entity: 'user',
                 entityId: id,
-                metadata: { reason: 'has_tickets', ticketCount },
+                metadata: { reason: 'has_ticket_or_assignment_history', ticketCount, assignmentHistoryCount },
                 ipAddress: ip,
             });
 
             return NextResponse.json({
                 success: true,
                 deactivated: true,
-                message: `User deactivated (has ${ticketCount} associated tickets). Use edit to reactivate.`,
+                message: `User deactivated (has ${dependencyCount} ticket or assignment-history dependencies). Use edit to reactivate.`,
             });
         }
 

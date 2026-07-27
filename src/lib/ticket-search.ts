@@ -24,16 +24,9 @@ export function ticketScopeLabel(role: Role, view: TicketView): string {
     return role === 'AGENT' ? 'All tickets in accessible departments' : 'All tickets in accessible or administered departments';
 }
 
-export function buildTicketVisibilityWhere(
-    userId: string,
-    role: Role,
-    view: TicketView,
-    accessibleQueueIds: string[] | null
-): Prisma.TicketWhereInput {
+export function buildTicketVisibilityWhere(userId: string, role: Role, view: TicketView, accessibleQueueIds: string[] | null): Prisma.TicketWhereInput {
     if (role === 'USER') return { requesterId: userId };
-    if (view === 'my') {
-        return { OR: [{ assigneeId: userId }, { requesterId: userId }] };
-    }
+    if (view === 'my') return { OR: [{ assignments: { some: { userId } } }, { requesterId: userId }] };
     if (role === 'SUPER_ADMIN') return {};
     const queueIds = accessibleQueueIds ?? [];
     return { queueId: { in: queueIds.length > 0 ? queueIds : ['__none__'] } };
@@ -49,9 +42,9 @@ export function buildTicketTextSearch(search: string): Prisma.TicketWhereInput {
             { requesterId: search },
             { requester: { is: { name: { contains: search, mode: 'insensitive' } } } },
             { requester: { is: { email: { contains: search, mode: 'insensitive' } } } },
-            { assigneeId: search },
-            { assignee: { is: { name: { contains: search, mode: 'insensitive' } } } },
-            { assignee: { is: { email: { contains: search, mode: 'insensitive' } } } },
+            { assignments: { some: { userId: search } } },
+            { assignments: { some: { user: { name: { contains: search, mode: 'insensitive' } } } } },
+            { assignments: { some: { user: { email: { contains: search, mode: 'insensitive' } } } } },
             { tags: { some: { tag: { name: { contains: search, mode: 'insensitive' } } } } },
             { category: { is: { name: { contains: search, mode: 'insensitive' } } } },
             { queue: { is: { name: { contains: search, mode: 'insensitive' } } } },

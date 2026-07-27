@@ -33,7 +33,13 @@ export async function POST(
             return NextResponse.json({ error: 'Only agents can create internal notes' }, { status: 403 });
         }
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: {
+                requester: { select: { id: true, email: true } },
+                assignments: { include: { user: { select: { id: true, email: true } } } },
+            },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
@@ -69,7 +75,13 @@ export async function POST(
                 where: { ticketId: id, userId: { not: session.user.id } },
                 include: { user: { select: { email: true } } },
             });
-            const emails = watchers.map((w) => w.user.email).filter(Boolean);
+            const watcherEmails = watchers.map((watcher) => watcher.user.email).filter(Boolean);
+            const assigneeEmails = ticket.assignments
+                .filter((assignment) => assignment.user.id !== session.user.id)
+                .map((assignment) => assignment.user.email)
+                .filter(Boolean);
+            const requesterEmails = ticket.requester.id === session.user.id ? [] : [ticket.requester.email];
+            const emails = [...new Set([...watcherEmails, ...assigneeEmails, ...requesterEmails])];
             if (emails.length > 0) {
                 void sendNewCommentEmail(emails, ticket.key, ticket.title, content.substring(0, 200));
             }
@@ -109,7 +121,13 @@ export async function PATCH(
             return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
         }
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: {
+                requester: { select: { id: true, email: true } },
+                assignments: { include: { user: { select: { id: true, email: true } } } },
+            },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
@@ -192,7 +210,13 @@ export async function DELETE(
             return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
         }
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: {
+                requester: { select: { id: true, email: true } },
+                assignments: { include: { user: { select: { id: true, email: true } } } },
+            },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }

@@ -162,7 +162,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
     if (input.idempotencyKey) {
         const existing = await prisma.ticket.findFirst({
             where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
-            include: { queue: true, requester: true, assignee: true },
+            include: { queue: true, requester: true, assignments: { include: { user: true } } },
         });
         if (existing) return { ticket: existing, replayed: true };
     }
@@ -221,7 +221,6 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     queueId: input.queueId,
                     categoryId: input.categoryId,
                     requesterId: requester.id,
-                    assigneeId: null,
                     dueAt,
                     resolvedTemplateId: resolved.template.id,
                     resolvedTemplateVersion: resolved.template.version,
@@ -271,7 +270,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
 
             return tx.ticket.findUniqueOrThrow({
                 where: { id: ticketId },
-                include: { queue: true, requester: true, assignee: true },
+                include: { queue: true, requester: true, assignments: { include: { user: true } } },
             });
         }, { maxWait: 5_000, timeout: 15_000 });
     } catch (error) {
@@ -279,7 +278,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         if (input.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
             const existing = await prisma.ticket.findFirst({
                 where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
-                include: { queue: true, requester: true, assignee: true },
+                include: { queue: true, requester: true, assignments: { include: { user: true } } },
             });
             if (existing) return { ticket: existing, replayed: true };
         }

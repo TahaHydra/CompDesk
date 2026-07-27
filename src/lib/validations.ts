@@ -30,7 +30,6 @@ export const updateTicketSchema = z.object({
     priority: z.nativeEnum(Priority).optional(),
     severity: z.nativeEnum(Severity).nullable().optional(),
     categoryId: z.string().uuid().nullable().optional(),
-    assigneeId: z.string().uuid().nullable().optional(),
     queueId: z.string().uuid().optional(),
     tagIds: z.array(z.string().uuid()).optional(),
 });

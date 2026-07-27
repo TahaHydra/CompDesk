@@ -65,7 +65,7 @@ describe('Phase 2 ticket authorization and search', () => {
 
     it('searches requester, assignee, exact IDs, tags, categories, and departments', () => {
         const serialized = JSON.stringify(buildTicketTextSearch('needle'));
-        for (const field of ['requesterId', 'assigneeId', 'requester', 'assignee', 'email', 'tags', 'category', 'queue']) {
+        for (const field of ['requesterId', 'assignments', 'userId', 'requester', 'user', 'email', 'tags', 'category', 'queue']) {
             expect(serialized).toContain(`"${field}"`);
         }
     });
@@ -76,7 +76,7 @@ describe('Phase 2 ticket authorization and search', () => {
         const response = await getTickets(request('view=queue&queueId=queue-a&categoryId=category-a&assigneeId=unassigned&tagIds=tag-a,tag-b'));
         expect(response.status).toBe(200);
         const serialized = JSON.stringify(lastWhere());
-        expect(serialized).toContain('"assigneeId":null');
+        expect(serialized).toContain('"assignments":{"none":{}}');
         expect(serialized).toContain('"tagId":{"in":["tag-a","tag-b"]}');
         expect(serialized).toContain('"categoryId":"category-a"');
     });
