@@ -25,6 +25,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
+import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
 
 function formatFileSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
@@ -669,18 +670,15 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                                 <div className="space-y-2">
                                     <label className="text-xs font-medium text-muted-foreground">Assignee</label>
-                                    <Select
+                                    <UserSearchCombobox
+                                        kind="assignee"
+                                        queueId={ticket.queueId}
                                         value={ticket.assigneeId ?? 'unassigned'}
-                                        onValueChange={(v) => updateTicket.mutate({ assigneeId: v === 'unassigned' ? null : v })}
-                                    >
-                                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                                            {(users ?? []).filter((u: any) => u.role !== 'USER').map((u: any) => (
-                                                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                        selectedUser={ticket.assignee}
+                                        allowUnassigned
+                                        disabled={updateTicket.isPending}
+                                        onValueChange={(value) => updateTicket.mutate({ assigneeId: value === 'unassigned' ? null : value })}
+                                    />
                                 </div>
 
                                 <div className="space-y-2">
