@@ -77,10 +77,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [escalateOpen, setEscalateOpen] = useState(false);
     const [escalateReason, setEscalateReason] = useState('');
     const [escalateToId, setEscalateToId] = useState('');
+    const [assignmentCandidateId, setAssignmentCandidateId] = useState('');
     const [editingEventId, setEditingEventId] = useState<string | null>(null);
     const [editContent, setEditContent] = useState('');
     const [timelineOpen, setTimelineOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const assignmentRequestLock = useRef(false);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
     const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
@@ -136,6 +138,38 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         },
     });
 
+    const assignmentMutation = useMutation({
+        mutationFn: async ({ operation, userId }: { operation: 'add' | 'remove' | 'claim' | 'unclaim'; userId?: string }) => {
+            const claim = operation === 'claim' || operation === 'unclaim';
+            const method = operation === 'remove' || operation === 'unclaim' ? 'DELETE' : 'POST';
+            const endpoint = claim
+                ? `/api/tickets/${id}/assignees/claim`
+                : `/api/tickets/${id}/assignees${method === 'DELETE' ? `?userId=${encodeURIComponent(userId ?? '')}` : ''}`;
+            const res = await fetch(endpoint, {
+                method,
+                headers: method === 'POST' && !claim ? { 'Content-Type': 'application/json' } : undefined,
+                body: method === 'POST' && !claim ? JSON.stringify({ userId }) : undefined,
+            });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || 'Assignment operation failed');
+            return { payload, operation };
+        },
+        onSuccess: ({ payload, operation }) => {
+            setAssignmentCandidateId('');
+            queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+            queryClient.invalidateQueries({ queryKey: ['tickets'] });
+            queryClient.invalidateQueries({ queryKey: ['queue-tickets'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            toast({ title: payload.alreadyAssigned ? 'Already assigned' : operation === 'remove' || operation === 'unclaim' ? 'Assignee removed' : 'Assignee added' });
+        },
+        onError: (error: Error) => toast({ title: 'Assignment failed', description: error.message, variant: 'destructive' }),
+        onSettled: () => { assignmentRequestLock.current = false; },
+    });
+    const runAssignment = (operation: 'add' | 'remove' | 'claim' | 'unclaim', userId?: string) => {
+        if (assignmentRequestLock.current) return;
+        assignmentRequestLock.current = true;
+        assignmentMutation.mutate({ operation, userId });
+    };
     const addComment = useMutation({
         mutationFn: async () => {
             const res = await fetch(`/api/tickets/${id}/comments`, {
@@ -323,7 +357,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const imageAttachments = (ticket.attachments ?? []).filter((a: any) => isImageType(a.mimetype));
     const fileAttachments = (ticket.attachments ?? []).filter((a: any) => !isImageType(a.mimetype));
     const isRequester = ticket.requesterId === session?.user?.id;
-    const canDeleteTicket = session?.user?.role === 'SUPER_ADMIN' || (isRequester && !ticket.assigneeId);
+    const assignments = ticket.assignments ?? [];
+    const assignedToCurrentUser = assignments.some((assignment: any) => assignment.userId === session?.user?.id);
+    const canDeleteTicket = session?.user?.role === 'SUPER_ADMIN' || (isRequester && assignments.length === 0);
     const conversationEvents = (ticket.timeline ?? []).filter((event: any) => isConversationEvent(event));
     const timelineEvents = (ticket.timeline ?? []).filter((event: any) => !isConversationEvent(event));
 
@@ -446,16 +482,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 <div className="flex shrink-0 flex-wrap items-center gap-2 pl-11 sm:pl-0">
-                    {/* Claim button for agents when unassigned */}
-                    {isAgent && !ticket.assigneeId && (
-                        <Button
-                            onClick={() => updateTicket.mutate({ assigneeId: session?.user?.id })}
-                            className="gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg"
-                            disabled={updateTicket.isPending}
-                        >
+                    {isAgent && !assignedToCurrentUser ? (
+                        <Button onClick={() => runAssignment('claim')} className="gap-2 bg-emerald-600 shadow-lg hover:bg-emerald-700" disabled={assignmentMutation.isPending}>
                             <Hand className="h-4 w-4" /> Claim Ticket
                         </Button>
-                    )}
+                    ) : null}
+                    {isAgent && assignedToCurrentUser ? (
+                        <Button variant="outline" onClick={() => runAssignment('unclaim')} className="gap-2" disabled={assignmentMutation.isPending}>
+                            <Check className="h-4 w-4" /> Assigned · Unclaim myself
+                        </Button>
+                    ) : null}
 
                     {/* Super administrators can delete any ticket; requesters can withdraw unassigned tickets. */}
                     {canDeleteTicket && (
@@ -649,16 +685,34 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     </Select>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground">Assignee</label>
+                                <div className="space-y-3">
+                                    <label className="text-xs font-medium text-muted-foreground">Assignees</label>
+                                    {assignments.length === 0 ? <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Unassigned</p> : (
+                                        <div className="space-y-2">
+                                            {assignments.map((assignment: any) => (
+                                                <div key={assignment.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-medium">{assignment.user.name}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{assignment.user.email} · {assignment.user.role}</p>
+                                                    </div>
+                                                    <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${assignment.user.name}`} disabled={assignmentMutation.isPending} onClick={() => runAssignment('remove', assignment.userId)}>
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                     <UserSearchCombobox
                                         kind="assignee"
                                         queueId={ticket.queueId}
-                                        value={ticket.assigneeId ?? 'unassigned'}
-                                        selectedUser={ticket.assignee}
-                                        allowUnassigned
-                                        disabled={updateTicket.isPending}
-                                        onValueChange={(value) => updateTicket.mutate({ assigneeId: value === 'unassigned' ? null : value })}
+                                        value={assignmentCandidateId}
+                                        placeholder="Search to add an assignee"
+                                        disabled={assignmentMutation.isPending}
+                                        onValueChange={(value) => {
+                                            if (!value || assignments.some((assignment: any) => assignment.userId === value) || assignmentMutation.isPending) return;
+                                            setAssignmentCandidateId(value);
+                                            runAssignment('add', value);
+                                        }}
                                     />
                                 </div>
 
@@ -801,8 +855,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 <span className="font-medium">{ticket.requester?.name}</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Assignee</span>
-                                <span className="font-medium">{ticket.assignee?.name ?? 'Unassigned'}</span>
+                                <span className="text-muted-foreground">Assignees</span>
+                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : 'Unassigned'}</span>
                             </div>
                             {ticket.historicalForm ? (
                                 <div className="flex justify-between gap-4 text-sm">

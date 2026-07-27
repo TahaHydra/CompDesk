@@ -38,9 +38,9 @@ export default async function ProfilePage() {
 
     const [ticketsSubmitted, ticketsResolved, ticketsEscalated, ticketsCurrentlyAssigned] = await Promise.all([
         prisma.ticket.count({ where: { requesterId: user.id } }),
-        prisma.ticket.count({ where: { assigneeId: user.id, status: { in: ['CLOSED', 'RESOLVED'] } } }),
+        prisma.ticket.count({ where: { assignments: { some: { userId: user.id } }, status: { in: ['CLOSED', 'RESOLVED'] } } }),
         prisma.ticket.count({ where: { escalatedById: user.id } }),
-        prisma.ticket.count({ where: { assigneeId: user.id, status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
+        prisma.ticket.count({ where: { assignments: { some: { userId: user.id } }, status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
     ]);
 
     const isAgentRole = ['AGENT', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);

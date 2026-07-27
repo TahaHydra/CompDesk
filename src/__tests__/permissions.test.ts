@@ -119,7 +119,7 @@ describe('permissions', () => {
     it('lets super administrators delete any ticket, including assigned tickets', () => {
         expect(canDeleteTicket('super-1', 'SUPER_ADMIN', {
             requesterId: 'user-1',
-            assigneeId: 'agent-1',
+            assignmentCount: 1,
         })).toBe(true);
     });
 
@@ -127,7 +127,7 @@ describe('permissions', () => {
         for (const role of ['USER', 'AGENT', 'ADMIN'] as const) {
             expect(canDeleteTicket('requester-1', role, {
                 requesterId: 'requester-1',
-                assigneeId: null,
+                assignmentCount: 0,
             })).toBe(true);
         }
     });
@@ -135,15 +135,15 @@ describe('permissions', () => {
     it('blocks non-super-admin deletion of assigned or other requesters tickets', () => {
         expect(canDeleteTicket('user-1', 'USER', {
             requesterId: 'user-1',
-            assigneeId: 'agent-1',
+            assignmentCount: 1,
         })).toBe(false);
         expect(canDeleteTicket('admin-1', 'ADMIN', {
             requesterId: 'user-1',
-            assigneeId: null,
+            assignmentCount: 0,
         })).toBe(false);
         expect(canDeleteTicket('agent-1', 'AGENT', {
             requesterId: 'user-1',
-            assigneeId: null,
+            assignmentCount: 0,
         })).toBe(false);
     });
 });

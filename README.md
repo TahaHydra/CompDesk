@@ -407,3 +407,8 @@ Rotate the encryption key without downtime:
 4. Verify SMTP, then remove `APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS` and restart.
 
 Never derive this key from `AUTH_SECRET`. If the settings database is unavailable, login policy uses the last validated in-process value, then `LOGIN_LOCAL_ENABLED` / `LOGIN_MICROSOFT_ENABLED`. With neither available, Microsoft login is disabled and local credentials are retained as the documented break-glass path. Deployments that deliberately disable local login must set `LOGIN_LOCAL_ENABLED=false`.
+## Multiple ticket assignees
+
+Tickets use `ticket_assignees` as the only assignment source of truth. Assignees are equal co-assignees; claiming adds the current agent without replacing anyone, duplicate claims are idempotent, and watchers remain separate. `POST /api/tickets/:id/assignees` adds an eligible user, `DELETE /api/tickets/:id/assignees?userId=...` removes one, and the `/assignees/claim` endpoint claims or unclaims the current actor. Every mutation revalidates the actor and candidate against the ticket department on the server.
+
+The `20260727130000_add_multiple_ticket_assignees` migration must be applied during a maintenance window. It creates and indexes the join table, backfills every legacy `tickets.assignee_id`, aborts if verification fails, and only then drops the legacy column. Take a database backup first. A rollback requires recreating `assignee_id`, selecting one deterministic assignment per ticket (for example the earliest `assigned_at`), verifying the copy, and then removing the join model; this necessarily discards additional co-assignees, so restore the backup when those assignments must be preserved. Never use a production reset for rollback.
