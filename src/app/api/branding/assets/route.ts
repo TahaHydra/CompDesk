@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
-import path from 'path';
-import { mkdir, unlink, writeFile } from 'fs/promises';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import {
@@ -12,32 +9,17 @@ import {
     type BrandingConfig,
 } from '@/lib/branding';
 import logger from '@/lib/logger';
+import {
+    IMAGE_MIME_EXTENSIONS,
+    detectImageMime,
+    removeUploadedImage,
+    storeUploadedImage,
+} from '@/lib/uploaded-image';
 
 const MAX_BRANDING_ASSET_SIZE = 5 * 1024 * 1024;
-const MIME_EXTENSIONS: Record<string, string> = {
-    'image/png': '.png',
-    'image/jpeg': '.jpg',
-    'image/webp': '.webp',
-    'image/gif': '.gif',
-    'image/x-icon': '.ico',
-    'image/vnd.microsoft.icon': '.ico',
-};
 
 function isBrandingAssetField(value: string): value is BrandingAssetField {
     return BRANDING_ASSET_FIELDS.includes(value as BrandingAssetField);
-}
-
-function detectImageMime(buffer: Buffer): string | null {
-    if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
-    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
-    if (buffer.length >= 6 && ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString('ascii'))) return 'image/gif';
-    if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
-    if (buffer.length >= 4 && buffer[0] === 0x00 && buffer[1] === 0x00 && buffer[2] === 0x01 && buffer[3] === 0x00) return 'image/x-icon';
-    return null;
-}
-
-function assetsDirectory(): string {
-    return path.resolve(process.cwd(), 'public', 'uploads', 'branding');
 }
 
 async function removeAssetWhenUnreferenced(assetUrl: string, config: BrandingConfig): Promise<void> {
@@ -45,10 +27,7 @@ async function removeAssetWhenUnreferenced(assetUrl: string, config: BrandingCon
     const stillUsed = BRANDING_ASSET_FIELDS.some((field) => config[field] === assetUrl);
     if (stillUsed) return;
 
-    const base = assetsDirectory();
-    const candidate = path.resolve(process.cwd(), 'public', assetUrl.replace(/^\/+/, ''));
-    if (!candidate.startsWith(`${base}${path.sep}`)) return;
-    await unlink(candidate).catch(() => undefined);
+    await removeUploadedImage(assetUrl, 'branding');
 }
 
 export async function POST(req: NextRequest) {
@@ -70,7 +49,7 @@ export async function POST(req: NextRequest) {
         if (fileValue.size === 0 || fileValue.size > MAX_BRANDING_ASSET_SIZE) {
             return NextResponse.json({ error: 'Branding assets must be between 1 byte and 5 MB' }, { status: 400 });
         }
-        if (!MIME_EXTENSIONS[fileValue.type]) {
+        if (!IMAGE_MIME_EXTENSIONS[fileValue.type]) {
             return NextResponse.json({ error: 'Only PNG, JPEG, WebP, GIF, and ICO assets are allowed. SVG is not accepted.' }, { status: 400 });
         }
 
@@ -81,18 +60,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'The uploaded file content does not match its image type' }, { status: 400 });
         }
 
-        const extension = MIME_EXTENSIONS[fileValue.type];
-        const filename = `${crypto.randomUUID()}${extension}`;
-        const directory = assetsDirectory();
-        await mkdir(directory, { recursive: true });
-        const destination = path.join(directory, filename);
-        if (!destination.startsWith(`${directory}${path.sep}`)) {
-            return NextResponse.json({ error: 'Invalid asset path' }, { status: 400 });
-        }
-        await writeFile(destination, buffer, { flag: 'wx' });
-
+        const stored = await storeUploadedImage(fileValue, 'branding', MAX_BRANDING_ASSET_SIZE);
         const previous = await getBrandingConfig();
-        const assetUrl = `/uploads/branding/${filename}`;
+        const assetUrl = stored.url;
         const branding = await saveBrandingConfig({ ...previous, [fieldValue]: assetUrl });
         await removeAssetWhenUnreferenced(previous[fieldValue], branding);
 

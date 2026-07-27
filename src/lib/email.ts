@@ -16,7 +16,7 @@ function escapeHtml(value: string): string {
     })[character] ?? character);
 }
 
-async function getSmtpConfig(branding: BrandingConfig) {
+export async function getSmtpConfig(branding: BrandingConfig) {
     try {
         const settings = await prisma.appSetting.findMany({ where: { key: { startsWith: 'smtp_' } } });
         const config = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
@@ -38,6 +38,30 @@ async function getSmtpConfig(branding: BrandingConfig) {
             from: process.env.SMTP_FROM || `${branding.applicationName} <noreply@example.com>`,
         };
     }
+}
+
+export function createSmtpTransport(smtp: Awaited<ReturnType<typeof getSmtpConfig>>) {
+    if (!smtp.host || !smtp.user || !smtp.pass) throw new Error('SMTP is not configured. Fill in the host, user, and password.');
+    if (!Number.isInteger(smtp.port) || smtp.port < 1 || smtp.port > 65535) throw new Error('SMTP port must be between 1 and 65535.');
+    return nodemailer.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: { user: smtp.user, pass: smtp.pass },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
+    });
+}
+
+export function formatSmtpError(error: unknown, smtp?: { host: string; port: number }): string {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+    const target = smtp ? `${smtp.host}:${smtp.port}` : 'the SMTP server';
+    if (code === 'EACCES') return `Connection to ${target} was blocked by the operating system or container network policy. Allow outbound TCP access for the application process, then retry.`;
+    if (code === 'ECONNREFUSED') return `Connection to ${target} was refused. Check the host, port, firewall, and whether the SMTP service is listening.`;
+    if (code === 'ETIMEDOUT' || code === 'ESOCKET') return `Connection to ${target} timed out. Check outbound network access, DNS, firewall rules, and the selected SMTP port.`;
+    if (code === 'EAUTH') return 'The SMTP server rejected the username or password. Check the credentials and whether SMTP authentication is enabled for the mailbox.';
+    return error instanceof Error ? error.message : 'Unknown mail transport error';
 }
 
 async function isEmailEventEnabled(eventKey: string): Promise<boolean> {
@@ -73,18 +97,15 @@ function brandedEmail(branding: BrandingConfig, heading: string, content: string
 }
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
+    let smtp: Awaited<ReturnType<typeof getSmtpConfig>> | undefined;
     try {
         const branding = await getBrandingConfig();
-        const smtp = await getSmtpConfig(branding);
+        smtp = await getSmtpConfig(branding);
         if (!smtp.user || !smtp.pass) {
             logger.warn('SMTP credentials not configured, skipping email send', { subject: options.subject });
             return false;
         }
-        const transporter = nodemailer.createTransport({
-            host: smtp.host, port: smtp.port, secure: smtp.secure,
-            auth: { user: smtp.user, pass: smtp.pass },
-            connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 10000,
-        });
+        const transporter = createSmtpTransport(smtp);
         await transporter.sendMail({
             from: smtp.from,
             to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
@@ -96,7 +117,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
         return true;
     } catch (error) {
         logger.error('Failed to send email', {
-            error: error instanceof Error ? error.message : error,
+            error: formatSmtpError(error, smtp),
             to: options.to,
             subject: options.subject,
         });
@@ -146,6 +167,22 @@ export async function sendTicketUpdatedEmail(
     });
 }
 
+export async function sendNewCommentEmail(
+    emails: string[], ticketKey: string, ticketTitle: string, excerpt: string
+) {
+    if (!(await isEmailEventEnabled('email_on_new_comment'))) return false;
+    const branding = await getBrandingConfig();
+    return sendEmail({
+        to: emails,
+        subject: `[${ticketKey}] New Comment: ${ticketTitle}`,
+        html: brandedEmail(branding, 'New Comment', `
+          <p style="color:#475569;">A new public comment was added to ticket <strong>${escapeHtml(ticketKey)}</strong>.</p>
+          <div style="background:white;padding:16px;border-radius:8px;border:1px solid #e2e8f0;">
+            <p style="margin:0;color:#1e293b;"><strong>Title:</strong> ${escapeHtml(ticketTitle)}</p>
+            <p style="margin:8px 0 0;color:#475569;">${escapeHtml(excerpt)}</p>
+          </div>`),
+    });
+}
 export async function sendNewTicketForDepartmentEmail(
     agentEmails: string[], ticketKey: string, ticketTitle: string, departmentName: string
 ) {

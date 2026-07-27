@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import sharp from 'sharp';
+import { isLocalStandaloneRuntime, resolveApplicationRoot } from '@/lib/runtime-paths';
 
 export const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
     'image/png': '.png',
@@ -46,10 +47,8 @@ export function detectImageMime(buffer: Buffer): string | null {
 
 export function resolveUploadRoots(cwd = process.cwd()): string[] {
     const runtimeRoot = path.resolve(cwd, 'public', 'uploads');
-    const isLocalStandalone = path.basename(cwd).toLowerCase() === 'standalone'
-        && path.basename(path.dirname(cwd)).toLowerCase() === '.next';
-    const persistentRoot = isLocalStandalone
-        ? path.resolve(cwd, '..', '..', 'public', 'uploads')
+    const persistentRoot = isLocalStandaloneRuntime(cwd)
+        ? path.resolve(resolveApplicationRoot(cwd), 'public', 'uploads')
         : runtimeRoot;
     return [...new Set([persistentRoot, runtimeRoot])];
 }

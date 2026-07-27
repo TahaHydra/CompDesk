@@ -74,11 +74,10 @@ export function BrandingSettings() {
         try {
             const body = new FormData();
             body.set('field', field); body.set('file', file);
-            const result = await responseJson<{ branding: BrandingConfig }>(await fetch('/api/branding/assets', { method: 'POST', body }));
-            setForm(result.branding);
-            setIsDirty(false);
+            const result = await responseJson<{ url: string; branding: BrandingConfig }>(await fetch('/api/branding/assets', { method: 'POST', body }));
+            setForm((current) => current ? { ...current, [field]: result.url } : result.branding);
             queryClient.setQueryData(['branding', 'admin'], result.branding);
-            toast({ title: 'Brand asset uploaded' });
+            toast({ title: 'Brand asset uploaded', description: 'The asset is saved immediately. Save branding to apply any other unsaved changes.' });
         } catch (error) {
             toast({ title: 'Asset upload failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
         } finally {
@@ -89,8 +88,7 @@ export function BrandingSettings() {
         setUploading(field);
         try {
             const result = await responseJson<{ branding: BrandingConfig }>(await fetch(`/api/branding/assets?field=${field}`, { method: 'DELETE' }));
-            setForm(result.branding);
-            setIsDirty(false);
+            setForm((current) => current ? { ...current, [field]: '' } : result.branding);
             queryClient.setQueryData(['branding', 'admin'], result.branding);
         } catch (error) {
             toast({ title: 'Asset reset failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
@@ -140,11 +138,17 @@ export function BrandingSettings() {
                                 <Label htmlFor={`asset-${asset.field}`}>{asset.label}</Label>
                                 <p className="mb-3 text-xs text-muted-foreground">{asset.help}</p>
                                 <div className="flex flex-wrap gap-2">
-                                    <Button asChild type="button" variant="outline" size="sm" disabled={uploading === asset.field}>
-                                        <label htmlFor={`asset-${asset.field}`} className="cursor-pointer"><Upload className="mr-2 h-4 w-4" /> Upload</label>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={uploading !== null}
+                                        onClick={() => document.getElementById(`asset-${asset.field}`)?.click()}
+                                    >
+                                        <Upload className="mr-2 h-4 w-4" /> {uploading === asset.field ? 'Uploading…' : 'Upload'}
                                     </Button>
                                     <input id={`asset-${asset.field}`} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAsset(asset.field, file); event.target.value = ''; }} />
-                                    {url ? <Button type="button" variant="ghost" size="sm" disabled={uploading === asset.field} onClick={() => void resetAsset(asset.field)}><Trash2 className="mr-2 h-4 w-4" /> Reset</Button> : null}
+                                    {url ? <Button type="button" variant="ghost" size="sm" disabled={uploading !== null} onClick={() => void resetAsset(asset.field)}><Trash2 className="mr-2 h-4 w-4" /> Reset</Button> : null}
                                 </div>
                             </div>
                         );

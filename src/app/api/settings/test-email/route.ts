@@ -1,38 +1,34 @@
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
 import { auth } from '@/lib/auth';
 import { getBrandingConfig } from '@/lib/branding';
-import { prisma } from '@/lib/prisma';
+import { createSmtpTransport, formatSmtpError, getSmtpConfig } from '@/lib/email';
+import logger from '@/lib/logger';
 
 export async function POST() {
+    let smtp: Awaited<ReturnType<typeof getSmtpConfig>> | undefined;
     try {
         const session = await auth();
         if (!session?.user || session.user.role !== 'SUPER_ADMIN') {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         const branding = await getBrandingConfig();
-        const settings = await prisma.appSetting.findMany({ where: { key: { startsWith: 'smtp_' } } });
-        const config = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
-        const host = config.smtp_host || process.env.SMTP_HOST;
-        const port = Number.parseInt(config.smtp_port || process.env.SMTP_PORT || '587', 10);
-        const user = config.smtp_user || process.env.SMTP_USER;
-        const pass = config.smtp_password || process.env.SMTP_PASS || process.env.SMTP_PASSWORD;
-        const from = config.smtp_from || process.env.SMTP_FROM || `${branding.applicationName} <noreply@example.com>`;
-        if (!host || !user || !pass) {
-            return NextResponse.json({ error: 'SMTP not configured. Fill in the host, user, and password.' }, { status: 400 });
-        }
-        const transporter = nodemailer.createTransport({
-            host, port, secure: config.smtp_secure === 'true', auth: { user, pass },
-        });
+        smtp = await getSmtpConfig(branding);
+        const transporter = createSmtpTransport(smtp);
         await transporter.sendMail({
-            from,
+            from: smtp.from,
             to: session.user.email,
             subject: `[${branding.applicationName}] SMTP test successful`,
             html: `<h2>${branding.applicationName} SMTP configuration successful</h2><p>This message confirms the configured SMTP transport is working.</p><p>Sent at: ${new Date().toISOString()}</p>`,
         });
         return NextResponse.json({ success: true, message: `Test email sent to ${session.user.email}` });
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Unknown mail transport error';
+        const message = formatSmtpError(error, smtp);
+        logger.error('SMTP test failed', {
+            error: message,
+            host: smtp?.host,
+            port: smtp?.port,
+            secure: smtp?.secure,
+        });
         return NextResponse.json({ error: `Failed to send test email: ${message}` }, { status: 500 });
     }
 }

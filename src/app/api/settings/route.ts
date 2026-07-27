@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import { dashboardLinksSchema, parseDashboardLinks } from '@/lib/dashboard-links';
 import logger from '@/lib/logger';
+import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
 
@@ -19,38 +18,14 @@ const ALLOWED_KEYS = new Set([
     'feature_webhooks_enabled',
 ]);
 
-async function updateEnvFile(updates: Record<string, unknown>) {
-    try {
-        const envPath = path.join(process.cwd(), '.env');
-        let envContent = await fs.readFile(envPath, 'utf8').catch(() => '');
-        let changed = false;
-        const envMapping: Record<string, string> = {
-            azure_ad_client_id: 'AZURE_AD_CLIENT_ID',
-            azure_ad_client_secret: 'AZURE_AD_CLIENT_SECRET',
-            azure_ad_tenant_id: 'AZURE_AD_TENANT_ID',
-        };
-
-        for (const [key, value] of Object.entries(updates)) {
-            const envKey = envMapping[key];
-            if (!envKey) continue;
-            changed = true;
-            const regex = new RegExp(`^#?\\s*${envKey}=.*$`, 'm');
-            const newLine = `${envKey}="${value}"`;
-            envContent = regex.test(envContent) ? envContent.replace(regex, newLine) : `${envContent}\n${newLine}`;
-        }
-        if (changed) await fs.writeFile(envPath, `${envContent.trim()}\n`, 'utf8');
-    } catch (error) {
-        logger.error('Failed to update environment settings', { error });
-    }
-}
-
-function mergeSettingSources(dbSettings: Record<string, string>): Record<string, string> {
+function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Record<string, string>): Record<string, string> {
     return {
         ...dbSettings,
-        azure_ad_client_id: process.env.AZURE_AD_CLIENT_ID || dbSettings.azure_ad_client_id || '',
-        azure_ad_tenant_id: process.env.AZURE_AD_TENANT_ID || dbSettings.azure_ad_tenant_id || '',
+        azure_ad_client_id: process.env.AZURE_AD_CLIENT_ID || managedEnv.azure_ad_client_id || dbSettings.azure_ad_client_id || '',
+        azure_ad_tenant_id: process.env.AZURE_AD_TENANT_ID || managedEnv.azure_ad_tenant_id || dbSettings.azure_ad_tenant_id || '',
         azure_ad_client_secret: '',
-        azure_ad_client_secret_configured: process.env.AZURE_AD_CLIENT_SECRET ? 'true' : 'false',
+        azure_ad_client_secret_configured: process.env.AZURE_AD_CLIENT_SECRET || managedEnv.azure_ad_client_secret ? 'true' : 'false',
+        azure_ad_runtime_configured: process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID ? 'true' : 'false',
         smtp_password: '',
         smtp_password_configured: dbSettings.smtp_password || process.env.SMTP_PASS || process.env.SMTP_PASSWORD ? 'true' : 'false',
     };
@@ -63,7 +38,8 @@ export async function GET() {
         const settings = await prisma.appSetting.findMany({
             where: { key: { in: [...ALLOWED_KEYS] } },
         });
-        return NextResponse.json(mergeSettingSources(Object.fromEntries(settings.map((setting) => [setting.key, setting.value]))));
+        const managedEnv = await readManagedEnvironment();
+        return NextResponse.json(mergeSettingSources(Object.fromEntries(settings.map((setting) => [setting.key, setting.value])), managedEnv));
     } catch (error) {
         logger.error('Failed to load settings', { error });
         return NextResponse.json({ error: 'Failed to load settings' }, { status: 500 });
@@ -116,11 +92,14 @@ export async function PATCH(request: Request) {
         for (const oldIcon of previousIcons) {
             if (!nextIcons.has(oldIcon)) await removeUploadedImage(oldIcon, 'quick-links');
         }
-        await updateEnvFile(Object.fromEntries(normalizedEntries.filter(([, value]) => value.trim() !== '')));
+        const restartRequired = await updateManagedEnvironment(Object.fromEntries(normalizedEntries));
         await auditLog({ userId: session.user.id, action: 'settings.updated', entity: 'app_setting', metadata: { keys: normalizedEntries.map(([key]) => key) } });
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, restartRequired });
     } catch (error) {
         logger.error('Failed to update settings', { error });
+        if (error instanceof ManagedEnvironmentError) {
+            return NextResponse.json({ error: error.message }, { status: 409 });
+        }
         return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
     }
 }
