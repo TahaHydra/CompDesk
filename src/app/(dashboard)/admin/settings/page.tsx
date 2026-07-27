@@ -26,6 +26,16 @@ async function loadSettings(): Promise<SettingsMap> {
     if (!response.ok) throw new Error(payload.error || 'Failed to load settings');
     return payload;
 }
+async function updateSettings(data: Record<string, string>): Promise<{ success: boolean; restartRequired?: boolean }> {
+    const response = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+    if (!response.ok) throw new Error(payload.error || 'Failed to update settings');
+    return payload;
+}
 
 function SmtpSettingsTab() {
     const { toast } = useToast();
@@ -56,18 +66,12 @@ function SmtpSettingsTab() {
     }, [settings]);
 
     const saveMutation = useMutation({
-        mutationFn: async () => {
-            const res = await fetch('/api/settings', {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(smtp),
-            });
-            if (!res.ok) throw new Error('Failed');
-        },
+        mutationFn: async () => updateSettings(smtp),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings'] });
             toast({ title: 'SMTP settings saved' });
         },
-        onError: () => toast({ title: 'Failed to save', variant: 'destructive' }),
+        onError: (error: Error) => toast({ title: 'Failed to save SMTP settings', description: error.message, variant: 'destructive' }),
     });
 
     const testMutation = useMutation({
@@ -132,6 +136,7 @@ function SmtpSettingsTab() {
                                     <SelectItem value="true">SSL/TLS (port 465)</SelectItem>
                                 </SelectContent>
                             </Select>
+                            <p className="text-xs text-muted-foreground">Use STARTTLS with port 587 unless your provider explicitly requires implicit TLS on port 465.</p>
                         </div>
                     </div>
                     <div className="flex gap-3 pt-2">
@@ -159,24 +164,19 @@ function EmailTogglesTab() {
     });
 
     const toggles = [
-        { key: 'email_on_ticket_created', label: 'Ticket Created', desc: 'Notify requester and watchers when a ticket is created' },
+        { key: 'email_on_ticket_created', label: 'Ticket Created', desc: 'Notify the requester and department agents when a ticket is created' },
         { key: 'email_on_ticket_assigned', label: 'Ticket Assigned', desc: 'Notify the agent when a ticket is assigned to them' },
         { key: 'email_on_ticket_updated', label: 'Status Changed', desc: 'Notify requester when ticket status changes' },
         { key: 'email_on_new_comment', label: 'New Comment', desc: 'Notify watchers when a new comment is added' },
     ];
 
     const saveMutation = useMutation({
-        mutationFn: async (data: Record<string, string>) => {
-            const res = await fetch('/api/settings', {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            });
-            if (!res.ok) throw new Error('Failed');
-        },
+        mutationFn: async (data: Record<string, string>) => updateSettings(data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings'] });
             toast({ title: 'Email preferences saved' });
         },
+        onError: (error: Error) => toast({ title: 'Email preference could not be saved', description: error.message, variant: 'destructive' }),
     });
 
     const handleToggle = (key: string) => {
@@ -204,6 +204,7 @@ function EmailTogglesTab() {
                                 variant={enabled ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => handleToggle(t.key)}
+                                disabled={saveMutation.isPending}
                                 className="gap-1.5 min-w-[80px]"
                             >
                                 {enabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
@@ -231,6 +232,8 @@ function EntraSettingsTab() {
         azure_ad_client_id: '', azure_ad_client_secret: '', azure_ad_tenant_id: '',
     });
     const entraSecretConfigured = settings?.azure_ad_client_secret_configured === 'true';
+    const entraRuntimeConfigured = settings?.azure_ad_runtime_configured === 'true';
+    const entraSavedConfigured = Boolean(settings?.azure_ad_client_id && settings?.azure_ad_tenant_id && entraSecretConfigured);
 
     useEffect(() => {
         if (settings) {
@@ -243,17 +246,15 @@ function EntraSettingsTab() {
     }, [settings]);
 
     const saveMutation = useMutation({
-        mutationFn: async () => {
-            const res = await fetch('/api/settings', {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(entra),
+        mutationFn: async () => updateSettings(entra),
+        onSuccess: async (result) => {
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            toast({
+                title: 'Entra ID settings saved',
+                description: result.restartRequired ? 'Restart the application before Microsoft sign-in becomes available.' : 'No runtime restart is required.',
             });
-            if (!res.ok) throw new Error('Failed');
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['settings'] });
-            toast({ title: 'Entra ID settings saved' });
-        },
+        onError: (error: Error) => toast({ title: 'Entra ID settings could not be saved', description: error.message, variant: 'destructive' }),
     });
 
     return (
@@ -269,7 +270,7 @@ function EntraSettingsTab() {
                         <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                         <p className="text-xs text-amber-800 dark:text-amber-200">
                             Changes to Entra ID settings require an <strong>application restart</strong> to take effect.
-                            Settings saved here will override environment variables.
+                            Local standalone changes are saved persistently. Container deployments must be configured through their environment.
                         </p>
                     </div>
                     <div className="space-y-2">
@@ -298,13 +299,18 @@ function EntraSettingsTab() {
 
             <Card className="border-0 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="text-base">Security Status</CardTitle>
+                    <CardTitle className="text-base">Microsoft login status</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-green-600" /><span>CSP Headers: Active</span></div>
-                    <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-green-600" /><span>HSTS: Active</span></div>
-                    <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-green-600" /><span>Rate Limiting: Active</span></div>
-                    <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-green-600" /><span>XSS Protection: Active</span></div>
+                <CardContent className="space-y-3 text-sm">
+                    <div className="flex items-center gap-2">
+                        {entraRuntimeConfigured ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+                        <span>{entraRuntimeConfigured ? 'Active in the running application' : entraSavedConfigured ? 'Saved; application restart required' : 'Incomplete configuration'}</span>
+                    </div>
+                    <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+                        <span>Client ID: {settings?.azure_ad_client_id ? 'configured' : 'missing'}</span>
+                        <span>Client secret: {entraSecretConfigured ? 'configured' : 'missing'}</span>
+                        <span>Tenant ID: {settings?.azure_ad_tenant_id ? 'configured' : 'missing'}</span>
+                    </div>
                 </CardContent>
             </Card>
         </div>
@@ -390,7 +396,7 @@ function DashboardLinksTab() {
         <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-base"><LinkIcon className="h-4 w-4" /> Custom Dashboard Links</CardTitle>
-                <Button variant="outline" size="sm" onClick={addLink} className="h-8 gap-1"><Plus className="h-3.5 w-3.5" /> Add Link</Button>
+                <Button variant="outline" size="sm" onClick={addLink} disabled={links.length >= 16} className="h-8 gap-1"><Plus className="h-3.5 w-3.5" /> Add Link</Button>
             </CardHeader>
             <CardContent className="space-y-4">
                 <p className="rounded-lg border bg-muted/35 p-3 text-sm text-muted-foreground">
@@ -423,7 +429,7 @@ function DashboardLinksTab() {
                         ))}
                     </div>
                 )}
-                <div className="pt-2"><Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || links.some((link) => !link.title.trim() || !link.url.trim())} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button></div>
+                <div className="pt-2"><Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || uploadingIndex !== null || links.some((link) => !link.title.trim() || !link.url.trim())} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button></div>
             </CardContent>
         </Card>
     );
@@ -440,17 +446,12 @@ function SecuritySettingsTab() {
     const localEnabled = settings?.login_local_enabled !== 'false';
 
     const toggleMutation = useMutation({
-        mutationFn: async (enabled: boolean) => {
-            const res = await fetch('/api/settings', {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ login_local_enabled: String(enabled) }),
-            });
-            if (!res.ok) throw new Error('Failed');
-        },
+        mutationFn: async (enabled: boolean) => updateSettings({ login_local_enabled: String(enabled) }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings'] });
             toast({ title: 'Security setting updated' });
         },
+        onError: (error: Error) => toast({ title: 'Security setting could not be updated', description: error.message, variant: 'destructive' }),
     });
 
     return (
@@ -470,6 +471,7 @@ function SecuritySettingsTab() {
                     <Switch
                         checked={localEnabled}
                         onCheckedChange={(checked) => toggleMutation.mutate(checked)}
+                        disabled={toggleMutation.isPending}
                     />
                 </div>
                 {!localEnabled && (
@@ -519,19 +521,12 @@ function FeatureFlagsTab() {
     ];
 
     const toggleMutation = useMutation({
-        mutationFn: async (payload: Record<string, string>) => {
-            const res = await fetch('/api/settings', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) throw new Error('Failed');
-        },
+        mutationFn: async (payload: Record<string, string>) => updateSettings(payload),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings'] });
             toast({ title: 'Feature flag updated' });
         },
-        onError: () => toast({ title: 'Failed to update feature flag', variant: 'destructive' }),
+        onError: (error: Error) => toast({ title: 'Failed to update feature flag', description: error.message, variant: 'destructive' }),
     });
 
     return (
@@ -551,6 +546,7 @@ function FeatureFlagsTab() {
                             <Switch
                                 checked={enabled}
                                 onCheckedChange={(checked) => toggleMutation.mutate({ [flag.key]: String(checked) })}
+                                disabled={toggleMutation.isPending}
                             />
                         </div>
                     );
