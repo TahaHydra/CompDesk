@@ -194,7 +194,7 @@ export default function AppShell({
         </a>
     );
     return (
-        <div className="flex h-screen overflow-hidden bg-background">
+        <div className="fixed inset-0 flex overflow-hidden bg-background">
             {/* Backdrop for mobile drawer */}
             {mobileOpen && (
                 <div

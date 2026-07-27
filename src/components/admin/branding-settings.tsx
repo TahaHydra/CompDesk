@@ -2,9 +2,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ImageIcon, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
-import type { BrandingAssetField, BrandingConfig } from '@/lib/branding';
+import { AlertTriangle, CheckCircle2, ImageIcon, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
+import type { BrandingAssetField, BrandingConfig, PublicBranding } from '@/lib/branding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,7 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 export function BrandingSettings() {
     const { toast } = useToast();
+    const router = useRouter();
     const queryClient = useQueryClient();
     const [form, setForm] = useState<BrandingConfig | null>(null);
     const [uploading, setUploading] = useState<BrandingAssetField | null>(null);
@@ -37,6 +39,10 @@ export function BrandingSettings() {
     const query = useQuery<BrandingConfig>({
         queryKey: ['branding', 'admin'],
         queryFn: async () => responseJson(await fetch('/api/branding/admin', { cache: 'no-store' })),
+    });
+    const publicBrandingQuery = useQuery<PublicBranding>({
+        queryKey: ['branding', 'public'],
+        queryFn: async () => responseJson(await fetch('/api/branding', { cache: 'no-store' })),
     });
     useEffect(() => { if (query.data && !isDirty) setForm(query.data); }, [isDirty, query.data]);
 
@@ -48,8 +54,9 @@ export function BrandingSettings() {
             setForm(branding);
             setIsDirty(false);
             queryClient.setQueryData(['branding', 'admin'], branding);
-            toast({ title: 'Branding saved', description: 'Reloading the application shell with the new theme.' });
-            window.setTimeout(() => window.location.reload(), 350);
+            void queryClient.invalidateQueries({ queryKey: ['branding', 'public'] });
+            toast({ title: 'Branding saved', description: 'The application shell and sign-in page have been refreshed.' });
+            router.refresh();
         },
         onError: (error: Error) => toast({ title: 'Branding could not be saved', description: error.message, variant: 'destructive' }),
     });
@@ -59,8 +66,9 @@ export function BrandingSettings() {
             setForm(branding);
             setIsDirty(false);
             queryClient.setQueryData(['branding', 'admin'], branding);
+            void queryClient.invalidateQueries({ queryKey: ['branding', 'public'] });
             toast({ title: 'Default branding restored' });
-            window.setTimeout(() => window.location.reload(), 350);
+            router.refresh();
         },
         onError: (error: Error) => toast({ title: 'Branding reset failed', description: error.message, variant: 'destructive' }),
     });
@@ -77,7 +85,9 @@ export function BrandingSettings() {
             const result = await responseJson<{ url: string; branding: BrandingConfig }>(await fetch('/api/branding/assets', { method: 'POST', body }));
             setForm((current) => current ? { ...current, [field]: result.url } : result.branding);
             queryClient.setQueryData(['branding', 'admin'], result.branding);
+            void queryClient.invalidateQueries({ queryKey: ['branding', 'public'] });
             toast({ title: 'Brand asset uploaded', description: 'The asset is saved immediately. Save branding to apply any other unsaved changes.' });
+            router.refresh();
         } catch (error) {
             toast({ title: 'Asset upload failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
         } finally {
@@ -90,6 +100,8 @@ export function BrandingSettings() {
             const result = await responseJson<{ branding: BrandingConfig }>(await fetch(`/api/branding/assets?field=${field}`, { method: 'DELETE' }));
             setForm((current) => current ? { ...current, [field]: '' } : result.branding);
             queryClient.setQueryData(['branding', 'admin'], result.branding);
+            void queryClient.invalidateQueries({ queryKey: ['branding', 'public'] });
+            router.refresh();
         } catch (error) {
             toast({ title: 'Asset reset failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
         } finally {
@@ -99,6 +111,8 @@ export function BrandingSettings() {
 
     if (query.isLoading || !form) return <Card className="mt-4"><CardContent className="py-12 text-center text-sm text-muted-foreground">Loading branding configuration…</CardContent></Card>;
     if (query.isError) return <Card className="mt-4"><CardContent className="py-12 text-center text-sm text-destructive">Branding configuration could not be loaded.</CardContent></Card>;
+    const demoInformationMissing = form.showDemoAccounts && !form.demoAccountInfo.trim();
+    const microsoftLoginConfigured = publicBrandingQuery.data?.microsoftLoginConfigured === true;
 
     return (
         <div className="mt-4 space-y-6">
@@ -163,15 +177,29 @@ export function BrandingSettings() {
                     <div className="space-y-2"><Label htmlFor="login-description">Login description</Label><Textarea id="login-description" value={form.loginDescription} onChange={(event) => update('loginDescription', event.target.value)} /></div>
                     <ToggleSetting label="Show local email/password login" description="The server also enforces this switch." checked={form.showLocalLogin} onChange={(checked) => update('showLocalLogin', checked)} />
                     <ToggleSetting label="Show Microsoft login" description="The button appears only when Entra credentials are configured; the server enforces this switch." checked={form.showMicrosoftLogin} onChange={(checked) => update('showMicrosoftLogin', checked)} />
+                    {form.showMicrosoftLogin ? (
+                        <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${microsoftLoginConfigured ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200'}`}>
+                            {microsoftLoginConfigured ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+                            <p>{microsoftLoginConfigured
+                                ? 'Microsoft sign-in is active in the running application.'
+                                : 'The toggle is enabled, but the running application does not have all three Entra values. Complete Client ID, Client Secret, and Tenant ID in the Entra ID tab, then restart the application.'}</p>
+                        </div>
+                    ) : null}
                     <TextSetting label="Microsoft button text" value={form.microsoftButtonText} onChange={(value) => update('microsoftButtonText', value)} />
                     <ToggleSetting label="Show demo account information" description="Keep this disabled in production." checked={form.showDemoAccounts} onChange={(checked) => update('showDemoAccounts', checked)} />
                     {form.showDemoAccounts ? <div className="space-y-2"><Label htmlFor="demo-info">Demo account information</Label><Textarea id="demo-info" value={form.demoAccountInfo} onChange={(event) => update('demoAccountInfo', event.target.value)} placeholder="Demo credentials shown verbatim on the login page" /></div> : null}
+                    {demoInformationMissing ? (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <p>The demo toggle is enabled, but there is no information to display. Add safe demo instructions or turn the toggle off.</p>
+                        </div>
+                    ) : null}
                 </CardContent>
             </Card>
 
             <div className="flex flex-wrap justify-end gap-3">
                 <Button type="button" variant="outline" disabled={resetMutation.isPending} onClick={() => { if (window.confirm('Reset all branding and remove uploaded brand assets?')) resetMutation.mutate(); }}><RotateCcw className="mr-2 h-4 w-4" /> Reset all defaults</Button>
-                <Button type="button" disabled={saveMutation.isPending || uploading !== null} onClick={() => saveMutation.mutate()}><Save className="mr-2 h-4 w-4" /> Save branding</Button>
+                <Button type="button" disabled={saveMutation.isPending || uploading !== null || demoInformationMissing} onClick={() => saveMutation.mutate()}><Save className="mr-2 h-4 w-4" /> Save branding</Button>
             </div>
         </div>
     );

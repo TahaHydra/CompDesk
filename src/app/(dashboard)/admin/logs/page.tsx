@@ -94,6 +94,7 @@ export default function AdminLogsPage() {
                                         <th className="px-4 py-3 font-medium">User</th>
                                         <th className="px-4 py-3 font-medium">Entity</th>
                                         <th className="px-4 py-3 font-medium">IP address</th>
+                                        <th className="px-4 py-3 font-medium">Details</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
@@ -116,6 +117,14 @@ export default function AdminLogsPage() {
                                                 {log.entityId && <div className="max-w-48 truncate text-xs text-muted-foreground">{log.entityId}</div>}
                                             </td>
                                             <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{log.ipAddress || '—'}</td>
+                                            <td className="max-w-sm px-4 py-3 text-xs text-muted-foreground">
+                                                {log.metadata ? (
+                                                    <details>
+                                                        <summary className="cursor-pointer select-none text-primary">View</summary>
+                                                        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono">{JSON.stringify(log.metadata, null, 2)}</pre>
+                                                    </details>
+                                                ) : '—'}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>

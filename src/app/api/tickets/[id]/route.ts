@@ -330,18 +330,22 @@ export async function PATCH(
         });
         // Send notifications
         if (data.assigneeId && data.assigneeId !== existingTicket.assigneeId && updatedTicket.assignee) {
-            sendTicketAssignedEmail(updatedTicket.assignee.email, updatedTicket.key, updatedTicket.title);
+            void sendTicketAssignedEmail(updatedTicket.assignee.email, updatedTicket.key, updatedTicket.title);
         }
 
         if (timelineEvents.length > 0) {
             const watchers = await prisma.ticketWatcher.findMany({
-                where: { ticketId: id },
-                include: { user: { select: { email: true } } },
+                where: { ticketId: id, userId: { not: session.user.id } },
+                include: { user: { select: { id: true, email: true } } },
             });
-            const emails = watchers.map((w) => w.user.email).filter(Boolean);
+            const newlyAssignedUserId = data.assigneeId && data.assigneeId !== existingTicket.assigneeId ? updatedTicket.assignee?.id : null;
+            const emails = [...new Set(watchers
+                .filter((watcher) => watcher.user.id !== newlyAssignedUserId)
+                .map((watcher) => watcher.user.email)
+                .filter(Boolean))];
             if (emails.length > 0) {
                 const updateType = timelineEvents.map((e) => e.content).join(', ');
-                sendTicketUpdatedEmail(emails, updatedTicket.key, updatedTicket.title, 'Ticket Updated', updateType);
+                void sendTicketUpdatedEmail(emails, updatedTicket.key, updatedTicket.title, 'Ticket Updated', updateType);
             }
         }
 
