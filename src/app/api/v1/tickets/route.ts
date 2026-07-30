@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { assertApiResponseSafe } from '@/lib/api-dto';
 import { checkRateLimit } from '@/lib/utils';
 import { authenticateApiRequest } from '@/lib/api-clients';
 import { getFeatureFlag } from '@/lib/feature-flags';
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
             requester: { id: requester.id, email: requester.email, role: Role.USER },
             input,
         });
-        return NextResponse.json(result.ticket, { status: result.replayed ? 200 : 201 });
+        return NextResponse.json(assertApiResponseSafe(result.ticket), { status: result.replayed ? 200 : 201 });
     } catch (error) {
         if (error instanceof TemplateResolutionError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
