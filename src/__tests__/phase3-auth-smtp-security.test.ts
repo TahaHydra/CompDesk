@@ -194,10 +194,12 @@ describe('Phase 3 ticket-content and presence safety', () => {
 describe('Phase 3 settings-key startup wiring', () => {
     it('loads .env in the standalone server process and passes keys into Docker', () => {
         const packageJson = JSON.parse(source('package.json'));
-        expect(packageJson.scripts.start).toContain('scripts/start-standalone.mjs');
+        expect(packageJson.scripts.start).toContain('scripts/launch.mjs');
+        expect(source('scripts/launch.mjs')).toContain("import('./setup-bootstrap.mjs')");
+        expect(source('scripts/launch.mjs')).toContain('start-standalone.mjs');
         expect(source('scripts/start-standalone.mjs')).toContain('loadEnvConfig(root)');
         const compose = source('docker-compose.yml');
-        expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:-}');
+        expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:?APP_SETTINGS_ENCRYPTION_KEY is required}');
         expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS: ${APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS:-}');
     });
 

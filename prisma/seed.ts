@@ -9,8 +9,14 @@ import {
     TicketStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 
 const prisma = new PrismaClient();
+const productionSeedOverride = 'I_UNDERSTAND_THIS_CREATES_DEMO_DATA';
+
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_DEMO_SEED !== productionSeedOverride) {
+    throw new Error('Demo seeding is disabled in production. Set ALLOW_PRODUCTION_DEMO_SEED=I_UNDERSTAND_THIS_CREATES_DEMO_DATA only for an intentional disposable demonstration.');
+}
 const SYSTEM_TEMPLATE_ID = '00000000-0000-0000-0000-000000000001';
 const IT_TEMPLATE_ID = '10000000-0000-0000-0000-000000000001';
 const ACCESS_TEMPLATE_ID = '20000000-0000-0000-0000-000000000001';
@@ -220,7 +226,8 @@ async function seedHelpCenter() {
 
 async function main() {
     console.log('Seeding CompDesk demo data...');
-    const password = process.env.SEED_DEFAULT_PASSWORD ?? 'Password123!';
+    const generatedPassword = !process.env.SEED_DEFAULT_PASSWORD;
+    const password = process.env.SEED_DEFAULT_PASSWORD ?? `${crypto.randomBytes(12).toString('base64url')}aA1!`;
     const passwordHash = await bcrypt.hash(password, 12);
     const domain = process.env.SEED_DEMO_DOMAIN ?? 'example.com';
     const accountSpecs = [
@@ -235,8 +242,8 @@ async function main() {
     for (const spec of accountSpecs) {
         const user = await prisma.user.upsert({
             where: { email: spec.email.toLowerCase() },
-            update: { name: spec.name, role: spec.role, passwordHash, isActive: true },
-            create: { ...spec, email: spec.email.toLowerCase(), passwordHash, preferredLanguage: 'en' },
+            update: { name: spec.name, role: spec.role, passwordHash, isActive: true, isDemo: true },
+            create: { ...spec, email: spec.email.toLowerCase(), passwordHash, isDemo: true, preferredLanguage: 'en' },
         });
         users.set(spec.email.toLowerCase(), user);
     }
@@ -593,7 +600,8 @@ async function main() {
         await prisma.appSetting.upsert({ where: { key }, update: {}, create: { key, value } });
     }
     console.log(`Seed complete. Demo super administrator: ${accountSpecs[0].email}`);
-    console.log('Set SEED_DEFAULT_PASSWORD and the SEED_* email variables before using demo seed data outside a disposable environment.');
+    if (generatedPassword) console.log(`Generated demo password (shown once): ${password}`);
+    console.log('Demo data is for disposable evaluation only. Remove or deactivate demo accounts before real use.');
 }
 
 main()

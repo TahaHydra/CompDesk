@@ -1,10 +1,10 @@
 const mockQueryRaw = jest.fn();
-const mockFindFirst = jest.fn();
+const mockInstallationFindUnique = jest.fn();
 
 jest.mock('@/lib/prisma', () => ({
     prisma: {
         $queryRaw: (...args: unknown[]) => mockQueryRaw(...args),
-        user: { findFirst: (...args: unknown[]) => mockFindFirst(...args) },
+        installationRecord: { findUnique: (...args: unknown[]) => mockInstallationFindUnique(...args) },
     },
 }));
 
