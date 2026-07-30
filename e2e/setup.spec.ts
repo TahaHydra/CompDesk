@@ -137,24 +137,55 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     await expect(page.getByRole('heading', { name: '1. Welcome and system check' })).toBeVisible();
     expect(page.url()).not.toContain(bootstrapToken);
 
+    // Step 1: system check
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '2. Deployment mode' })).toBeVisible();
+
+    // Step 2: deployment mode
     await page.getByText('Existing PostgreSQL with standalone Node.js', { exact: true }).click();
+    await expect(page.locator('input[name="deploymentMode"][value="standalone"]')).toBeChecked();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '3. PostgreSQL' })).toBeVisible();
+
+    // Step 3: PostgreSQL
     await page.locator('input[name="dbHost"]').fill(databaseUrl.hostname);
     await page.locator('input[name="dbPort"]').fill(databaseUrl.port || '5432');
     await page.locator('input[name="dbName"]').fill(decodeURIComponent(databaseUrl.pathname.slice(1)));
     await page.locator('input[name="dbUser"]').fill(decodeURIComponent(databaseUrl.username));
     await page.locator('input[name="dbPassword"]').fill(decodeURIComponent(databaseUrl.password));
     await page.locator('select[name="dbSslMode"]').selectOption(databaseUrl.searchParams.get('sslmode') || 'disable');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '4. Identity and network' })).toBeVisible();
+
+    // Step 4: identity and network
     await page.locator('input[name="applicationUrl"]').fill(setupOrigin);
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '5. First Super Admin and authentication' })).toBeVisible();
+
+    // Step 5: first administrator
     await page.locator('input[name="adminName"]').fill('Release Administrator');
     await page.locator('input[name="adminEmail"]').fill(adminEmail);
     await page.locator('input[name="adminPassword"]').fill('ReleaseCandidate1!Secure');
     await page.locator('input[name="adminPasswordConfirm"]').fill('ReleaseCandidate1!Secure');
-    await page.locator('input[name="privateAttachmentDir"]').fill(path.join(stateDirectory, 'attachments'));
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '6. Secrets and encryption' })).toBeVisible();
 
-    for (let step = 0; step < 9; step += 1) {
-        await page.getByRole('button', { name: 'Next' }).click();
-        await expect(page.getByText(`Step ${step + 2} of 10`)).toBeVisible();
-    }
+    // Step 6: generated secrets
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '7. SMTP and notifications' })).toBeVisible();
+
+    // Step 7: optional SMTP
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '8. Storage and scanning' })).toBeVisible();
+
+    // Step 8: storage
+    await page.locator('input[name="privateAttachmentDir"]').fill(path.join(stateDirectory, 'attachments'));
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '9. Demo data' })).toBeVisible();
+
+    // Step 9: optional demo data
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '10. Review and install' })).toBeVisible();
     await page.getByLabel(/authorize migrations and installation/i).check();
     const installResponse = page.waitForResponse((response) => response.url().endsWith('/setup/api/install'));
     await page.getByRole('button', { name: 'Install CompDesk' }).click();
