@@ -60,3 +60,9 @@ coverage/
 *.tsbuildinfo
 
 .compdesk/
+
+# Browser test artifacts
+playwright-report/
+test-results/
+.playwright/
+/backups/

@@ -40,3 +40,25 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 The development database binds only to `127.0.0.1`.
+## External PostgreSQL
+
+Run the setup wizard locally, select “Existing PostgreSQL with the app in Docker,” and write the restricted configuration to `.compdesk/compdesk.env`. The database must require authenticated encrypted transport appropriate to its network.
+
+```bash
+docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml config
+docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml build --no-cache
+docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml up -d
+docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml ps
+```
+
+This topology contains only the one-shot migration job and application; it never starts or publishes a bundled database.
+
+## Operations
+
+- Logs: `docker compose --env-file .compdesk/compdesk.env logs -f app`.
+- Liveness: `curl -fsS http://127.0.0.1:3000/api/health/live`.
+- Readiness: `curl -fsS http://127.0.0.1:3000/api/health/ready`.
+- Upgrade: back up, build the new image, run the one-shot migration service, then let the application start.
+- Rollback: stop the new application and restore the coordinated database/files/configuration recovery set if the older application is not schema-compatible.
+
+Use the reviewed proxy files under `deploy/`. Set `TRUST_PROXY=true` only when that proxy is the sole path to the loopback-bound application and overwrites forwarding headers.
