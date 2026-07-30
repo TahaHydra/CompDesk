@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
             action: 'api_client.created',
             entity: 'apiClient',
             entityId: client.id,
-            metadata: { name: client.name, scopes: client.scopes, allowedQueueIds: client.allowedQueueIds },
+            metadata: { name: client.name, scopes: client.scopes, allowedQueueIds: client.allowedQueueIds, allowAllQueues: client.allowAllQueues },
         });
         return NextResponse.json({ client: serializeApiClient(client), apiKey: rawKey }, { status: 201 });
     } catch (error) {
@@ -76,6 +76,11 @@ export async function PATCH(req: NextRequest) {
 
         const existing = await prisma.apiClient.findUnique({ where: { id: parsed.data.id } });
         if (!existing) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+        const nextAllowedQueueIds = parsed.data.allowedQueueIds ?? existing.allowedQueueIds;
+        const nextAllowAllQueues = parsed.data.allowAllQueues ?? existing.allowAllQueues;
+        if (nextAllowAllQueues && nextAllowedQueueIds.length > 0) {
+            return NextResponse.json({ error: 'Allow all departments cannot be combined with selected departments' }, { status: 400 });
+        }
 
         const { id, rotateKey, ...changes } = parsed.data;
         const rotated = rotateKey ? apiClientSecretData() : null;
@@ -88,7 +93,7 @@ export async function PATCH(req: NextRequest) {
             action: rotateKey ? 'api_client.rotated' : 'api_client.updated',
             entity: 'apiClient',
             entityId: client.id,
-            metadata: { name: client.name, scopes: client.scopes, allowedQueueIds: client.allowedQueueIds, isActive: client.isActive },
+            metadata: { name: client.name, scopes: client.scopes, allowedQueueIds: client.allowedQueueIds, allowAllQueues: client.allowAllQueues, isActive: client.isActive },
         });
         return NextResponse.json({
             client: serializeApiClient(client),

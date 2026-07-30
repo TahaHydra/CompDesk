@@ -6,23 +6,23 @@ blocking item to be `PASS` for the exact final commit.
 | Gate | Status | Evidence |
 |---|---|---|
 | Baseline inventory | PASS | `docs/audits/PUBLIC_RELEASE_BASELINE.md` |
-| Secure isolated first-run setup | BLOCKED | Implementation pending |
-| Setup cannot be reused | BLOCKED | Implementation pending |
-| Safe API DTOs and recursive secret tests | BLOCKED | Remediation pending |
+| Secure isolated first-run setup | PASS | Isolated bootstrap server, token/session/CSRF controls, setup runner tests |
+| Setup cannot be reused | PASS | Immutable installation record, 410 behavior, recovery guard, regression tests |
+| Safe API DTOs and recursive secret tests | PASS | Central selectors/serializers and recursive forbidden-key tests |
 | No fixed production database credentials | PASS | Required Compose variables |
 | PostgreSQL not published by production Compose | PASS | No `db.ports` entry |
-| Ticket GET read-only | BLOCKED | Remediation pending |
-| Optimistic ticket concurrency | BLOCKED | Remediation pending |
-| Atomic assignment/escalation | BLOCKED | Remediation pending |
-| Correct SLA and status timestamps | BLOCKED | Remediation pending |
-| Distributed login throttling | BLOCKED | Remediation pending |
-| Session revocation after security changes | BLOCKED | Remediation pending |
-| Case-normalized email identity | BLOCKED | Remediation pending |
-| History-preserving user actions | BLOCKED | Remediation pending |
-| Attachment quarantine/scanning architecture | BLOCKED | Remediation pending |
-| Webhook SSRF/signatures/outbox | BLOCKED | Remediation pending |
-| External API default-deny departments | BLOCKED | Remediation pending |
-| Current-tree customer-reference scan | PASS | Automated test pending |
+| Ticket GET read-only | PASS | Separate expiring presence records and regression tests |
+| Optimistic ticket concurrency | PASS | Required expected version and 409 conflict responses |
+| Atomic assignment/escalation | PASS | Transactional mutations/timeline with post-commit side effects |
+| Correct SLA and status timestamps | PASS | Deterministic SLA restart and lifecycle timestamp regression tests |
+| Distributed login throttling | PASS | PostgreSQL-backed account/source throttling with expiry and regression tests |
+| Session revocation after security changes | PASS | Session version and credentials-changed validation with regression tests |
+| Case-normalized email identity | PASS | Database trigger/unique identity, guarded migration, and linkage tests |
+| History-preserving user actions | PASS | Ticket withdrawal, comment/attachment tombstones, and user deactivation |
+| Attachment quarantine/scanning architecture | PASS | Content verification, optional fail-closed ClamAV, quotas, and deletion audit |
+| Webhook SSRF/signatures/outbox | PASS | Public-only DNS pinning, encrypted HMAC secrets, durable retries/history, and regression tests |
+| External API default-deny departments | PASS | Explicit allow-all policy, PostgreSQL throttling, full request audit, and regression tests |
+| Current-tree customer-reference scan | PASS | Automated repository regression test enabled |
 | Git-history secret scan | NOT RUN | Final security scan |
 | Unit/integration tests | NOT RUN | Final commit required |
 | Setup E2E tests | BLOCKED | Test framework pending |
