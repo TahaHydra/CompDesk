@@ -72,21 +72,22 @@ describe('Rate Limiting', () => {
 });
 
 describe('HTML Sanitization', () => {
-    test('removes script tags', () => {
-        expect(sanitizeHtml('<p>Hello</p><script>alert("xss")</script>')).toBe('<p>Hello</p>');
+    test('normalizes markup to plain text and removes executable element contents', () => {
+        expect(sanitizeHtml('<p>Hello</p><script>alert("xss")</script>')).toBe('Hello');
+        expect(sanitizeHtml('<STYLE>body { display: none }</STYLE>Visible')).toBe('Visible');
     });
 
-    test('removes event handlers', () => {
-        expect(sanitizeHtml('<img src="x" onerror="alert(1)">')).not.toContain('onerror');
+    test('drops tags regardless of quoted or unquoted event-handler attributes', () => {
+        expect(sanitizeHtml('<img src=x onerror=alert(1)><strong>Safe</strong>')).toBe('Safe');
+        expect(sanitizeHtml('<a href="javascript:alert(1)">click</a>')).toBe('click');
     });
 
-    test('removes javascript: protocol', () => {
-        expect(sanitizeHtml('<a href="javascript:alert(1)">click</a>')).not.toContain('javascript:');
+    test('preserves ordinary text, markdown, and non-tag angle brackets', () => {
+        expect(sanitizeHtml('Hello **world**\n2 < 3 and <3>')).toBe('Hello **world**\n2 < 3 and <3>');
     });
 
-    test('preserves safe HTML', () => {
-        const safe = '<p>Hello <strong>world</strong></p>';
-        expect(sanitizeHtml(safe)).toBe(safe);
+    test('does not let greater-than characters inside attributes terminate a tag', () => {
+        expect(sanitizeHtml('<a title="1 > 0">visible</a>')).toBe('visible');
     });
 });
 

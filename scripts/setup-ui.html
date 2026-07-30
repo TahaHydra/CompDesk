@@ -85,6 +85,19 @@
     const sections = [...form.querySelectorAll('[data-step]')];
     let step = 0;
     let csrf = '';
+    const element = (tag, text, className = '') => {
+        const node = document.createElement(tag);
+        if (text !== undefined) node.textContent = String(text);
+        if (className) node.className = className;
+        return node;
+    };
+    const definitionList = (rows) => {
+        const list = document.createElement('dl');
+        for (const [term, description] of rows) {
+            list.append(element('dt', term), element('dd', description));
+        }
+        return list;
+    };
     const api = async (path, options = {}) => {
         const headers = {'Content-Type':'application/json', ...(options.headers || {})};
         if (csrf) headers['X-CSRF-Token'] = csrf;
@@ -104,7 +117,7 @@
         storage:{privateAttachmentDir:value('privateAttachmentDir'),uploadMaxSizeMb:Number(value('uploadMaxSizeMb')),attachmentMaxFilesPerTicket:Number(value('attachmentMaxFilesPerTicket')),attachmentMaxMbPerTicket:Number(value('attachmentMaxMbPerTicket')),attachmentGlobalMaxGb:Number(value('attachmentGlobalMaxGb')),tempAttachmentTtlHours:Number(value('tempAttachmentTtlHours')),tempAttachmentMaxFilesPerUser:Number(value('tempAttachmentMaxFilesPerUser')),tempAttachmentMaxMbPerUser:Number(value('tempAttachmentMaxMbPerUser')),clamavEnabled:checked('clamavEnabled'),clamavHost:value('clamavHost'),clamavPort:Number(value('clamavPort'))},
         installDemoData:checked('installDemoData')
     });
-    const message = (text, kind = '') => { const el=$('#message'); el.textContent=text; el.className=`notice ${kind}`; };
+    const message = (text, kind = '') => { const node=$('#message'); node.textContent=text; node.className=`notice ${kind}`; };
     const render = () => {
         sections.forEach((section,index)=>section.classList.toggle('hidden',index!==step));
         $('#progress').style.width=`${(step+1)*10}%`; $('#stepLabel').textContent=`Step ${step+1} of 10`;
@@ -112,7 +125,20 @@
         if(step===4) $('#callback').textContent=`${value('applicationUrl').replace(/\/$/,'')}/api/auth/callback/microsoft-entra-id`;
         if(step===9) {
             const state=data();
-            $('#review').innerHTML=`<dl><dt>Deployment</dt><dd>${state.deploymentMode}</dd><dt>Database</dt><dd>PostgreSQL at ${state.database.host}:${state.database.port}/${state.database.database}</dd><dt>Application URL</dt><dd>${state.identity.applicationUrl}</dd><dt>Authentication</dt><dd>${state.authentication.localEnabled?'Local ':''}${state.authentication.microsoftEnabled?'Microsoft Entra ID':''}</dd><dt>Administrator</dt><dd>${state.authentication.adminEmail}</dd><dt>SMTP</dt><dd>${state.smtp.enabled?'Configured':'Skipped'}</dd><dt>Demo data</dt><dd>${state.installDemoData?'Install':'Disabled'}</dd></dl><p>No passwords, tokens, connection strings, or encryption keys are shown here.</p>`;
+            const authentication = `${state.authentication.localEnabled?'Local ':''}${state.authentication.microsoftEnabled?'Microsoft Entra ID':''}` || 'None';
+            const review = $('#review');
+            review.replaceChildren(
+                definitionList([
+                    ['Deployment', state.deploymentMode],
+                    ['Database', `PostgreSQL at ${state.database.host}:${state.database.port}/${state.database.database}`],
+                    ['Application URL', state.identity.applicationUrl],
+                    ['Authentication', authentication],
+                    ['Administrator', state.authentication.adminEmail],
+                    ['SMTP', state.smtp.enabled?'Configured':'Skipped'],
+                    ['Demo data', state.installDemoData?'Install':'Disabled']
+                ]),
+                element('p', 'No passwords, tokens, connection strings, or encryption keys are shown here.')
+            );
         }
     };
     $('#authorize').onclick=async()=>{
@@ -121,11 +147,19 @@
             csrf=result.csrfToken; $('#token').value=''; history.replaceState({},'', '/setup');
             $('#login').classList.add('hidden'); form.classList.remove('hidden');
             const [system,state]=await Promise.all([api('/setup/api/system'),api('/setup/api/state')]);
-            $('#system').innerHTML=`<dl>${Object.entries(system.checks).map(([key,item])=>`<dt>${key}</dt><dd>${item.ok?'✓':'⚠'} ${item.value||item.message}</dd>`).join('')}</dl><div class="notice">${system.guidance.join('\\n')}</div>`;
+            const systemNode = $('#system');
+            const checks = Object.entries(system.checks).map(([key,item])=>[key, `${item.ok?'✓':'⚠'} ${item.value||item.message}`]);
+            systemNode.replaceChildren(definitionList(checks), element('div', system.guidance.join('\n'), 'notice'));
             if(system.bootstrapDatabase){for(const [key,name] of Object.entries({host:'dbHost',port:'dbPort',database:'dbName',username:'dbUser',sslMode:'dbSslMode'}))form.elements[name].value=system.bootstrapDatabase[key];form.elements.dbPassword.placeholder='Managed by the Docker setup stack';}
-            if(state.state) Object.entries(state.state.identity||{}).forEach(([k,v])=>{if(form.elements[k]&&typeof v!=='boolean')form.elements[k].value=v;});
+            if(state.state) Object.entries(state.state.identity||{}).forEach(([key,item])=>{if(form.elements[key]&&typeof item!=='boolean')form.elements[key].value=item;});
             render();
-        }catch(error){$('#login').insertAdjacentHTML('beforeend',`<div class="notice error">${error.message}</div>`);}
+        }catch(error){
+            const previous = $('#loginError');
+            if (previous) previous.remove();
+            const errorNode = element('div', error instanceof Error ? error.message : 'Setup authorization failed.', 'notice error');
+            errorNode.id = 'loginError';
+            $('#login').append(errorNode);
+        }
     };
     $('#back').onclick=()=>{step=Math.max(0,step-1);render();};
     $('#next').onclick=async()=>{
@@ -134,13 +168,36 @@
             if(step===2) await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});
             await api('/setup/api/state',{method:'PUT',body:JSON.stringify(data())});
             message('', 'hidden'); step=Math.min(9,step+1);render();
-        }catch(error){message(error.message,'error');}
+        }catch(error){message(error instanceof Error ? error.message : 'Unable to save this setup step.','error');}
     };
-    $('#testDatabase').onclick=async()=>{try{const result=await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});$('#databaseResult').className='notice success';$('#databaseResult').textContent=result.message;}catch(error){$('#databaseResult').className='notice error';$('#databaseResult').textContent=error.message;}};
-    const testSmtp=async(mode)=>{try{const result=await api('/setup/api/smtp/test',{method:'POST',body:JSON.stringify({smtp:data().smtp,mode})});$('#smtpResult').className='notice success';$('#smtpResult').textContent=result.message;}catch(error){$('#smtpResult').className='notice error';$('#smtpResult').textContent=error.message;}};
+    $('#testDatabase').onclick=async()=>{try{const result=await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});$('#databaseResult').className='notice success';$('#databaseResult').textContent=result.message;}catch(error){$('#databaseResult').className='notice error';$('#databaseResult').textContent=error instanceof Error ? error.message : 'Database test failed.';}};
+    const testSmtp=async(mode)=>{try{const result=await api('/setup/api/smtp/test',{method:'POST',body:JSON.stringify({smtp:data().smtp,mode})});$('#smtpResult').className='notice success';$('#smtpResult').textContent=result.message;}catch(error){$('#smtpResult').className='notice error';$('#smtpResult').textContent=error instanceof Error ? error.message : 'SMTP test failed.';}};
     $('#testSmtp').onclick=()=>testSmtp('verify');
     $('#sendSmtp').onclick=()=>testSmtp('send');
-    $('#install').onclick=async()=>{if(!$('#confirmInstall').checked){message('Confirm the final review before installation.','error');return;}try{$('#install').disabled=true;const result=await api('/setup/api/install',{method:'POST',body:JSON.stringify(data())});const demo=result.demoCredentials?`<div class="notice"><strong>Demo credentials (shown once)</strong><br>Email: ${result.demoCredentials.email}<br>Password: ${result.demoCredentials.password}</div>`:'';form.innerHTML=`<h2>Installation complete</h2><div class="notice success">${result.message}</div>${demo}<p><a href="${result.loginUrl}">Open CompDesk sign in</a></p><p>Restart the application to leave bootstrap mode.</p>`;}catch(error){$('#install').disabled=false;message(error.message,'error');}};
+    $('#install').onclick=async()=>{
+        if(!$('#confirmInstall').checked){message('Confirm the final review before installation.','error');return;}
+        try{
+            $('#install').disabled=true;
+            const result=await api('/setup/api/install',{method:'POST',body:JSON.stringify(data())});
+            const loginUrl = new URL(result.loginUrl, location.origin);
+            if (!['http:', 'https:'].includes(loginUrl.protocol) || loginUrl.username || loginUrl.password) throw new Error('The setup server returned an invalid login URL.');
+            const children = [element('h2', 'Installation complete'), element('div', result.message, 'notice success')];
+            if (result.demoCredentials) {
+                const demo = element('div', undefined, 'notice');
+                demo.append(element('strong', 'Demo credentials (shown once)'), document.createElement('br'), document.createTextNode(`Email: ${result.demoCredentials.email}`), document.createElement('br'), document.createTextNode(`Password: ${result.demoCredentials.password}`));
+                children.push(demo);
+            }
+            const linkParagraph = document.createElement('p');
+            const link = element('a', 'Open CompDesk sign in');
+            link.href = loginUrl.href;
+            linkParagraph.append(link);
+            children.push(linkParagraph, element('p', 'Restart the application to leave bootstrap mode.'));
+            form.replaceChildren(...children);
+        }catch(error){
+            $('#install').disabled=false;
+            message(error instanceof Error ? error.message : 'Installation failed.','error');
+        }
+    };
 })();
 </script>
 </body>
