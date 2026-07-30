@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>CompDesk first-run setup</title>
+    <style>
+        :root{font:16px/1.5 system-ui,sans-serif;color-scheme:light dark;--accent:#4f46e5}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0}.shell{max-width:960px;margin:auto;padding:2rem 1rem 5rem}header{margin-bottom:1.5rem}.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:1.25rem;box-shadow:0 18px 40px #0005}.progress{height:.5rem;background:#334155;border-radius:1rem;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);transition:width .2s}h1{margin:.25rem 0}h2{margin-top:0}fieldset{border:0;padding:0;margin:1rem 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}label{display:grid;gap:.35rem;font-weight:600}label.full,.full{grid-column:1/-1}input,select,textarea,button{font:inherit}input,select,textarea{width:100%;padding:.7rem;border-radius:8px;border:1px solid #64748b;background:#0f172a;color:inherit}input[type=checkbox],input[type=radio]{width:auto}.choice{display:flex;align-items:flex-start;gap:.6rem}.actions{display:flex;justify-content:space-between;gap:1rem;margin-top:1.25rem}button{border:0;border-radius:8px;padding:.7rem 1rem;font-weight:700;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a5b4fc;outline-offset:2px}.primary{background:var(--accent);color:#fff}.secondary{background:#334155;color:#fff}.danger{color:#fecaca}.notice{padding:.75rem;border:1px solid #475569;border-radius:8px;background:#1e293b;margin:.75rem 0;white-space:pre-line}.error{border-color:#ef4444;color:#fecaca}.success{border-color:#22c55e;color:#bbf7d0}code{word-break:break-all}.hidden{display:none!important}dl{display:grid;grid-template-columns:minmax(160px,1fr) 2fr;gap:.5rem}dt{font-weight:700}@media(max-width:650px){fieldset{grid-template-columns:1fr}.actions{position:sticky;bottom:0;background:#111827;padding-top:1rem}dl{grid-template-columns:1fr}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+    </style>
+</head>
+<body>
+<main class="shell">
+    <header><strong>CompDesk</strong><h1>First-run setup</h1><div class="progress" aria-label="Setup progress"><span id="progress"></span></div><p id="stepLabel"></p></header>
+    <section class="card" id="login">
+        <h2>Authorize setup</h2>
+        <p>Enter the one-time token printed in the server console. It is never stored in this page URL.</p>
+        <label>Bootstrap token<input id="token" type="password" autocomplete="off" required></label>
+        <div class="actions"><span></span><button class="primary" id="authorize">Continue</button></div>
+    </section>
+    <form class="card hidden" id="wizard">
+        <div id="message" class="notice hidden" role="alert"></div>
+        <section data-step="0"><h2>1. Welcome and system check</h2><p>This checker does not install privileged packages.</p><div id="system">Checking this server…</div></section>
+        <section data-step="1" class="hidden"><h2>2. Deployment mode</h2><fieldset>
+            <label class="choice full"><input type="radio" name="deploymentMode" value="docker-compose" checked> Recommended Docker Compose deployment</label>
+            <label class="choice full"><input type="radio" name="deploymentMode" value="standalone"> Existing PostgreSQL with standalone Node.js</label>
+            <label class="choice full"><input type="radio" name="deploymentMode" value="docker-external-db"> Existing PostgreSQL with the app in Docker</label>
+        </fieldset><p>PostgreSQL is the only supported database. Database data and both storage directories must use persistent volumes.</p></section>
+        <section data-step="2" class="hidden"><h2>3. PostgreSQL</h2><fieldset>
+            <label>Provider<select name="dbProvider"><option value="postgresql">PostgreSQL (supported)</option><option value="unsupported">Another database (unsupported)</option></select></label>
+            <label>Host<input name="dbHost" value="127.0.0.1" required></label>
+            <label>Port<input name="dbPort" type="number" value="5432" min="1" max="65535" required></label>
+            <label>Database<input name="dbName" value="compdesk_db" required></label>
+            <label>Username<input name="dbUser" value="compdesk" required autocomplete="username"></label>
+            <label>Password<input name="dbPassword" type="password" required autocomplete="new-password"></label>
+            <label>TLS mode<select name="dbSslMode"><option value="prefer">Prefer</option><option value="require">Require</option><option value="verify-full">Verify full</option><option value="disable">Disable (local only)</option></select></label>
+            <label class="full">Optional CA certificate<textarea name="dbCa" rows="3"></textarea></label>
+        </fieldset><button type="button" class="secondary" id="testDatabase">Test PostgreSQL</button><div id="databaseResult"></div></section>
+        <section data-step="3" class="hidden"><h2>4. Identity and network</h2><fieldset>
+            <label class="full">Public application URL<input name="applicationUrl" type="url" value="http://localhost:3000" required></label>
+            <label>Application name<input name="applicationName" value="CompDesk" maxlength="80" required></label>
+            <label>Support email<input name="supportEmail" type="email" placeholder="support@example.com"></label>
+            <label>Primary color<input name="primaryColor" value="#4f46e5" pattern="#[0-9A-Fa-f]{6}" required></label>
+            <label>Accent color<input name="accentColor" value="#8b5cf6" pattern="#[0-9A-Fa-f]{6}" required></label>
+            <label class="choice full"><input name="reverseProxy" type="checkbox"> Trust a configured reverse proxy (review forwarded-header documentation)</label>
+        </fieldset></section>
+        <section data-step="4" class="hidden"><h2>5. First Super Admin and authentication</h2><fieldset>
+            <label class="choice"><input name="localEnabled" type="checkbox" checked> Local password login</label>
+            <label class="choice"><input name="microsoftEnabled" type="checkbox"> Microsoft Entra ID</label>
+            <label>Administrator name<input name="adminName" required></label>
+            <label>Administrator email<input name="adminEmail" type="email" required autocomplete="username"></label>
+            <label>Local password<input name="adminPassword" type="password" minlength="14" autocomplete="new-password"></label>
+            <label>Confirm password<input name="adminPasswordConfirm" type="password" minlength="14" autocomplete="new-password"></label>
+            <label>Entra tenant ID<input name="tenantId"></label><label>Entra client ID<input name="clientId"></label>
+            <label class="full">Entra client secret<input name="clientSecret" type="password" autocomplete="new-password"></label>
+        </fieldset><p>Passwords require at least 14 characters with upper, lower, number, and symbol. Expected callback: <code id="callback"></code></p></section>
+        <section data-step="5" class="hidden"><h2>6. Secrets and encryption</h2><p>CompDesk generates independent cryptographic secrets during installation. They are written atomically to one ignored environment file with restrictive permissions and are never shown by this wizard.</p></section>
+        <section data-step="6" class="hidden"><h2>7. SMTP and notifications</h2><label class="choice"><input name="smtpEnabled" type="checkbox"> Configure SMTP now (optional)</label><fieldset>
+            <label>Host<input name="smtpHost"></label><label>Port<input name="smtpPort" type="number" value="587"></label>
+            <label>Username<input name="smtpUsername" autocomplete="username"></label><label>Password<input name="smtpPassword" type="password" autocomplete="new-password"></label>
+            <label>From address<input name="smtpFrom" type="email"></label><label>Test recipient<input name="smtpRecipient" type="email"></label>
+            <label class="choice"><input name="smtpSecure" type="checkbox"> Implicit TLS (port 465)</label>
+            <label class="choice"><input name="smtpRequireTls" type="checkbox" checked> Require STARTTLS</label>
+        </fieldset><button type="button" class="secondary" id="testSmtp">Verify connection & authentication</button> <button type="button" class="secondary" id="sendSmtp">Send real test message</button><div id="smtpResult"></div></section>
+        <section data-step="7" class="hidden"><h2>8. Storage and scanning</h2><fieldset>
+            <label class="full">Private attachment directory<input name="privateAttachmentDir" value="storage/attachments" required></label>
+            <label>Maximum file size (MB)<input name="uploadMaxSizeMb" type="number" value="25" min="1" max="100"></label>
+            <label class="choice"><input name="clamavEnabled" type="checkbox"> Enable ClamAV integration when available</label>
+        </fieldset><p>Ticket attachments remain outside public static storage. Configure persistent volumes and backups for private attachments and branding assets.</p></section>
+        <section data-step="8" class="hidden"><h2>9. Demo data</h2><label class="choice"><input name="installDemoData" type="checkbox"> Install optional demo data</label><p>Disabled by default. Demo credentials are randomly generated and shown once. Production seeding requires an explicit override.</p></section>
+        <section data-step="9" class="hidden"><h2>10. Review and install</h2><div id="review"></div><label class="choice"><input id="confirmInstall" type="checkbox"> I confirm these non-secret settings and authorize migrations and installation.</label></section>
+        <div class="actions"><button type="button" class="secondary" id="back">Back</button><button type="button" class="primary" id="next">Next</button><button type="button" class="primary hidden" id="install">Install CompDesk</button></div>
+    </form>
+</main>
+<script>
+(() => {
+    const $ = (selector) => document.querySelector(selector);
+    const form = $('#wizard');
+    const sections = [...form.querySelectorAll('[data-step]')];
+    let step = 0;
+    let csrf = '';
+    const api = async (path, options = {}) => {
+        const headers = {'Content-Type':'application/json', ...(options.headers || {})};
+        if (csrf) headers['X-CSRF-Token'] = csrf;
+        const response = await fetch(path, {...options, headers, credentials:'same-origin'});
+        const payload = await response.json().catch(() => ({error:'The setup server returned an invalid response.'}));
+        if (!response.ok) throw new Error(payload.error || 'Setup request failed.');
+        return payload;
+    };
+    const value = (name) => form.elements[name]?.value || '';
+    const checked = (name) => Boolean(form.elements[name]?.checked);
+    const data = () => ({
+        deploymentMode: form.elements.deploymentMode.value,
+        database:{provider:value('dbProvider'),host:value('dbHost'),port:Number(value('dbPort')),database:value('dbName'),username:value('dbUser'),password:value('dbPassword'),sslMode:value('dbSslMode'),ca:value('dbCa')},
+        identity:{applicationUrl:value('applicationUrl'),applicationName:value('applicationName'),supportEmail:value('supportEmail'),primaryColor:value('primaryColor'),accentColor:value('accentColor'),reverseProxy:checked('reverseProxy')},
+        authentication:{localEnabled:checked('localEnabled'),microsoftEnabled:checked('microsoftEnabled'),adminName:value('adminName'),adminEmail:value('adminEmail'),adminPassword:value('adminPassword'),adminPasswordConfirm:value('adminPasswordConfirm'),tenantId:value('tenantId'),clientId:value('clientId'),clientSecret:value('clientSecret')},
+        smtp:{enabled:checked('smtpEnabled'),host:value('smtpHost'),port:Number(value('smtpPort')),username:value('smtpUsername'),password:value('smtpPassword'),from:value('smtpFrom'),recipient:value('smtpRecipient'),secure:checked('smtpSecure'),requireTls:checked('smtpRequireTls')},
+        storage:{privateAttachmentDir:value('privateAttachmentDir'),uploadMaxSizeMb:Number(value('uploadMaxSizeMb')),clamavEnabled:checked('clamavEnabled')},
+        installDemoData:checked('installDemoData')
+    });
+    const message = (text, kind = '') => { const el=$('#message'); el.textContent=text; el.className=`notice ${kind}`; };
+    const render = () => {
+        sections.forEach((section,index)=>section.classList.toggle('hidden',index!==step));
+        $('#progress').style.width=`${(step+1)*10}%`; $('#stepLabel').textContent=`Step ${step+1} of 10`;
+        $('#back').disabled=step===0; $('#next').classList.toggle('hidden',step===9); $('#install').classList.toggle('hidden',step!==9);
+        if(step===4) $('#callback').textContent=`${value('applicationUrl').replace(/\\/$/,'')}/api/auth/callback/microsoft-entra-id`;
+        if(step===9) {
+            const state=data();
+            $('#review').innerHTML=`<dl><dt>Deployment</dt><dd>${state.deploymentMode}</dd><dt>Database</dt><dd>PostgreSQL at ${state.database.host}:${state.database.port}/${state.database.database}</dd><dt>Application URL</dt><dd>${state.identity.applicationUrl}</dd><dt>Authentication</dt><dd>${state.authentication.localEnabled?'Local ':''}${state.authentication.microsoftEnabled?'Microsoft Entra ID':''}</dd><dt>Administrator</dt><dd>${state.authentication.adminEmail}</dd><dt>SMTP</dt><dd>${state.smtp.enabled?'Configured':'Skipped'}</dd><dt>Demo data</dt><dd>${state.installDemoData?'Install':'Disabled'}</dd></dl><p>No passwords, tokens, connection strings, or encryption keys are shown here.</p>`;
+        }
+    };
+    $('#authorize').onclick=async()=>{
+        try{
+            const result=await api('/setup/api/session',{method:'POST',body:JSON.stringify({token:$('#token').value})});
+            csrf=result.csrfToken; $('#token').value=''; history.replaceState({},'', '/setup');
+            $('#login').classList.add('hidden'); form.classList.remove('hidden');
+            const [system,state]=await Promise.all([api('/setup/api/system'),api('/setup/api/state')]);
+            $('#system').innerHTML=`<dl>${Object.entries(system.checks).map(([key,item])=>`<dt>${key}</dt><dd>${item.ok?'✓':'⚠'} ${item.value||item.message}</dd>`).join('')}</dl><div class="notice">${system.guidance.join('\\n')}</div>`;
+            if(system.bootstrapDatabase){for(const [key,name] of Object.entries({host:'dbHost',port:'dbPort',database:'dbName',username:'dbUser',sslMode:'dbSslMode'}))form.elements[name].value=system.bootstrapDatabase[key];form.elements.dbPassword.placeholder='Managed by the Docker setup stack';}
+            if(state.state) Object.entries(state.state.identity||{}).forEach(([k,v])=>{if(form.elements[k]&&typeof v!=='boolean')form.elements[k].value=v;});
+            render();
+        }catch(error){$('#login').insertAdjacentHTML('beforeend',`<div class="notice error">${error.message}</div>`);}
+    };
+    $('#back').onclick=()=>{step=Math.max(0,step-1);render();};
+    $('#next').onclick=async()=>{
+        if(!form.reportValidity())return;
+        try{
+            if(step===2) await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});
+            await api('/setup/api/state',{method:'PUT',body:JSON.stringify(data())});
+            message('', 'hidden'); step=Math.min(9,step+1);render();
+        }catch(error){message(error.message,'error');}
+    };
+    $('#testDatabase').onclick=async()=>{try{const result=await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});$('#databaseResult').className='notice success';$('#databaseResult').textContent=result.message;}catch(error){$('#databaseResult').className='notice error';$('#databaseResult').textContent=error.message;}};
+    const testSmtp=async(mode)=>{try{const result=await api('/setup/api/smtp/test',{method:'POST',body:JSON.stringify({smtp:data().smtp,mode})});$('#smtpResult').className='notice success';$('#smtpResult').textContent=result.message;}catch(error){$('#smtpResult').className='notice error';$('#smtpResult').textContent=error.message;}};
+    $('#testSmtp').onclick=()=>testSmtp('verify');
+    $('#sendSmtp').onclick=()=>testSmtp('send');
+    $('#install').onclick=async()=>{if(!$('#confirmInstall').checked){message('Confirm the final review before installation.','error');return;}try{$('#install').disabled=true;const result=await api('/setup/api/install',{method:'POST',body:JSON.stringify(data())});const demo=result.demoCredentials?`<div class="notice"><strong>Demo credentials (shown once)</strong><br>Email: ${result.demoCredentials.email}<br>Password: ${result.demoCredentials.password}</div>`:'';form.innerHTML=`<h2>Installation complete</h2><div class="notice success">${result.message}</div>${demo}<p><a href="${result.loginUrl}">Open CompDesk sign in</a></p><p>Restart the application to leave bootstrap mode.</p>`;}catch(error){$('#install').disabled=false;message(error.message,'error');}};
+})();
+</script>
+</body>
+</html>
