@@ -45,7 +45,8 @@ export const updateApiClientSchema = z.object({
 function hashApiKey(apiKey: string): string {
     // API keys are 192-bit random bearer tokens, not human passwords. A deterministic
     // digest is intentionally used for indexed lookup without storing the raw key.
-    const lookupDigest = crypto.createHash('sha256').update(apiKey).digest('hex'); // codeql[js/insufficient-password-hash]
+    // codeql[js/insufficient-password-hash]
+    const lookupDigest = crypto.createHash('sha256').update(apiKey).digest('hex');
     return lookupDigest;
 }
 
