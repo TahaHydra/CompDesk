@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { mkdir, rename, stat } from 'fs/promises';
 import { Prisma, Role, type User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT } from '@/lib/api-dto';
 import { auditLog } from '@/lib/audit';
 import { sendNewTicketForDepartmentEmail, sendTicketCreatedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
@@ -162,7 +163,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
     if (input.idempotencyKey) {
         const existing = await prisma.ticket.findFirst({
             where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
-            include: { queue: true, requester: true, assignments: { include: { user: true } } },
+            include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
         });
         if (existing) return { ticket: existing, replayed: true };
     }
@@ -270,7 +271,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
 
             return tx.ticket.findUniqueOrThrow({
                 where: { id: ticketId },
-                include: { queue: true, requester: true, assignments: { include: { user: true } } },
+                include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
             });
         }, { maxWait: 5_000, timeout: 15_000 });
     } catch (error) {
@@ -278,7 +279,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         if (input.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
             const existing = await prisma.ticket.findFirst({
                 where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
-                include: { queue: true, requester: true, assignments: { include: { user: true } } },
+                include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
             });
             if (existing) return { ticket: existing, replayed: true };
         }

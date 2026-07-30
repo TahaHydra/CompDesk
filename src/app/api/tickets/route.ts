@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma, Priority, TicketStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe } from '@/lib/api-dto';
 import { createTicketSchema } from '@/lib/validations';
 import { checkRateLimit } from '@/lib/utils';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
@@ -144,12 +145,12 @@ export async function GET(req: NextRequest) {
             return { ...ticket, assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
         });
 
-        return NextResponse.json({
+        return NextResponse.json(assertApiResponseSafe({
             tickets: enrichedTickets,
             pagination: { page, limit, total, pages: Math.ceil(total / limit) },
             scope: { view, label: ticketScopeLabel(role, view) },
             tagMode: 'any',
-        });
+        }));
     } catch (error) {
         logger.error('Failed to fetch tickets', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -177,7 +178,7 @@ export async function POST(req: NextRequest) {
             requester: { id: session.user.id, email: session.user.email, role: session.user.role },
             input: parsed.data,
         });
-        return NextResponse.json(result.ticket, { status: result.replayed ? 200 : 201 });
+        return NextResponse.json(assertApiResponseSafe(result.ticket), { status: result.replayed ? 200 : 201 });
     } catch (error) {
         if (error instanceof TemplateResolutionError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
@@ -191,9 +192,9 @@ export async function POST(req: NextRequest) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && requesterId && idempotencyKey) {
             const existing = await prisma.ticket.findFirst({
                 where: { requesterId, idempotencyKey },
-                include: { queue: true, requester: true, assignments: { include: { user: true } } },
+                include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
             });
-            if (existing) return NextResponse.json(existing);
+            if (existing) return NextResponse.json(assertApiResponseSafe(existing));
         }
         logger.error('Failed to create ticket', { error });
         return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 });

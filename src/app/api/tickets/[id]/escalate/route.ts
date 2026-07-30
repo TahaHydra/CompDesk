@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe } from '@/lib/api-dto';
 import { isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const { escalateToId, reason } = parsed.data;
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
-            include: { queue: true, requester: true, assignments: { include: { user: true }, orderBy: { assignedAt: 'asc' } } },
+            include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } }, orderBy: { assignedAt: 'asc' } } },
         });
         if (!ticket) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         if (!(await canAccessTicket(session.user.id, session.user.role, ticket))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     priority: newLevel >= 2 ? 'URGENT' : ticket.priority === 'NORMAL' ? 'HIGH' : ticket.priority,
                     status: 'OPEN',
                 },
-                include: { escalatedTo: true, assignments: { include: { user: true }, orderBy: { assignedAt: 'asc' } } },
+                include: { escalatedTo: { select: STAFF_USER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } }, orderBy: { assignedAt: 'asc' } } },
             });
             await tx.timelineEvent.create({
                 data: {
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             entityId: ticketId,
             metadata: { level: newLevel, escalateToId, reason, assignmentBehavior: 'additive', previousAssignmentIds, resultingAssignmentIds: updated.assignments.map((assignment) => assignment.userId) },
         });
-        return NextResponse.json({ success: true, escalationLevel: newLevel, ticket: updated });
+        return NextResponse.json(assertApiResponseSafe({ success: true, escalationLevel: newLevel, ticket: updated }));
     } catch (error) {
         if (error instanceof AssignmentServiceError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('Failed to escalate ticket', { error });
