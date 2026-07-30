@@ -78,6 +78,13 @@ enum AssignmentSource {
   AUTOMATION
 }
 
+enum AttachmentScanStatus {
+  NOT_CONFIGURED
+  CLEAN
+  INFECTED
+  ERROR
+}
+
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
@@ -100,18 +107,20 @@ model User {
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  requestedTickets   Ticket[]         @relation("TicketRequester")
-  ticketAssignments  TicketAssignee[] @relation("AssignedUser")
-  assignmentsCreated TicketAssignee[] @relation("AssignmentActor")
-  escalatedByTickets Ticket[]         @relation("TicketEscalatedBy")
-  escalatedToTickets Ticket[]         @relation("TicketEscalatedTo")
-  watchedTickets     TicketWatcher[]
-  timelineEvents     TimelineEvent[]
-  groupMemberships   GroupMember[]
-  queueMemberships   QueueMember[]
-  auditLogs          AuditLog[]
-  sessions           Session[]
-  accounts           Account[]
+  requestedTickets     Ticket[]              @relation("TicketRequester")
+  ticketAssignments    TicketAssignee[]      @relation("AssignedUser")
+  assignmentsCreated   TicketAssignee[]      @relation("AssignmentActor")
+  escalatedByTickets   Ticket[]              @relation("TicketEscalatedBy")
+  escalatedToTickets   Ticket[]              @relation("TicketEscalatedTo")
+  watchedTickets       TicketWatcher[]
+  timelineEvents       TimelineEvent[]
+  groupMemberships     GroupMember[]
+  queueMemberships     QueueMember[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+  accounts             Account[]
+  uploadedAttachments  Attachment[]          @relation("AttachmentUploader")
+  temporaryAttachments TemporaryAttachment[]
 
   @@map("users")
 }
@@ -424,20 +433,51 @@ model TimelineEvent {
 // ── Attachments ────────────────────────────────────────────────
 
 model Attachment {
-  id           String    @id @default(uuid())
-  ticketId     String    @map("ticket_id")
-  filename     String
-  mimetype     String
-  size         Int
-  path         String
-  createdAt    DateTime  @default(now()) @map("created_at")
-  deletedAt    DateTime? @map("deleted_at")
-  deletedById  String?   @map("deleted_by_id")
-  deleteReason String?   @map("delete_reason")
+  id               String               @id @default(uuid())
+  ticketId         String               @map("ticket_id")
+  uploaderId       String?              @map("uploader_id")
+  filename         String
+  mimetype         String
+  detectedMimetype String               @map("detected_mimetype")
+  size             Int
+  path             String
+  sha256           String
+  scanStatus       AttachmentScanStatus @default(NOT_CONFIGURED) @map("scan_status")
+  scannedAt        DateTime?            @map("scanned_at")
+  blobRemovedAt    DateTime?            @map("blob_removed_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  deletedAt        DateTime?            @map("deleted_at")
+  deletedById      String?              @map("deleted_by_id")
+  deleteReason     String?              @map("delete_reason")
 
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploader User?  @relation("AttachmentUploader", fields: [uploaderId], references: [id], onDelete: SetNull)
 
+  @@index([ticketId, deletedAt])
+  @@index([scanStatus])
   @@map("attachments")
+}
+
+model TemporaryAttachment {
+  id               String               @id @default(uuid())
+  userId           String               @map("user_id")
+  filename         String
+  mimetype         String
+  detectedMimetype String               @map("detected_mimetype")
+  size             Int
+  path             String               @unique
+  sha256           String
+  scanStatus       AttachmentScanStatus @default(NOT_CONFIGURED) @map("scan_status")
+  scannedAt        DateTime?            @map("scanned_at")
+  blobRemovedAt    DateTime?            @map("blob_removed_at")
+  expiresAt        DateTime             @map("expires_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+  @@map("temporary_attachments")
 }
 
 // ── SLA Policies ───────────────────────────────────────────────

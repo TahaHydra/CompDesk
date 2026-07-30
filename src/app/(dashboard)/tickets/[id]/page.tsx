@@ -34,9 +34,6 @@ function formatFileSize(bytes: number) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function isImageType(mimetype: string) {
-    return mimetype.startsWith('image/');
-}
 
 const CONVERSATION_EVENT_TYPES = ['COMMENT', 'INTERNAL_NOTE'];
 const STATUS_OPTIONS = ['NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'];
@@ -369,8 +366,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         );
     }
 
-    const imageAttachments = (ticket.attachments ?? []).filter((a: any) => isImageType(a.mimetype));
-    const fileAttachments = (ticket.attachments ?? []).filter((a: any) => !isImageType(a.mimetype));
+    const activeAttachments = (ticket.attachments ?? []).filter((attachment: any) => !attachment.deletedAt && attachment.path);
+    const removedAttachments = (ticket.attachments ?? []).filter((attachment: any) => Boolean(attachment.deletedAt));
     const isRequester = ticket.requesterId === session?.user?.id;
     const assignments = ticket.assignments ?? [];
     const assignedToCurrentUser = assignments.some((assignment: any) => assignment.userId === session?.user?.id);
@@ -555,51 +552,35 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base flex items-center gap-2">
-                                    <Paperclip className="h-4 w-4 text-primary" /> Attachments ({ticket.attachments.length})
+                                    <Paperclip className="h-4 w-4 text-primary" /> Attachments ({activeAttachments.length})
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
-                                {/* Image thumbnails */}
-                                {imageAttachments.length > 0 && (
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                        {imageAttachments.map((att: any) => (
-                                            <div key={att.id} className="relative group rounded-lg overflow-hidden border bg-muted/30">
-                                                <a href={att.path} target="_blank" rel="noopener noreferrer">
-                                                    <img src={att.path} alt={att.filename} className="w-full h-32 object-cover" />
-                                                </a>
-                                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                    <Button asChild size="icon" variant="ghost" className="h-8 w-8 text-white"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-4 w-4" /></a></Button>
-                                                    <ConfirmDestructiveAction
-                                                        title="Delete attachment?"
-                                                        description={<>The file <strong>{att.filename}</strong> will be permanently removed from this ticket.</>}
-                                                        onConfirm={() => void deleteAttachment(att.id)}
-                                                        trigger={<Button size="icon" variant="ghost" className="text-white h-8 w-8" aria-label={`Delete ${att.filename}`}><Trash2 className="h-4 w-4" /></Button>}
-                                                    />
-                                                </div>
-                                                <p className="text-xs truncate p-1.5 text-muted-foreground">{att.filename}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* File list */}
-                                {fileAttachments.map((att: any) => (
+                                {activeAttachments.map((att: any) => (
                                     <div key={att.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
                                         <FileIcon className="h-8 w-8 text-muted-foreground p-1 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
+                                            <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured'}</p>
                                         </div>
-                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
+                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
                                         <ConfirmDestructiveAction
-                                            title="Delete attachment?"
-                                            description={<>The file <strong>{att.filename}</strong> will be permanently removed from this ticket.</>}
+                                            title="Remove attachment?"
+                                            description={<>The stored file <strong>{att.filename}</strong> will be removed, while its history record and audit evidence are retained.</>}
                                             onConfirm={() => void deleteAttachment(att.id)}
-                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={`Delete ${att.filename}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={`Remove ${att.filename}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
                                         />
                                     </div>
                                 ))}
-                            </CardContent>
+                                {removedAttachments.map((att: any) => (
+                                    <div key={att.id} className="flex items-center gap-3 rounded-lg border border-dashed p-2 text-muted-foreground">
+                                        <FileIcon className="h-8 w-8 p-1 shrink-0" />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium truncate">{att.filename}</p>
+                                            <p className="text-xs">Removed · history retained</p>
+                                        </div>
+                                    </div>
+                                ))}                            </CardContent>
                         </Card>
                     )}
 

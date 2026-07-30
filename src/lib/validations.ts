@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { Priority, Severity, TicketStatus } from '@prisma/client';
+import { attachmentLimits } from '@/lib/attachment-security';
 
 const uploadedFileSchema = z.object({
     url: z.string().regex(/^temporary\/[0-9a-f-]{36}\/[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/, 'Invalid temporary file reference'),
     filename: z.string().trim().min(1).max(255),
     mimetype: z.string().trim().min(1).max(120),
-    size: z.number().int().min(0).max(10 * 1024 * 1024),
+    size: z.number().int().positive().max(attachmentLimits().maxFileBytes),
 });
 
 export const createTicketSchema = z.object({

@@ -1,34 +1,46 @@
+import { randomBytes } from 'node:crypto';
+import { chmod, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
-import path from 'path';
-import { mkdir, unlink, writeFile } from 'fs/promises';
 import { auth } from '@/lib/auth';
+import { auditLog } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 import { canAccessTicket } from '@/lib/permissions';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import logger from '@/lib/logger';
-import { authenticatedAttachmentUrl, privateAttachmentLocation, temporaryAttachmentLocation, temporaryAttachmentUsage } from '@/lib/attachment-storage';
-import { checkRateLimit } from '@/lib/utils';
+import {
+    authenticatedAttachmentUrl,
+    privateAttachmentLocation,
+    resolveTemporaryAttachmentPath,
+    temporaryAttachmentLimits,
+    temporaryAttachmentLocation,
+} from '@/lib/attachment-storage';
+import { AttachmentValidationError, attachmentLimits, inspectAttachment } from '@/lib/attachment-security';
+import { consumeDatabaseRateLimit } from '@/lib/database-rate-limit';
+import { requestSourceIp } from '@/lib/request-ip';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MIME_EXTENSIONS: Record<string, string> = {
-    'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp', 'image/bmp': '.bmp',
-    'application/pdf': '.pdf', 'application/msword': '.doc',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-    'application/vnd.ms-excel': '.xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-    'application/vnd.ms-powerpoint': '.ppt', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-    'application/zip': '.zip', 'application/x-rar-compressed': '.rar', 'application/x-7z-compressed': '.7z',
-    'text/plain': '.txt', 'text/csv': '.csv',
-};
+class QuotaError extends Error {
+    constructor(message: string, public status: number) {
+        super(message);
+        this.name = 'QuotaError';
+    }
+}
 
-function contentMatchesMime(type: string, buffer: Buffer): boolean {
-    if (type === 'image/png') return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
-    if (type === 'image/jpeg') return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-    if (type === 'image/gif') return buffer.length >= 6 && ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString('ascii'));
-    if (type === 'image/webp') return buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
-    if (type === 'image/bmp') return buffer.length >= 2 && buffer.subarray(0, 2).toString('ascii') === 'BM';
-    if (type === 'application/pdf') return buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-';
-    return true;
+async function removeExpiredTemporaryFiles(userId: string, now: Date): Promise<void> {
+    const expired = await prisma.temporaryAttachment.findMany({
+        where: { userId, expiresAt: { lte: now } },
+        select: { path: true },
+    });
+    if (expired.length === 0) return;
+    const removablePaths: string[] = [];
+    await Promise.all(expired.map(async ({ path: reference }) => {
+        const filePath = resolveTemporaryAttachmentPath(reference, userId);
+        if (!filePath) return;
+        const removed = await unlink(filePath).then(() => true).catch((error: NodeJS.ErrnoException) => error.code === 'ENOENT');
+        if (removed) removablePaths.push(reference);
+    }));
+    if (removablePaths.length > 0) {
+        await prisma.temporaryAttachment.deleteMany({ where: { userId, path: { in: removablePaths } } });
+    }
 }
 
 export async function POST(req: NextRequest) {
@@ -38,19 +50,23 @@ export async function POST(req: NextRequest) {
         if (!(await getFeatureFlag('feature_attachments_enabled'))) {
             return NextResponse.json({ error: 'Attachments are disabled' }, { status: 403 });
         }
-        if (!checkRateLimit(`attachment:upload:${session.user.id}`, 20, 10 * 60 * 1000)) {
-            return NextResponse.json({ error: 'Upload rate limit exceeded. Try again later.' }, { status: 429 });
+        const rateLimit = await consumeDatabaseRateLimit('attachment-upload', `${session.user.id}:${requestSourceIp(req)}`, 20, 10 * 60 * 1000);
+        if (!rateLimit.allowed) {
+            return NextResponse.json(
+                { error: 'Upload rate limit exceeded. Try again later.', retryAfterSeconds: rateLimit.retryAfterSeconds },
+                { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } }
+            );
         }
+
         const body = await req.formData();
         const fileValue = body.get('file');
         const ticketIdValue = body.get('ticketId');
         const ticketId = typeof ticketIdValue === 'string' && ticketIdValue ? ticketIdValue : null;
         if (!(fileValue instanceof File)) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-        if (fileValue.size === 0 || fileValue.size > MAX_FILE_SIZE) {
-            return NextResponse.json({ error: 'Files must be between 1 byte and 10 MB' }, { status: 400 });
-        }
-        const extension = MIME_EXTENSIONS[fileValue.type];
-        if (!extension) return NextResponse.json({ error: `File type not allowed: ${fileValue.type || 'unknown'}` }, { status: 400 });
+
+        const buffer = Buffer.from(await fileValue.arrayBuffer());
+        const inspection = await inspectAttachment(fileValue.name, fileValue.type, buffer);
+        const uniqueName = `${randomBytes(16).toString('hex')}${inspection.extension}`;
 
         let ticket: { id: string; requesterId: string; queueId: string } | null = null;
         if (ticketId) {
@@ -66,60 +82,131 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        if (!ticket) {
-            const usage = await temporaryAttachmentUsage(session.user.id);
-            if (usage.files >= usage.limits.maxFilesPerUser) {
-                return NextResponse.json({ error: 'Temporary upload file limit reached. Submit or remove existing files first.' }, { status: 429 });
-            }
-            if (usage.bytes + fileValue.size > usage.limits.maxBytesPerUser) {
-                return NextResponse.json({ error: 'Temporary upload storage limit reached. Submit or remove existing files first.' }, { status: 413 });
-            }
-        }
-
-        const buffer = Buffer.from(await fileValue.arrayBuffer());
-        if (!contentMatchesMime(fileValue.type, buffer)) {
-            return NextResponse.json({ error: 'The uploaded file content does not match its declared type' }, { status: 400 });
-        }
-        const uniqueName = `${crypto.randomBytes(16).toString('hex')}${extension}`;
-        let uploadDirectory: string;
-        let filePath: string;
-        let storedPath: string;
         if (ticket) {
+            const limits = attachmentLimits();
             const location = privateAttachmentLocation(ticket.id, uniqueName);
-            uploadDirectory = location.directory;
-            filePath = location.absolutePath;
-            storedPath = location.reference;
-        } else {
-            const location = temporaryAttachmentLocation(session.user.id, uniqueName);
-            uploadDirectory = location.directory;
-            filePath = location.absolutePath;
-            storedPath = location.reference;
-        }
-        await mkdir(uploadDirectory, { recursive: true });
-        await writeFile(filePath, buffer, { flag: 'wx' });
-        const safeOriginalName = path.basename(fileValue.name).slice(0, 255) || `attachment${extension}`;
-        let attachment = null;
-        if (ticket) {
+            await mkdir(location.directory, { recursive: true, mode: 0o700 });
+            await chmod(location.directory, 0o700).catch(() => undefined);
+            let fileWritten = false;
             try {
-                attachment = await prisma.attachment.create({
-                    data: { ticketId: ticket.id, filename: safeOriginalName, mimetype: fileValue.type, size: fileValue.size, path: storedPath },
+                const attachment = await prisma.$transaction(async (tx) => {
+                    await tx.$executeRaw`SELECT pg_advisory_xact_lock(1449756210)`;
+                    const [ticketUsage, globalUsage] = await Promise.all([
+                        tx.attachment.aggregate({
+                            where: { ticketId: ticket!.id, deletedAt: null },
+                            _count: { _all: true },
+                            _sum: { size: true },
+                        }),
+                        tx.attachment.aggregate({ where: { blobRemovedAt: null }, _sum: { size: true } }),
+                    ]);
+                    if (ticketUsage._count._all >= limits.maxFilesPerTicket) {
+                        throw new QuotaError('Attachment file limit reached for this ticket', 429);
+                    }
+                    if ((ticketUsage._sum.size ?? 0) + buffer.length > limits.maxBytesPerTicket) {
+                        throw new QuotaError('Attachment storage limit reached for this ticket', 413);
+                    }
+                    if ((globalUsage._sum.size ?? 0) + buffer.length > limits.globalMaxBytes) {
+                        throw new QuotaError('Global attachment storage limit reached', 507);
+                    }
+                    await writeFile(location.absolutePath, buffer, { flag: 'wx', mode: 0o600 });
+                    fileWritten = true;
+                    return tx.attachment.create({
+                        data: {
+                            ticketId: ticket!.id,
+                            uploaderId: session.user.id,
+                            filename: inspection.filename,
+                            mimetype: inspection.declaredMimetype,
+                            detectedMimetype: inspection.detectedMimetype,
+                            size: buffer.length,
+                            path: location.reference,
+                            sha256: inspection.sha256,
+                            scanStatus: inspection.status,
+                            scannedAt: inspection.scannedAt,
+                        },
+                    });
+                });
+                const accessUrl = authenticatedAttachmentUrl(attachment.id);
+                void auditLog({
+                    userId: session.user.id,
+                    action: 'attachment.uploaded',
+                    entity: 'attachment',
+                    entityId: attachment.id,
+                    metadata: { ticketId: ticket.id, filename: attachment.filename, size: attachment.size, scanStatus: attachment.scanStatus },
+                    ipAddress: requestSourceIp(req),
+                    userAgent: req.headers.get('user-agent') || undefined,
+                });
+                return NextResponse.json({
+                    id: attachment.id,
+                    filename: attachment.filename,
+                    mimetype: attachment.detectedMimetype,
+                    size: attachment.size,
+                    scanStatus: attachment.scanStatus,
+                    url: accessUrl,
+                    path: accessUrl,
                 });
             } catch (error) {
-                await unlink(filePath).catch(() => undefined);
+                if (fileWritten) await unlink(location.absolutePath).catch(() => undefined);
                 throw error;
             }
         }
-        const accessUrl = attachment ? authenticatedAttachmentUrl(attachment.id) : storedPath;
-        return NextResponse.json({
-            id: attachment?.id ?? null,
-            filename: safeOriginalName,
-            mimetype: fileValue.type,
-            size: fileValue.size,
-            url: accessUrl,
-            path: accessUrl,
-        });
+
+        const now = new Date();
+        await removeExpiredTemporaryFiles(session.user.id, now);
+        const limits = temporaryAttachmentLimits();
+        const location = temporaryAttachmentLocation(session.user.id, uniqueName);
+        await mkdir(location.directory, { recursive: true, mode: 0o700 });
+        let fileWritten = false;
+        try {
+            const temporary = await prisma.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'attachment-temp:' + session.user.id}))`;
+                const usage = await tx.temporaryAttachment.aggregate({
+                    where: { userId: session.user.id, expiresAt: { gt: now } },
+                    _count: { _all: true },
+                    _sum: { size: true },
+                });
+                if (usage._count._all >= limits.maxFilesPerUser) {
+                    throw new QuotaError('Temporary upload file limit reached. Submit or remove existing files first.', 429);
+                }
+                if ((usage._sum.size ?? 0) + buffer.length > limits.maxBytesPerUser) {
+                    throw new QuotaError('Temporary upload storage limit reached. Submit or remove existing files first.', 413);
+                }
+                await writeFile(location.absolutePath, buffer, { flag: 'wx', mode: 0o600 });
+                fileWritten = true;
+                return tx.temporaryAttachment.create({
+                    data: {
+                        userId: session.user.id,
+                        filename: inspection.filename,
+                        mimetype: inspection.declaredMimetype,
+                        detectedMimetype: inspection.detectedMimetype,
+                        size: buffer.length,
+                        path: location.reference,
+                        sha256: inspection.sha256,
+                        scanStatus: inspection.status,
+                        scannedAt: inspection.scannedAt,
+                        expiresAt: new Date(now.getTime() + limits.ttlMs),
+                    },
+                });
+            });
+            return NextResponse.json({
+                id: null,
+                filename: temporary.filename,
+                mimetype: temporary.detectedMimetype,
+                size: temporary.size,
+                scanStatus: temporary.scanStatus,
+                url: temporary.path,
+                path: temporary.path,
+            });
+        } catch (error) {
+            if (fileWritten) await unlink(location.absolutePath).catch(() => undefined);
+            throw error;
+        }
     } catch (error) {
-        logger.error('Upload failed', { error });
+        if (error instanceof AttachmentValidationError) {
+            const status = error.code === 'MALWARE' ? 422 : error.code === 'SCAN' ? 503 : error.code === 'SIZE' ? 413 : 400;
+            return NextResponse.json({ error: error.message }, { status });
+        }
+        if (error instanceof QuotaError) return NextResponse.json({ error: error.message }, { status: error.status });
+        logger.error('Upload failed', { error: error instanceof Error ? error.message : 'Unknown upload error' });
         return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
     }
 }

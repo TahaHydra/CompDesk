@@ -14,6 +14,8 @@ CompDesk is an actively developed self-hosted helpdesk. Complete
 - Store `.env` or equivalent secrets with owner-only access. Never commit it.
 - Keep private attachments outside `public`; use durable shared storage for
   multiple replicas.
+- Configure the limits in `.env.example`. If `CLAMAV_HOST` is set, scanner
+  errors fail closed; monitor scanner availability and review `docs/ATTACHMENT_SECURITY.md`.
 - Restrict outbound traffic. SMTP and Entra require their configured endpoints;
   webhooks require explicit destination policy.
 - Run migrations as a one-shot deployment step before starting replicas.

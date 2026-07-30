@@ -30,7 +30,7 @@ function parseUploadedFiles(value: unknown): UploadedFieldFile[] | null {
         if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
         const candidate = item as Record<string, unknown>;
         if (
-            typeof candidate.url !== 'string' || !candidate.url.startsWith('/uploads/') ||
+            typeof candidate.url !== 'string' || !/^temporary\/[0-9a-f-]{36}\/[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/.test(candidate.url) ||
             typeof candidate.filename !== 'string' || !candidate.filename.trim() ||
             typeof candidate.mimetype !== 'string' ||
             typeof candidate.size !== 'number' || !Number.isFinite(candidate.size) || candidate.size < 0

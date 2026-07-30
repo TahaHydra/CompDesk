@@ -12,6 +12,7 @@ import { canAccessQueue, canAccessTicket, canDeleteTicket } from '@/lib/permissi
 import { fieldsVisibleToRoleFromSnapshot, parseTicketFormSchemaSnapshot } from '@/lib/ticket-form/validation';
 import { authenticatedAttachmentUrl } from '@/lib/attachment-storage';
 import { restartedSlaDueAt, statusTimestampChanges } from '@/lib/tickets/lifecycle';
+import { isAttachmentDownloadable } from '@/lib/attachment-security';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -69,11 +70,14 @@ export async function GET(
         const storedValues = ticket.submittedFormValues && typeof ticket.submittedFormValues === 'object' && !Array.isArray(ticket.submittedFormValues)
             ? ticket.submittedFormValues as Record<string, unknown>
             : {};
+        const downloadableAttachments = ticket.attachments.filter(
+            (attachment) => !attachment.deletedAt && isAttachmentDownloadable(attachment.scanStatus)
+        );
         const attachmentUrlsByStoredPath = new Map<string, string>(
-            ticket.attachments.map((attachment) => [attachment.path, authenticatedAttachmentUrl(attachment.id)] as const)
+            downloadableAttachments.map((attachment) => [attachment.path, authenticatedAttachmentUrl(attachment.id)] as const)
         );
         const attachmentUrlsByIdentity = new Map<string, string>(
-            ticket.attachments.map((attachment) => [`${attachment.filename}:${attachment.size}`, authenticatedAttachmentUrl(attachment.id)] as const)
+            downloadableAttachments.map((attachment) => [`${attachment.filename}:${attachment.size}`, authenticatedAttachmentUrl(attachment.id)] as const)
         );
         const historicalValues = Object.fromEntries(
             historicalFields
@@ -150,8 +154,16 @@ export async function GET(
                 user: { id: watcher.user.id, name: watcher.user.name },
             })),
             attachments: ticket.attachments.map((attachment) => ({
-                ...attachment,
-                path: authenticatedAttachmentUrl(attachment.id),
+                id: attachment.id,
+                filename: attachment.filename,
+                mimetype: attachment.detectedMimetype,
+                size: attachment.size,
+                scanStatus: attachment.scanStatus,
+                createdAt: attachment.createdAt,
+                deletedAt: attachment.deletedAt,
+                path: !attachment.deletedAt && isAttachmentDownloadable(attachment.scanStatus)
+                    ? authenticatedAttachmentUrl(attachment.id)
+                    : null,
             })),
             formSchemaSnapshot: undefined,
             submittedFormValues: undefined,
