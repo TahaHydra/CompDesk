@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { use, useCallback, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -87,6 +87,20 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
     const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
+    useEffect(() => {
+        if (!isAgent) return;
+        let active = true;
+        const heartbeat = () => {
+            if (active) void fetch(`/api/tickets/${id}/presence`, { method: 'POST' });
+        };
+        heartbeat();
+        const interval = window.setInterval(heartbeat, 45_000);
+        return () => {
+            active = false;
+            window.clearInterval(interval);
+            void fetch(`/api/tickets/${id}/presence`, { method: 'DELETE', keepalive: true });
+        };
+    }, [id, isAgent]);
     const { data: ticket, isLoading } = useQuery({
         queryKey: ['ticket', id],
         queryFn: async () => {
@@ -121,7 +135,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             const res = await fetch(`/api/tickets/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: JSON.stringify({ ...data, expectedVersion: ticket.version }),
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -142,13 +156,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         mutationFn: async ({ operation, userId }: { operation: 'add' | 'remove' | 'claim' | 'unclaim'; userId?: string }) => {
             const claim = operation === 'claim' || operation === 'unclaim';
             const method = operation === 'remove' || operation === 'unclaim' ? 'DELETE' : 'POST';
+            const versionQuery = `expectedVersion=${encodeURIComponent(String(ticket.version))}`;
             const endpoint = claim
-                ? `/api/tickets/${id}/assignees/claim`
-                : `/api/tickets/${id}/assignees${method === 'DELETE' ? `?userId=${encodeURIComponent(userId ?? '')}` : ''}`;
+                ? `/api/tickets/${id}/assignees/claim${method === 'DELETE' ? `?${versionQuery}` : ''}`
+                : `/api/tickets/${id}/assignees${method === 'DELETE' ? `?userId=${encodeURIComponent(userId ?? '')}&${versionQuery}` : ''}`;
             const res = await fetch(endpoint, {
                 method,
-                headers: method === 'POST' && !claim ? { 'Content-Type': 'application/json' } : undefined,
-                body: method === 'POST' && !claim ? JSON.stringify({ userId }) : undefined,
+                headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+                body: method === 'POST' ? JSON.stringify(claim ? { expectedVersion: ticket.version } : { userId, expectedVersion: ticket.version }) : undefined,
             });
             const payload = await res.json();
             if (!res.ok) throw new Error(payload.error || 'Assignment operation failed');
@@ -218,13 +233,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             });
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || 'Failed to delete');
+                throw new Error(err.error || 'Failed to remove timeline entry');
             }
             return res.json();
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Timeline entry deleted' });
+            toast({ title: 'Timeline entry removed from conversation' });
         },
         onError: (e: Error) => {
             toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -233,15 +248,15 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
     const deleteTicket = useMutation({
         mutationFn: async () => {
-            const res = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/tickets/${id}?expectedVersion=${encodeURIComponent(String(ticket.version))}`, { method: 'DELETE' });
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || 'Failed to delete');
+                throw new Error(err.error || 'Failed to withdraw');
             }
             return res.json();
         },
         onSuccess: () => {
-            toast({ title: 'Ticket deleted' });
+            toast({ title: 'Ticket withdrawn' });
             router.push('/tickets');
         },
         onError: (e: Error) => {
@@ -254,7 +269,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             const res = await fetch(`/api/tickets/${id}/escalate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ escalateToId: escalateToId || null, reason: escalateReason }),
+                body: JSON.stringify({ escalateToId: escalateToId || null, reason: escalateReason, expectedVersion: ticket.version }),
             });
             if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed'); }
             return res.json();
@@ -321,7 +336,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     // Administrators can moderate conversation history. Agents and users can
     // modify only their own entries; users can never modify internal notes.
     const canEditTimelineEvent = (event: any) => {
-        if (!event.content || !isConversationEvent(event)) return false;
+        if (event.deletedAt || !event.content || !isConversationEvent(event)) return false;
         if (isAdministrator) return true;
         if (event.userId !== session?.user?.id) return false;
         if (session?.user?.role === 'USER' && event.type !== 'COMMENT') return false;
@@ -330,7 +345,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     };
 
     const canDeleteTimelineEvent = (event: any) => {
-        if (!isConversationEvent(event)) return false;
+        if (event.deletedAt || !isConversationEvent(event)) return false;
         if (isAdministrator) return true;
         return event.userId === session?.user?.id
             && !(session?.user?.role === 'USER' && event.type === 'INTERNAL_NOTE');
@@ -359,7 +374,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const isRequester = ticket.requesterId === session?.user?.id;
     const assignments = ticket.assignments ?? [];
     const assignedToCurrentUser = assignments.some((assignment: any) => assignment.userId === session?.user?.id);
-    const canDeleteTicket = session?.user?.role === 'SUPER_ADMIN' || (isRequester && assignments.length === 0);
+    const canDeleteTicket = ticket.status !== 'WITHDRAWN' && (session?.user?.role === 'SUPER_ADMIN' || (isRequester && assignments.length === 0));
     const conversationEvents = (ticket.timeline ?? []).filter((event: any) => isConversationEvent(event));
     const timelineEvents = (ticket.timeline ?? []).filter((event: any) => !isConversationEvent(event));
 
@@ -368,6 +383,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         const showEditBtn = canEditTimelineEvent(event);
         const showDeleteBtn = canDeleteTimelineEvent(event);
         const isEdited = event.metadata?.edited;
+        const isDeleted = Boolean(event.deletedAt);
 
         return (
             <div
@@ -408,6 +424,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         {isEdited && (
                             <span className="text-xs text-muted-foreground italic">(edited)</span>
                         )}
+                        {isDeleted && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">Deleted · history retained</Badge>
+                        )}
                         <span className="text-xs text-muted-foreground">
                             {new Date(event.createdAt).toLocaleString()}
                         </span>
@@ -422,12 +441,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 )}
                                 {showDeleteBtn && (
                                     <ConfirmDestructiveAction
-                                        title="Delete timeline entry?"
-                                        description="This comment or internal note will be permanently removed from the ticket history."
+                                        title="Remove timeline entry?"
+                                        description="The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators."
                                         pending={deleteComment.isPending}
                                         onConfirm={() => deleteComment.mutate(event.id)}
                                         trigger={
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Delete timeline entry">
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Remove timeline entry">
                                                 <Trash2 className="h-3 w-3" />
                                             </Button>
                                         }
@@ -482,12 +501,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 <div className="flex shrink-0 flex-wrap items-center gap-2 pl-11 sm:pl-0">
-                    {isAgent && !assignedToCurrentUser ? (
+                    {isAgent && ticket.status !== 'WITHDRAWN' && !assignedToCurrentUser ? (
                         <Button onClick={() => runAssignment('claim')} className="gap-2 bg-emerald-600 shadow-lg hover:bg-emerald-700" disabled={assignmentMutation.isPending}>
                             <Hand className="h-4 w-4" /> Claim Ticket
                         </Button>
                     ) : null}
-                    {isAgent && assignedToCurrentUser ? (
+                    {isAgent && ticket.status !== 'WITHDRAWN' && assignedToCurrentUser ? (
                         <Button variant="outline" onClick={() => runAssignment('unclaim')} className="gap-2" disabled={assignmentMutation.isPending}>
                             <Check className="h-4 w-4" /> Assigned · Unclaim myself
                         </Button>
@@ -496,21 +515,24 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     {/* Super administrators can delete any ticket; requesters can withdraw unassigned tickets. */}
                     {canDeleteTicket && (
                         <ConfirmDestructiveAction
-                            title="Delete ticket?"
-                            description={<>Ticket <strong>{ticket.key}</strong> and its attachments, timeline, tags, and watchers will be permanently deleted. This cannot be undone.</>}
+                            title="Withdraw ticket?"
+                            description={<>Ticket <strong>{ticket.key}</strong> will be marked withdrawn. Its conversation, attachments, and audit history will be retained.</>}
                             pending={deleteTicket.isPending}
                             onConfirm={() => deleteTicket.mutate()}
                             trigger={
                                 <Button variant="destructive" size="sm" className="gap-1.5">
-                                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                                    <Trash2 className="h-3.5 w-3.5" /> Withdraw
                                 </Button>
                             }
                         />
                     )}
 
-                    {ticket.presenceInfo && ticket.presenceInfo.lastViewer !== session?.user?.name && (
+                    {Array.isArray(ticket.presenceInfo?.viewers) && ticket.presenceInfo.viewers.some((viewer: { id: string }) => viewer.id !== session?.user?.id) && (
                         <Badge variant="outline" className="gap-1 text-muted-foreground">
-                            <Eye className="h-3 w-3" /> Recently viewed by {ticket.presenceInfo.lastViewer} · non-exclusive activity
+                            <Eye className="h-3 w-3" /> Viewing now: {ticket.presenceInfo.viewers
+                                .filter((viewer: { id: string }) => viewer.id !== session?.user?.id)
+                                .map((viewer: { name: string }) => viewer.name)
+                                .join(', ')} · non-exclusive presence
                         </Badge>
                     )}
                 </div>
@@ -600,7 +622,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             {/* Comment input */}
                             <Separator className="my-4" />
                             <div className="space-y-3">
-                                {isAgent && (
+                                {isAgent && ticket.status !== 'WITHDRAWN' && (
                                     <div className="flex items-center gap-2">
                                         <Button
                                             variant={isInternal ? 'default' : 'outline'}
@@ -658,7 +680,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 {/* Sidebar */}
                 <div className="space-y-4">
                     {/* Actions */}
-                    {isAgent && (
+                    {isAgent && ticket.status !== 'WITHDRAWN' && (
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base flex items-center gap-2">
@@ -753,7 +775,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
 
                                 {/* Escalate button */}
-                                {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && (
+                                {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && ticket.status !== 'WITHDRAWN' && (
                                     <Dialog open={escalateOpen} onOpenChange={setEscalateOpen}>
                                         <DialogTrigger asChild>
                                             <Button variant="destructive" size="sm" className="w-full gap-2">

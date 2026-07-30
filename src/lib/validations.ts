@@ -24,6 +24,7 @@ export const createTicketSchema = z.object({
 }).strict();
 
 export const updateTicketSchema = z.object({
+    expectedVersion: z.number().int().positive(),
     title: z.string().min(3).max(200).optional(),
     description: z.string().max(10000).optional(),
     status: z.nativeEnum(TicketStatus).optional(),
@@ -33,7 +34,7 @@ export const updateTicketSchema = z.object({
     queueId: z.string().uuid().optional(),
     tagIds: z.array(z.string().uuid()).max(100).optional(),
 }).strict().refine(
-    (value) => Object.keys(value).length > 0,
+    (value) => Object.keys(value).some((key) => key !== 'expectedVersion'),
     { message: 'At least one ticket field is required' }
 );
 

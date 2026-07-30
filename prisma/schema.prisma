@@ -25,6 +25,7 @@ enum TicketStatus {
   PENDING_AGENT
   RESOLVED
   CLOSED
+  WITHDRAWN
 }
 
 enum Priority {
@@ -80,19 +81,20 @@ enum AssignmentSource {
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
-  id                String    @id @default(uuid())
-  entraObjectId     String?   @unique @map("entra_object_id")
-  email             String    @unique
-  emailVerified     DateTime? @map("email_verified")
+  id                String           @id @default(uuid())
+  entraObjectId     String?          @unique @map("entra_object_id")
+  email             String           @unique
+  emailVerified     DateTime?        @map("email_verified")
   name              String
   image             String?
-  passwordHash      String?   @map("password_hash")
-  role              Role      @default(USER)
-  isActive          Boolean   @default(true) @map("is_active")
-  isDemo            Boolean   @default(false) @map("is_demo")
-  preferredLanguage String    @default("en") @map("preferred_language")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  passwordHash      String?          @map("password_hash")
+  role              Role             @default(USER)
+  isActive          Boolean          @default(true) @map("is_active")
+  isDemo            Boolean          @default(false) @map("is_demo")
+  ticketPresence    TicketPresence[]
+  preferredLanguage String           @default("en") @map("preferred_language")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
 
   // Relations
   requestedTickets   Ticket[]         @relation("TicketRequester")
@@ -297,13 +299,13 @@ model Ticket {
   formSchemaSnapshot      Json         @map("form_schema_snapshot")
   submittedFormValues     Json         @default("{}") @map("submitted_form_values")
   dueAt                   DateTime?    @map("due_at")
-  firstResponseAt         DateTime?    @map("first_response_at")
+  firstAssignedAt         DateTime?    @map("first_assigned_at")
+  firstPublicResponseAt   DateTime?    @map("first_response_at")
   resolvedAt              DateTime?    @map("resolved_at")
   closedAt                DateTime?    @map("closed_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
-  lockedBy                String?      @map("locked_by")
-  lockedAt                DateTime?    @map("locked_at")
+  version                 Int          @default(1)
 
   // Escalation
   escalationLevel Int       @default(0) @map("escalation_level")
@@ -322,6 +324,7 @@ model Ticket {
   watchers         TicketWatcher[]
   timeline         TimelineEvent[]
   attachments      Attachment[]
+  presence         TicketPresence[]
 
   @@unique([requesterId, idempotencyKey])
   @@index([status])
@@ -366,16 +369,33 @@ model TicketWatcher {
   @@map("ticket_watchers")
 }
 
+model TicketPresence {
+  id         String   @id @default(uuid())
+  ticketId   String   @map("ticket_id")
+  userId     String   @map("user_id")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([ticketId, lastSeenAt])
+  @@map("ticket_presence")
+}
+
 // ── Timeline Events ────────────────────────────────────────────
 
 model TimelineEvent {
-  id        String            @id @default(uuid())
-  ticketId  String            @map("ticket_id")
-  userId    String            @map("user_id")
-  type      TimelineEventType
-  content   String?           @db.Text
-  metadata  Json?
-  createdAt DateTime          @default(now()) @map("created_at")
+  id           String            @id @default(uuid())
+  ticketId     String            @map("ticket_id")
+  userId       String            @map("user_id")
+  type         TimelineEventType
+  content      String?           @db.Text
+  metadata     Json?
+  createdAt    DateTime          @default(now()) @map("created_at")
+  deletedAt    DateTime?         @map("deleted_at")
+  deletedById  String?           @map("deleted_by_id")
+  deleteReason String?           @map("delete_reason")
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -387,13 +407,16 @@ model TimelineEvent {
 // ── Attachments ────────────────────────────────────────────────
 
 model Attachment {
-  id        String   @id @default(uuid())
-  ticketId  String   @map("ticket_id")
-  filename  String
-  mimetype  String
-  size      Int
-  path      String
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String    @id @default(uuid())
+  ticketId     String    @map("ticket_id")
+  filename     String
+  mimetype     String
+  size         Int
+  path         String
+  createdAt    DateTime  @default(now()) @map("created_at")
+  deletedAt    DateTime? @map("deleted_at")
+  deletedById  String?   @map("deleted_by_id")
+  deleteReason String?   @map("delete_reason")
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 

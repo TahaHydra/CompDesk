@@ -42,7 +42,8 @@ describe('Phase 2 ticket authorization and search', () => {
         mockAuth.mockResolvedValue(session('USER'));
         await getTickets(request('search=finance'));
         expect(lastWhere().AND[0]).toEqual({ requesterId: 'user-1' });
-        expect(JSON.stringify(lastWhere().AND[1])).toContain('finance');
+        expect(JSON.stringify(lastWhere())).toContain('finance');
+        expect(JSON.stringify(lastWhere())).toContain('"status":{"not":"WITHDRAWN"}');
     });
 
     it('keeps AGENT and ADMIN searches inside centralized department scope', async () => {
