@@ -233,11 +233,15 @@ async function testDatabase(database) {
         await client.connect();
         try {
             await client.query('SELECT current_database(), current_user, version()');
-            const permissionTable = `compdesk_setup_permission_check_${crypto.randomUUID().replaceAll('-', '')}`;
+            // PostgreSQL identifiers are limited to 63 bytes. Keep the generated
+            // table and index names short enough to remain distinct after parsing.
+            const permissionSuffix = crypto.randomBytes(8).toString('hex');
+            const permissionTable = `compdesk_setup_probe_${permissionSuffix}`;
+            const permissionIndex = `compdesk_setup_probe_idx_${permissionSuffix}`;
             await client.query('BEGIN');
             try {
                 await client.query(`CREATE TABLE public."${permissionTable}" (id integer PRIMARY KEY)`);
-                await client.query(`CREATE INDEX "${permissionTable}_index" ON public."${permissionTable}" (id)`);
+                await client.query(`CREATE INDEX "${permissionIndex}" ON public."${permissionTable}" (id)`);
                 await client.query(`ALTER TABLE public."${permissionTable}" ADD COLUMN migration_probe text`);
                 await client.query(`DROP TABLE public."${permissionTable}"`);
             } finally {
