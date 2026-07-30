@@ -32,7 +32,8 @@ describe('destructive action confirmation contract', () => {
     it('keeps user deletion behind an explicit alert dialog', () => {
         const users = source('src/app/(dashboard)/admin/users/page.tsx');
         expect(users).toContain('<AlertDialog open={!!deleteUser}');
-        expect(users).toContain("'Yes, delete'");
+        expect(users).toContain("'Yes, deactivate'");
+        expect(users).toContain('existing sessions will be revoked');
     });
 
     it('uses the centralized hard-delete permission in both API and UI', () => {

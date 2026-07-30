@@ -81,20 +81,23 @@ enum AssignmentSource {
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
-  id                String           @id @default(uuid())
-  entraObjectId     String?          @unique @map("entra_object_id")
-  email             String           @unique
-  emailVerified     DateTime?        @map("email_verified")
-  name              String
-  image             String?
-  passwordHash      String?          @map("password_hash")
-  role              Role             @default(USER)
-  isActive          Boolean          @default(true) @map("is_active")
-  isDemo            Boolean          @default(false) @map("is_demo")
-  ticketPresence    TicketPresence[]
-  preferredLanguage String           @default("en") @map("preferred_language")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  id                   String           @id @default(uuid())
+  entraObjectId        String?          @unique @map("entra_object_id")
+  email                String           @unique
+  normalizedEmail      String           @unique @default(dbgenerated()) @map("normalized_email")
+  emailVerified        DateTime?        @map("email_verified")
+  name                 String
+  image                String?
+  passwordHash         String?          @map("password_hash")
+  role                 Role             @default(USER)
+  isActive             Boolean          @default(true) @map("is_active")
+  isDemo               Boolean          @default(false) @map("is_demo")
+  sessionVersion       Int              @default(0) @map("session_version")
+  credentialsChangedAt DateTime?        @map("credentials_changed_at")
+  ticketPresence       TicketPresence[]
+  preferredLanguage    String           @default("en") @map("preferred_language")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
 
   // Relations
   requestedTickets   Ticket[]         @relation("TicketRequester")
@@ -153,6 +156,20 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+model LoginThrottle {
+  id           String    @id @default(uuid())
+  keyHash      String    @unique @map("key_hash")
+  scope        String
+  failureCount Int       @default(0) @map("failure_count")
+  blockedUntil DateTime? @map("blocked_until")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("login_throttles")
 }
 
 // ── Groups (Entra Synced) ──────────────────────────────────────
