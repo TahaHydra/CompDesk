@@ -34,6 +34,7 @@ export interface CreateTicketOptions {
     actor: TicketCreationActor;
     requester: Pick<User, 'id' | 'email' | 'role'>;
     input: CreateTicketInput;
+    apiClient?: { id: string; name: string };
 }
 
 interface PreparedAttachment {
@@ -181,7 +182,7 @@ function replaceUploadedUrls(
 }
 
 export async function createTicketFromResolvedTemplate(options: CreateTicketOptions) {
-    const { actor, requester, input, source } = options;
+    const { actor, requester, input, source, apiClient } = options;
     if (source === 'web') {
         if ((actor.role === Role.AGENT || actor.role === Role.ADMIN)
             && !(await canAccessQueue(actor.id, actor.role, input.queueId))) {
@@ -316,7 +317,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     userId: requester.id,
                     type: 'CREATED',
                     content: source === 'api' ? `Ticket created via API: ${validated.title}` : `Ticket created: ${validated.title}`,
-                    metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source },
+                    metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source, ...(apiClient ? { apiClientId: apiClient.id, apiClientName: apiClient.name } : {}) },
                 },
             });
 
@@ -355,7 +356,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         action: 'ticket.created',
         entity: 'ticket',
         entityId: ticket.id,
-        metadata: { key: ticket.key, queueId: ticket.queueId, categoryId: ticket.categoryId, templateId: resolved.template.id, source },
+        metadata: { key: ticket.key, queueId: ticket.queueId, categoryId: ticket.categoryId, templateId: resolved.template.id, source, ...(apiClient ? { apiClientId: apiClient.id, apiClientName: apiClient.name } : {}) },
     });
 
     logger.info('Ticket created with resolved form template', {

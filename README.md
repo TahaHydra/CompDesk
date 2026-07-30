@@ -92,9 +92,9 @@ Do not reset the database. The migration is transactional and remaps legacy glob
 
 - **JWT Sessions**: Lightweight tokens containing only user ID, role, and group IDs. No raw Graph API data in sessions.
 - **Dynamic SLA**: Overdue status calculated on read — no background workers needed.
-- **Collision Detection**: 5-minute lock when an agent opens a ticket.
-- **Rate Limiting**: In-memory throttling for auth and ticket creation routes.
-- **Non-blocking I/O**: Email sending and webhook dispatch are fire-and-forget with error logging.
+- **Viewer Presence**: Expiring, non-exclusive presence records do not modify ticket business timestamps or authorize updates.
+- **Distributed Throttling**: PostgreSQL-backed limits protect login, uploads, and external API authentication/requests across replicas.
+- **Durable Webhooks**: Signed deliveries use an SSRF-safe database outbox, bounded retries, history, and automatic failure disablement.
 
 ---
 
@@ -256,7 +256,7 @@ Admin: All of the above + any status → CLOSED, CLOSED → OPEN
 
 ### Authentication
 
-Enable the feature explicitly, create a scoped client in **Admin → Settings → API Clients**, then include `X-API-Key: <client-secret>` (or `Authorization: Bearer <client-secret>`). The secret is shown only when it is created or rotated.
+Enable the feature explicitly, create a scoped client in **Admin → Settings → API Clients**, then include `X-API-Key: <client-secret>` (or `Authorization: Bearer <client-secret>`). The secret is shown only when it is created or rotated. Department access is default-deny: select departments or explicitly enable all-department access. See **[docs/WEBHOOKS_AND_EXTERNAL_API.md](docs/WEBHOOKS_AND_EXTERNAL_API.md)**.
 
 ### Create Ticket
 
