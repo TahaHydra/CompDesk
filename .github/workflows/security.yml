@@ -33,6 +33,7 @@ jobs:
   codeql:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
       packages: read
@@ -46,6 +47,7 @@ jobs:
   container:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
     steps:
@@ -56,7 +58,7 @@ jobs:
           context: .
           load: true
           tags: compdesk-security:scan
-      - uses: aquasecurity/trivy-action@0.32.0
+      - uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: compdesk-security:scan
           format: sarif

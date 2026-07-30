@@ -32,3 +32,9 @@ new schema. Each migration must document destructive or irreversible behavior.
 When backward compatibility is not available, restore the coordinated database,
 files, and configuration backup rather than attempting an improvised reverse
 migration.
+
+## Automated previous-release rehearsal
+
+CI runs `npm run test:migration:upgrade` with a dedicated PostgreSQL administrative test URL. The command creates a random disposable database, applies migrations through the previous release, inserts representative existing rows, applies current migrations, validates preserved and backfilled data, and drops the database.
+
+To run it outside CI, set `MIGRATION_TEST_DATABASE_URL` to a PostgreSQL server where the test account may create and drop databases. Do not point it at a production server and do not pass credentials as command-line arguments. The script deliberately refuses to fall back to the application's `DATABASE_URL`.
