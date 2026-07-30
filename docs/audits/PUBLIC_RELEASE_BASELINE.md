@@ -222,7 +222,7 @@ existed at baseline.
   Next output, persistent attachment directory. Migrations ran in the normal app
   startup command.
 - `docker-compose.yml`: combined database/application deployment, persistent
-  named volumes and DB health check. It used fixed `excodesk` credentials,
+  named volumes and DB health check. It used fixed `compdesk` credentials,
   published PostgreSQL to the host, and had no application health check.
 - Standalone: `npm start` validated runtime, ran migrations and attachment
   migration, then started the standalone server.
@@ -232,7 +232,7 @@ existed at baseline.
 
 ## Findings reproduced
 
-1. Company-specific `EXCO`/`excodesk` strings in Compose, Nginx, docs, and legacy
+1. Company-specific `legacy customer`/`compdesk` strings in Compose, Nginx, docs, and legacy
    local-storage keys.
 2. Fixed PostgreSQL username/password/database in Compose and publicly bound DB
    port.

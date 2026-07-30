@@ -15,7 +15,7 @@ This guide covers every way to deploy CompDesk: from a quick local test to a ful
 7. [Database Setup](#database-setup)
 8. [IP Tracking & Proxy Headers](#ip-tracking--proxy-headers)
 9. [SSL/HTTPS Setup](#sslhttps-setup)
-10. [Updating CompDesk](#updating-excodesk)
+10. [Updating CompDesk](#updating-compdesk)
 11. [Troubleshooting](#troubleshooting)
 
 ---
@@ -64,7 +64,7 @@ nano .env
 
 ```env
 # ── Database ────────────────────────────────────────────────────
-DATABASE_URL="postgresql://excodesk:YOUR_STRONG_PASSWORD@localhost:5432/excodesk?schema=public"
+DATABASE_URL="postgresql://compdesk:YOUR_STRONG_PASSWORD@localhost:5432/compdesk?schema=public"
 
 # ── Auth ─────────────────────────────────────────────────────────
 AUTH_URL="https://compdesk.yourorg.com"
@@ -438,16 +438,16 @@ sudo -u postgres psql
 ```
 
 ```sql
-CREATE USER excodesk WITH PASSWORD 'YOUR_STRONG_PASSWORD';
-CREATE DATABASE excodesk OWNER excodesk;
-GRANT ALL PRIVILEGES ON DATABASE excodesk TO excodesk;
+CREATE USER compdesk WITH PASSWORD 'YOUR_STRONG_PASSWORD';
+CREATE DATABASE compdesk OWNER compdesk;
+GRANT ALL PRIVILEGES ON DATABASE compdesk TO compdesk;
 \q
 ```
 
 Then set in your `.env`:
 
 ```env
-DATABASE_URL="postgresql://excodesk:YOUR_STRONG_PASSWORD@localhost:5432/excodesk?schema=public"
+DATABASE_URL="postgresql://compdesk:YOUR_STRONG_PASSWORD@localhost:5432/compdesk?schema=public"
 ```
 
 ### Run Migrations
@@ -503,8 +503,8 @@ sudo certbot --apache -d compdesk.yourorg.com
 ```bash
 sudo openssl req -x509 -nodes -days 365 \
     -newkey rsa:2048 \
-    -keyout /etc/ssl/private/excodesk.key \
-    -out /etc/ssl/certs/excodesk.crt \
+    -keyout /etc/ssl/private/compdesk.key \
+    -out /etc/ssl/certs/compdesk.crt \
     -subj "/CN=compdesk.yourorg.com"
 ```
 

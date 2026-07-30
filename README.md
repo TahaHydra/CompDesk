@@ -1,6 +1,6 @@
 # 🎫 CompDesk — Lightweight IT Helpdesk & Ticketing System
 
-A **production-ready**, modern ticketing system built for small organizations (2–3 agents, ~20 end users). Simpler than GLPI, powered by Microsoft Entra ID SSO.
+CompDesk is an actively developed self-hosted helpdesk for small organizations. Review the production hardening guide before deployment.
 
 ## ⚡ Tech Stack
 

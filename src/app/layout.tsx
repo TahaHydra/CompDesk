@@ -27,9 +27,7 @@ const themeInitScript = `
 (() => {
   try {
     const key = 'compdesk-theme';
-    const legacyKey = 'excodesk-theme';
-    const saved = localStorage.getItem(key) || localStorage.getItem(legacyKey) || 'system';
-    if (!localStorage.getItem(key) && localStorage.getItem(legacyKey)) localStorage.setItem(key, saved);
+    const saved = localStorage.getItem(key) || 'system';
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const resolved = saved === 'system' ? (prefersDark ? 'dark' : 'light') : saved;
     document.documentElement.classList.toggle('dark', resolved === 'dark');

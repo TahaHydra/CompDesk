@@ -35,4 +35,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["sh", "-c", "node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs && node server.js"]
+CMD ["sh", "-c", "node scripts/validate-runtime-env.mjs && exec node server.js"]

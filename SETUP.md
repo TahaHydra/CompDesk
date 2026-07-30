@@ -253,7 +253,7 @@ Recommended PostgreSQL backup before any production upgrade:
 pg_dump --format=custom --file=compdesk-before-upgrade.dump "$DATABASE_URL"
 ```
 
-For Docker PostgreSQL, use `docker compose exec db pg_dump -U excodesk -d excodesk -Fc` and redirect/copy the output according to your backup procedure.
+For Docker PostgreSQL, use `docker compose exec db pg_dump -U compdesk -d compdesk -Fc` and redirect/copy the output according to your backup procedure.
 
 ## Uploaded files
 
