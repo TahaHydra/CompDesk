@@ -26,16 +26,18 @@ export async function GET() {
                 ? { queueId: { in: departmentIds } }
                 : { queueId: { in: ['__none__'] } };
         }
+        const activeWhereClause: Prisma.TicketWhereInput = {
+            AND: [whereClause, { status: { not: 'WITHDRAWN' } }],
+        };
         const dashboardLinksEnabled = await getFeatureFlag('feature_dashboard_links_enabled');
-
         const [total, open, pending, resolved, urgent, recentTickets, escalated, dashboardLinksSetting] = await Promise.all([
-            prisma.ticket.count({ where: whereClause }),
-            prisma.ticket.count({ where: { ...whereClause, status: { in: ['NEW', 'OPEN'] } } }),
-            prisma.ticket.count({ where: { ...whereClause, status: { in: ['PENDING_USER', 'PENDING_AGENT'] } } }),
-            prisma.ticket.count({ where: { ...whereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
-            prisma.ticket.count({ where: { ...whereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
+            prisma.ticket.count({ where: activeWhereClause }),
+            prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['NEW', 'OPEN'] } } }),
+            prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['PENDING_USER', 'PENDING_AGENT'] } } }),
+            prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
+            prisma.ticket.count({ where: { ...activeWhereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
             prisma.ticket.findMany({
-                where: whereClause,
+                where: activeWhereClause,
                 include: {
                     queue: { select: { name: true } },
                     requester: { select: { name: true } },
@@ -50,7 +52,7 @@ export async function GET() {
             // Count escalated tickets (escalation level > 0 and not resolved)
             prisma.ticket.count({
                 where: {
-                    ...whereClause,
+                    ...activeWhereClause,
                     escalationLevel: { gt: 0 },
                     status: { notIn: ['CLOSED', 'RESOLVED'] },
                 },

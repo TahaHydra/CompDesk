@@ -12,6 +12,12 @@ const queueId = '550e8400-e29b-41d4-a716-446655440000';
 describe('Ticket routing payload validation', () => {
     test('rejects empty ticket updates', () => {
         expect(updateTicketSchema.safeParse({}).success).toBe(false);
+        expect(updateTicketSchema.safeParse({ expectedVersion: 1 }).success).toBe(false);
+    });
+
+    test('requires the ticket version for a valid update', () => {
+        expect(updateTicketSchema.safeParse({ status: 'OPEN' }).success).toBe(false);
+        expect(updateTicketSchema.safeParse({ expectedVersion: 1, status: 'OPEN' }).success).toBe(true);
     });
 
     test('accepts template-driven values', () => {

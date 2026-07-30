@@ -49,25 +49,27 @@ export async function POST(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const event = await prisma.timelineEvent.create({
-            data: {
-                ticketId: id,
-                userId: session.user.id,
-                type: isInternal ? 'INTERNAL_NOTE' : 'COMMENT',
-                content: sanitizeHtml(content),
-            },
-            include: {
-                user: { select: { id: true, name: true, image: true } },
-            },
-        });
-
-        // First response tracking
-        if (!ticket.firstResponseAt && isAgentOrAbove(session.user.role) && !isInternal) {
-            await prisma.ticket.update({
-                where: { id },
-                data: { firstResponseAt: new Date() },
+        const isFirstPublicStaffResponse = !ticket.firstPublicResponseAt && isAgentOrAbove(session.user.role) && !isInternal;
+        const event = await prisma.$transaction(async (tx) => {
+            const created = await tx.timelineEvent.create({
+                data: {
+                    ticketId: id,
+                    userId: session.user.id,
+                    type: isInternal ? 'INTERNAL_NOTE' : 'COMMENT',
+                    content: sanitizeHtml(content),
+                },
+                include: {
+                    user: { select: { id: true, name: true, image: true } },
+                },
             });
-        }
+            if (isFirstPublicStaffResponse) {
+                await tx.ticket.updateMany({
+                    where: { id, firstPublicResponseAt: null },
+                    data: { firstPublicResponseAt: new Date(), version: { increment: 1 } },
+                });
+            }
+            return created;
+        });
 
         // Notify watchers (not for internal notes)
         if (!isInternal) {
@@ -119,6 +121,9 @@ export async function PATCH(
         }
         if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
             return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
+        }
+        if (event.deletedAt) {
+            return NextResponse.json({ error: 'Deleted timeline entries are immutable' }, { status: 409 });
         }
 
         const ticket = await prisma.ticket.findUnique({
@@ -209,6 +214,9 @@ export async function DELETE(
         if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
             return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
         }
+        if (event.deletedAt) {
+            return NextResponse.json({ error: 'Timeline entry is already deleted' }, { status: 409 });
+        }
 
         const ticket = await prisma.ticket.findUnique({
             where: { id },
@@ -233,17 +241,30 @@ export async function DELETE(
             return NextResponse.json({ error: 'You can only delete your own comments' }, { status: 403 });
         }
 
-        await prisma.timelineEvent.delete({ where: { id: eventId } });
-
-        auditLog({
-            userId: session.user.id,
-            action: 'timeline_event.deleted',
-            entity: 'timelineEvent',
-            entityId: eventId,
-            metadata: { ticketId: id, type: event.type, deletedContent: event.content?.substring(0, 200) },
+        const deletedAt = new Date();
+        await prisma.timelineEvent.update({
+            where: { id: eventId },
+            data: {
+                deletedAt,
+                deletedById: session.user.id,
+                deleteReason: 'user_requested',
+                metadata: {
+                    ...((event.metadata as Record<string, unknown>) ?? {}),
+                    deleted: true,
+                    deletedAt: deletedAt.toISOString(),
+                },
+            },
         });
 
-        return NextResponse.json({ success: true });
+        void auditLog({
+            userId: session.user.id,
+            action: 'timeline_event.tombstoned',
+            entity: 'timelineEvent',
+            entityId: eventId,
+            metadata: { ticketId: id, type: event.type, contentLength: event.content?.length ?? 0, historyPreserved: true },
+        });
+
+        return NextResponse.json({ success: true, tombstoned: true });
     } catch (error) {
         logger.error('Failed to delete comment', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
