@@ -22,6 +22,8 @@ blocking item to be `PASS` for the exact final commit.
 | Attachment quarantine/scanning architecture | PASS | Content verification, optional fail-closed ClamAV, quotas, and deletion audit |
 | Webhook SSRF/signatures/outbox | PASS | Public-only DNS pinning, encrypted HMAC secrets, durable retries/history, and regression tests |
 | External API default-deny departments | PASS | Explicit allow-all policy, PostgreSQL throttling, full request audit, and regression tests |
+| SMTP relay and secret management | PASS | Accepted/rejected/message-ID evidence, AES-GCM rotation tests, atomic locked single-source config writes |
+| Quick-link access and UI accessibility | PASS | Effective department filtering, real ticket links, mobile keyboard semantics, reduced-motion regression tests |
 | Current-tree customer-reference scan | PASS | Automated repository regression test enabled |
 | Git-history secret scan | NOT RUN | Final security scan |
 | Unit/integration tests | NOT RUN | Final commit required |

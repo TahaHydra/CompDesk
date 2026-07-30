@@ -141,6 +141,14 @@ export default function AppShell({
         }
     }, [router, status]);
 
+    useEffect(() => {
+        if (!mobileOpen) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setMobileOpen(false);
+        };
+        document.addEventListener('keydown', closeOnEscape);
+        return () => document.removeEventListener('keydown', closeOnEscape);
+    }, [mobileOpen]);
     // Lock body scroll while the mobile drawer is open
     useEffect(() => {
         if (mobileOpen) {
@@ -206,6 +214,8 @@ export default function AppShell({
 
             {/* Sidebar — off-canvas drawer on mobile, collapsible rail on desktop */}
             <aside
+                id="primary-navigation"
+                aria-label={t('Primary navigation')}
                 className={cn(
                     'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-card transition-transform duration-300 ease-in-out',
                     'lg:static lg:z-auto lg:translate-x-0 lg:transition-[width]',
@@ -269,6 +279,8 @@ export default function AppShell({
                             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
                             onClick={() => setMobileOpen(true)}
                             aria-label={t('Open menu')}
+                            aria-controls="primary-navigation"
+                            aria-expanded={mobileOpen}
                         >
                             <Menu className="h-5 w-5" />
                         </button>

@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import path from 'path';
 import { isLocalStandaloneRuntime, resolveRuntimeEnvFiles } from '@/lib/runtime-paths';
 
 export class ManagedEnvironmentError extends Error {}
@@ -30,12 +31,49 @@ function parseManagedValues(contents: string): Record<string, string> {
 }
 
 export async function readManagedEnvironment(cwd = process.cwd()): Promise<Record<string, string>> {
-    const merged: Record<string, string> = {};
-    for (const envPath of resolveRuntimeEnvFiles(cwd)) {
-        const contents = await fs.readFile(envPath, 'utf8').catch(() => '');
-        Object.assign(merged, parseManagedValues(contents));
+    const [envPath] = resolveRuntimeEnvFiles(cwd);
+    const backupPath = `${envPath}.bak`;
+    const contents = await fs.readFile(envPath, 'utf8').catch(async () => fs.readFile(backupPath, 'utf8').catch(() => ''));
+    return parseManagedValues(contents);
+}
+
+async function acquireLock(lockPath: string): Promise<Awaited<ReturnType<typeof fs.open>>> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        try {
+            return await fs.open(lockPath, 'wx', 0o600);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+            const lockAgeMs = Date.now() - (await fs.stat(lockPath).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs;
+            if (lockAgeMs > 30_000) {
+                await fs.unlink(lockPath).catch(() => undefined);
+                continue;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
     }
-    return merged;
+    throw new ManagedEnvironmentError('The settings file is being updated by another process. Retry in a moment.');
+}
+
+async function writeAtomically(envPath: string, contents: string): Promise<void> {
+    const directory = path.dirname(envPath);
+    const temporaryPath = path.join(directory, `.${path.basename(envPath)}.${process.pid}.${Date.now()}.tmp`);
+    const backupPath = `${envPath}.bak`;
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(temporaryPath, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    await fs.chmod(temporaryPath, 0o600).catch(() => undefined);
+    try {
+        await fs.copyFile(envPath, backupPath);
+        await fs.chmod(backupPath, 0o600).catch(() => undefined);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    try {
+        await fs.rename(temporaryPath, envPath);
+        await fs.chmod(envPath, 0o600).catch(() => undefined);
+    } catch (error) {
+        await fs.unlink(temporaryPath).catch(() => undefined);
+        throw error;
+    }
 }
 
 export function canEditManagedEnvironment(cwd = process.cwd()): boolean {
@@ -54,7 +92,11 @@ export async function updateManagedEnvironment(
         throw new ManagedEnvironmentError('Entra settings are managed by the deployment environment. Update the container environment and restart the application.');
     }
 
-    for (const envPath of resolveRuntimeEnvFiles(cwd)) {
+    const [envPath] = resolveRuntimeEnvFiles(cwd);
+    const lockPath = `${envPath}.lock`;
+    await fs.mkdir(path.dirname(envPath), { recursive: true });
+    const lock = await acquireLock(lockPath);
+    try {
         let contents = await fs.readFile(envPath, 'utf8').catch(() => '');
         for (const [key, rawValue] of entries) {
             const value = String(rawValue);
@@ -64,7 +106,10 @@ export async function updateManagedEnvironment(
             const pattern = new RegExp(`^#?\\s*${envKey}=.*$`, 'm');
             contents = pattern.test(contents) ? contents.replace(pattern, line) : `${contents.trimEnd()}\n${line}`;
         }
-        await fs.writeFile(envPath, `${contents.trim()}\n`, 'utf8');
+        await writeAtomically(envPath, `${contents.trim()}\n`);
+    } finally {
+        await lock.close().catch(() => undefined);
+        await fs.unlink(lockPath).catch(() => undefined);
     }
     return true;
 }

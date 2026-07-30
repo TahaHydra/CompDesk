@@ -124,9 +124,9 @@ export default function DashboardPage() {
                                 <thead><tr className="border-b bg-muted/35"><Header>{t('ID')}</Header><Header>{t('Title')}</Header><Header className="hidden md:table-cell">{t('Requester')}</Header><Header className="hidden lg:table-cell">{t('Assignee')}</Header><Header>{t('Status')}</Header><Header className="hidden sm:table-cell">{t('Priority')}</Header><Header className="hidden lg:table-cell">{t('Date')}</Header></tr></thead>
                                 <tbody className="divide-y">
                                     {recentTickets.map((ticket) => (
-                                        <tr key={ticket.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => window.location.href = `/tickets/${ticket.id}`}>
+                                        <tr key={ticket.id} className="transition-colors hover:bg-muted/30">
                                             <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td>
-                                            <td className="max-w-[200px] truncate px-4 py-3 font-medium">{ticket.title}</td>
+                                            <td className="max-w-[200px] px-4 py-3 font-medium"><Link href={`/tickets/${ticket.id}`} className="block truncate rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{ticket.title}</Link></td>
                                             <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{ticket.requester?.name ?? '—'}</td>
                                             <td className="hidden px-4 py-3 lg:table-cell"><AssigneeSummary assignees={(ticket.assignments ?? []).map((assignment) => assignment.user)} /></td>
                                             <td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>{ticket.status.replaceAll('_', ' ')}</Badge></td>

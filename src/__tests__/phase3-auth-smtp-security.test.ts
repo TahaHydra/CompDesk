@@ -28,6 +28,7 @@ import { decryptSettingSecret, encryptSettingSecret } from '@/lib/settings-secre
 import { isLoginMethodEnabled, resetLoginPolicyCacheForTests } from '@/lib/login-policy';
 import { parseTicketContent } from '@/lib/ticket-content';
 import { POST as verifySmtp } from '@/app/api/settings/verify-smtp/route';
+import { POST as sendSmtpTest } from '@/app/api/settings/test-email/route';
 import { GET as getSettings } from '@/app/api/settings/route';
 
 const validEnv = {
@@ -143,6 +144,47 @@ describe('Phase 3 SMTP diagnostics and secret protection', () => {
         expect(payload.message).toContain('only tested by sending a real message');
     });
 
+    it('reports the SMTP relay result without claiming final delivery or sender acceptance', async () => {
+        mockTransport.sendMail.mockResolvedValue({
+            accepted: ['admin@example.com'],
+            rejected: [],
+            response: '250 2.0.0 queued as ABC123',
+            messageId: '<message-1@example.com>',
+        });
+        const response = await sendSmtpTest();
+        const payload = await response.json();
+        expect(response.status).toBe(200);
+        expect(payload).toMatchObject({
+            success: true,
+            relayAccepted: true,
+            acceptedRecipients: ['admin@example.com'],
+            rejectedRecipients: [],
+            responseStatus: '250',
+            messageId: '<message-1@example.com>',
+        });
+        expect(payload).not.toHaveProperty('fromAccepted');
+        expect(payload.message).toContain('accepted the message for relay');
+        expect(payload.message).toContain('does not prove final delivery');
+    });
+
+    it('fails a resolved send when the SMTP server rejects the recipient', async () => {
+        mockTransport.sendMail.mockResolvedValue({
+            accepted: [],
+            rejected: ['admin@example.com'],
+            response: '550 5.1.1 mailbox unavailable',
+            messageId: '<message-2@example.com>',
+        });
+        const response = await sendSmtpTest();
+        const payload = await response.json();
+        expect(response.status).toBe(502);
+        expect(payload).toMatchObject({
+            success: false,
+            relayAccepted: false,
+            acceptedRecipients: [],
+            rejectedRecipients: ['admin@example.com'],
+            responseStatus: '550',
+        });
+    });
     it.each([
         ['ENOTFOUND', 'dns'], ['ECONNREFUSED', 'tcp_connectivity'], ['ETIMEDOUT', 'timeout'], ['CERT_HAS_EXPIRED', 'tls_certificate'], ['EAUTH', 'authentication'],
     ])('returns categorized verify failure for %s', async (code, category) => {
@@ -162,6 +204,17 @@ describe('Phase 3 SMTP diagnostics and secret protection', () => {
         expect(() => decryptSettingSecret(tampered, env)).toThrow(/authenticated/);
     });
 
+    it('decrypts with the previous key during rotation and fails closed without a key', () => {
+        const currentKey = Buffer.alloc(32, 9).toString('base64');
+        const previousKey = Buffer.alloc(32, 10).toString('base64');
+        const envelope = encryptSettingSecret('rotating-password', { NODE_ENV: 'test', APP_SETTINGS_ENCRYPTION_KEY: previousKey } as NodeJS.ProcessEnv);
+        expect(decryptSettingSecret(envelope, {
+            NODE_ENV: 'test',
+            APP_SETTINGS_ENCRYPTION_KEY: currentKey,
+            APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS: previousKey,
+        } as NodeJS.ProcessEnv)).toBe('rotating-password');
+        expect(() => decryptSettingSecret(envelope, { NODE_ENV: 'test' } as NodeJS.ProcessEnv)).toThrow('No application settings encryption key');
+    });
     it('never returns the encrypted or decrypted SMTP password through settings GET', async () => {
         const keyEnv = { NODE_ENV: 'test', APP_SETTINGS_ENCRYPTION_KEY: Buffer.alloc(32, 8).toString('base64') } as NodeJS.ProcessEnv;
         const envelope = encryptSettingSecret('database-password', keyEnv);

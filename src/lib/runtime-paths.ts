@@ -12,7 +12,5 @@ export function resolveApplicationRoot(cwd = process.cwd()): string {
 }
 
 export function resolveRuntimeEnvFiles(cwd = process.cwd()): string[] {
-    const applicationEnv = path.join(resolveApplicationRoot(cwd), '.env');
-    const runtimeEnv = path.join(path.resolve(cwd), '.env');
-    return [...new Set([applicationEnv, runtimeEnv])];
+    return [path.join(resolveApplicationRoot(cwd), '.env')];
 }
