@@ -232,7 +232,7 @@ existed at baseline.
 
 ## Findings reproduced
 
-1. Company-specific `COMPDESK`/`compdesk` strings in Compose, Nginx, docs, and legacy
+1. Company-specific `legacy customer`/`compdesk` strings in Compose, Nginx, docs, and legacy
    local-storage keys.
 2. Fixed PostgreSQL username/password/database in Compose and publicly bound DB
    port.
