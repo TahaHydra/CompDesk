@@ -41,6 +41,17 @@ PostgreSQL is the only supported database provider for this release.
 | Secret loss/rotation error | Atomic restricted configuration, current/previous key procedure |
 | Supply-chain compromise | Lockfile install, dependency/static/container/secret scanning |
 
+## Reviewed CodeQL exception: API-key lookup digest
+
+CompDesk API keys are bearer credentials generated from 24 cryptographically random bytes
+(192 bits) and displayed once. The database stores a deterministic SHA-256 digest solely for
+indexed equality lookup; it never stores the raw key. CodeQL's
+`js/insufficient-password-hash` rule is intentionally suppressed at that exact source line
+because this value is not a human-chosen password and an offline attacker still faces the
+full 192-bit search space. Password hashing would not materially improve that bound and
+would prevent the current indexed lookup design. This exception does not apply to user
+passwords, which remain protected with bcrypt, or to low-entropy integration secrets.
+
 ## Security assumptions
 
 - Operators terminate HTTPS correctly and provide trustworthy forwarded headers.

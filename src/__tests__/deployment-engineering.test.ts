@@ -50,6 +50,12 @@ describe('deployment engineering contracts', () => {
         for (const file of ['docker-compose.yml', 'docker-compose.external-db.yml', 'docker-compose.setup.yml']) {
             expect(source(file)).toContain('target: setup');
         }
+        const setupCompose = source('docker-compose.setup.yml');
+        expect(setupCompose).toContain('chown -R 1001:1001 /uploads /attachments');
+        expect(setupCompose).toContain('chmod -R u+rwX,g+rwX,o-rwx');
+        expect(setupCompose).toContain("group_add:\n      - '1001'");
+        const externalCompose = source('docker-compose.external-db.yml');
+        expect(externalCompose.match(/\.\/\.compdesk:\/app\/config:ro/g)).toHaveLength(2);
     });
 
     it('dry-runs the complete backup scope without exposing a database URL', () => {
@@ -114,9 +120,10 @@ describe('deployment engineering contracts', () => {
             fs.mkdirSync(path.join(directory, 'configuration'));
             fs.writeFileSync(path.join(directory, 'database.dump'), 'database');
             fs.writeFileSync(path.join(directory, 'configuration', 'compdesk.env'), 'AUTH_SECRET=test-only');
+            fs.writeFileSync(path.join(directory, 'configuration', 'database-ca.pem'), 'TEST CERTIFICATE');
             const manifest = {
                 format: 'compdesk-backup-v1', database: 'database.dump', attachments: 'attachments',
-                uploads: 'uploads', configuration: 'configuration/compdesk.env',
+                uploads: 'uploads', configuration: 'configuration/compdesk.env', databaseCa: 'configuration/database-ca.pem',
             };
             fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify(manifest));
             expect(execFileSync(process.execPath, ['scripts/verify-backup.mjs', directory], { encoding: 'utf8' })).toContain('structure is complete');

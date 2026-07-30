@@ -31,6 +31,44 @@ test('requires HTTPS away from loopback', () => {
     assert.equal(core.validatePublicUrl('http://localhost:3000').valid, true);
 });
 
+test('persists a custom PostgreSQL CA path in the Prisma connection and environment', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-ca-'));
+    try {
+        const environmentPath = path.join(directory, 'compdesk.env');
+        const caPath = core.databaseCaPath(environmentPath);
+        core.writeFileAtomic(caPath, 'TEST CERTIFICATE\n', { mode: 0o600, backup: false });
+        const databaseUrl = core.buildDatabaseUrl({
+            host: 'db.example.com', port: 5432, database: 'compdesk', username: 'compdesk',
+            password: 'secret', sslMode: 'verify-full',
+        }, { sslRootCertPath: caPath });
+        const parsed = new URL(databaseUrl);
+        assert.equal(parsed.searchParams.get('sslmode'), 'verify-full');
+        assert.equal(parsed.searchParams.get('sslrootcert'), path.resolve(caPath));
+        const rendered = core.renderEnvironment({
+            databaseUrl,
+            databaseCaFile: caPath,
+            applicationUrl: 'https://helpdesk.example.com',
+            authSecret: 'auth-secret',
+            settingsEncryptionKey: 'settings-key',
+            localEnabled: true,
+            microsoftEnabled: false,
+            trustProxy: false,
+            privateAttachmentDir: '/srv/compdesk/attachments',
+            uploadMaxSizeMb: 10,
+            attachmentMaxFilesPerTicket: 20,
+            attachmentMaxMbPerTicket: 100,
+            attachmentGlobalMaxGb: 10,
+            tempAttachmentTtlHours: 24,
+            tempAttachmentMaxFilesPerUser: 20,
+            tempAttachmentMaxMbPerUser: 100,
+        });
+        assert.match(rendered, /DATABASE_CA_FILE=/);
+        assert.equal(fs.readFileSync(caPath, 'utf8'), 'TEST CERTIFICATE\n');
+        if (process.platform !== 'win32') assert.equal(fs.statSync(caPath).mode & 0o777, 0o600);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
 test('does not persist setup passwords in resumable state', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-'));
     try {

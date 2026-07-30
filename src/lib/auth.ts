@@ -67,6 +67,9 @@ export const authConfig: NextAuthConfig = {
                         scope: 'openid profile email User.Read',
                     },
                 },
+                // This tenant-specific OIDC provider validates Microsoft-issued tokens before
+                // Auth.js sees the normalized email. Linking avoids duplicate local/Entra users.
+                allowDangerousEmailAccountLinking: true,
                 profile(profile) {
                     return {
                         id: profile.sub,

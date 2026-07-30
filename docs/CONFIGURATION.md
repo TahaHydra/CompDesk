@@ -4,7 +4,8 @@ The first-run setup writes one runtime environment file. Container deployments u
 
 | Variable | Runtime behavior |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection used by Prisma, setup, migrations, health, and backup tooling. |
+| `DATABASE_URL` | PostgreSQL connection used by Prisma, setup, migrations, health, and backup tooling. For a custom CA it includes `sslmode=verify-ca`/`verify-full` and an `sslrootcert` path. |
+| `DATABASE_CA_FILE` | Restricted custom PostgreSQL CA file persisted by setup and included in recovery sets; migration and application containers mount its configuration directory read-only. |
 | `AUTH_URL` | Exact public origin used for cookies, Entra callbacks, and absolute email asset URLs; HTTPS is required off localhost. |
 | `AUTH_SECRET` | Stable Auth.js signing/encryption secret. |
 | `TRUST_PROXY` | Enables trusted forwarded client IPs only when exactly `true`; the proxy must overwrite client headers. |
