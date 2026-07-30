@@ -70,7 +70,7 @@ export async function diagnoseEntraRuntime(options: DiagnosticOptions = {}): Pro
     try {
         // The validated tenant is the only variable path segment; the HTTPS Microsoft
         // origin is fixed, redirects are rejected, and tests inject fetch explicitly.
-        // lgtm[js/request-forgery]
+        // codeql[js/request-forgery]
         response = await (options.fetchImpl ?? fetch)(metadataUrl, { method: 'GET', headers: { Accept: 'application/json' }, redirect: 'error', cache: 'no-store', signal: controller.signal });
     } catch (error) {
         const failure = classifyNetworkError(error);
