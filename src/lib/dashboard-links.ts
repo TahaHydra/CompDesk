@@ -51,3 +51,11 @@ export function parseDashboardLinks(value: unknown): DashboardLink[] {
 export function normalizeDashboardLinks(value: unknown) {
     return dashboardLinksSchema.safeParse(value);
 }
+export function filterDashboardLinksForQueueAccess(
+    links: DashboardLink[],
+    allowedQueueIds: readonly string[] | null
+): DashboardLink[] {
+    if (allowedQueueIds === null) return links;
+    const allowed = new Set(allowedQueueIds);
+    return links.filter((link) => link.type === 'external' || allowed.has(link.queueId));
+}

@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
-import { parseDashboardLinks } from '@/lib/dashboard-links';
+import { filterDashboardLinksForQueueAccess, parseDashboardLinks } from '@/lib/dashboard-links';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
 import { broadestTicketView } from '@/lib/ticket-search';
 
@@ -62,11 +62,20 @@ export async function GET() {
                 : Promise.resolve(null)
         ]);
 
-        const customLinks = dashboardLinksEnabled
+        const parsedLinks = dashboardLinksEnabled
             ? parseDashboardLinks(dashboardLinksSetting?.value)
             : [];
+        const allowedTicketFormQueueIds = role === 'SUPER_ADMIN'
+            ? null
+            : role === 'USER'
+                ? (await prisma.queue.findMany({
+                    where: { isActive: true, isPublic: true },
+                    select: { id: true },
+                })).map((queue) => queue.id)
+                : await getQueueInboxQueueIds(userId, role) ?? [];
+        const customLinks = filterDashboardLinksForQueueAccess(parsedLinks, allowedTicketFormQueueIds);
 
-return NextResponse.json({
+        return NextResponse.json({
             stats: { total, open, pending, resolved, urgent, escalated },
             recentTickets,
             customLinks,

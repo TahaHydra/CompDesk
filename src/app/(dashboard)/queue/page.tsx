@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -223,15 +224,14 @@ export default function QueueInboxPage() {
                                     {tickets.map((ticket: any) => (
                                         <tr
                                             key={ticket.id}
-                                            className="hover:bg-muted/30 transition-colors cursor-pointer"
-                                            onClick={() => router.push(`/tickets/${ticket.id}`)}
+                                            className="transition-colors hover:bg-muted/30"
                                         >
                                             <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
                                                 {ticket.key}
                                                 {ticket.slaBreached && <AlertTriangle className="inline h-3 w-3 text-destructive ml-1" />}
                                             </td>
                                             <td className="px-4 py-3 font-medium max-w-[280px]">
-                                                <span className="truncate block">{ticket.title}</span>
+                                                <Link href={`/tickets/${ticket.id}`} className="block truncate rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{ticket.title}</Link>
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
                                                 {ticket.queue?.name ?? '—'}
