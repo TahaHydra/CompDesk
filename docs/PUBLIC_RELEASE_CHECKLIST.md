@@ -1,7 +1,6 @@
 # Public release checklist
 
-Status values: `PASS`, `BLOCKED`, or `NOT RUN`. A release requires every
-blocking item to be `PASS` for the exact final commit.
+Status values are `PASS`, `BLOCKED`, or `NOT RUN`. A release requires every blocking item to be `PASS` for the exact final commit.
 
 | Gate | Status | Evidence |
 |---|---|---|
@@ -9,32 +8,37 @@ blocking item to be `PASS` for the exact final commit.
 | Secure isolated first-run setup | PASS | Isolated bootstrap server, token/session/CSRF controls, setup runner tests |
 | Setup cannot be reused | PASS | Immutable installation record, 410 behavior, recovery guard, regression tests |
 | Safe API DTOs and recursive secret tests | PASS | Central selectors/serializers and recursive forbidden-key tests |
-| No fixed production database credentials | PASS | Required Compose variables |
-| PostgreSQL not published by production Compose | PASS | No `db.ports` entry |
+| No fixed production database credentials | PASS | Required Compose variables and repository contracts |
+| PostgreSQL not published by production Compose | PASS | No production database `ports` entry |
 | Ticket GET read-only | PASS | Separate expiring presence records and regression tests |
 | Optimistic ticket concurrency | PASS | Required expected version and 409 conflict responses |
-| Atomic assignment/escalation | PASS | Transactional mutations/timeline with post-commit side effects |
-| Correct SLA and status timestamps | PASS | Deterministic SLA restart and lifecycle timestamp regression tests |
-| Distributed login throttling | PASS | PostgreSQL-backed account/source throttling with expiry and regression tests |
-| Session revocation after security changes | PASS | Session version and credentials-changed validation with regression tests |
-| Case-normalized email identity | PASS | Database trigger/unique identity, guarded migration, and linkage tests |
-| History-preserving user actions | PASS | Ticket withdrawal, comment/attachment tombstones, and user deactivation |
-| Attachment quarantine/scanning architecture | PASS | Content verification, optional fail-closed ClamAV, quotas, and deletion audit |
-| Webhook SSRF/signatures/outbox | PASS | Public-only DNS pinning, encrypted HMAC secrets, durable retries/history, and regression tests |
-| External API default-deny departments | PASS | Explicit allow-all policy, PostgreSQL throttling, full request audit, and regression tests |
-| SMTP relay and secret management | PASS | Accepted/rejected/message-ID evidence, AES-GCM rotation tests, atomic locked single-source config writes |
-| Quick-link access and UI accessibility | PASS | Effective department filtering, real ticket links, mobile keyboard semantics, reduced-motion regression tests |
-| Current-tree customer-reference scan | PASS | Automated repository regression test enabled |
-| Git-history secret scan | NOT RUN | Final security scan |
-| Unit/integration tests | NOT RUN | Final commit required |
-| Setup E2E tests | BLOCKED | Test framework pending |
-| Production build | NOT RUN | Final commit required |
-| Compose config and Docker build | NOT RUN | Final commit required |
-| Dependency audit | NOT RUN | Final commit required |
-| Secret/static/container scans | NOT RUN | Final commit required |
-| Clean Ubuntu Docker installation | NOT RUN | Final deployment test |
-| Clean external-PostgreSQL installation | NOT RUN | Final deployment test |
-| Previous-schema upgrade | NOT RUN | Final migration fixture |
+| Atomic assignment/escalation | PASS | Transactional state/timeline with post-commit side effects |
+| Correct SLA and status timestamps | PASS | Deterministic SLA restart and lifecycle timestamp tests |
+| Distributed login throttling | PASS | PostgreSQL-backed account/source throttles with expiry |
+| Session revocation after security changes | PASS | Session version/credentials-change validation tests |
+| Case-normalized email identity | PASS | Database trigger/unique identity, guarded migration, linkage tests |
+| History-preserving user actions | PASS | Withdrawal, comment/attachment tombstones, deactivation |
+| Attachment quarantine/scanning architecture | PASS | Type verification, optional fail-closed ClamAV, quotas, deletion audit |
+| Webhook SSRF/signatures/outbox | PASS | Public-only DNS pinning, encrypted HMAC, durable retry/history tests |
+| External API default-deny departments | PASS | Explicit allow-all, throttling, request audit tests |
+| SMTP relay and secret management | PASS | Recipient/relay evidence, AES-GCM, locked atomic single-source config |
+| Quick-link access and UI accessibility | PASS | Effective department filtering, links, mobile keyboard semantics |
+| Current-tree customer/model-vendor scan | PASS | Encoded tracked-file regression gate; no current matches |
+| Full Git-history secret scan | PASS | Gitleaks 8.30.1: 48 commits, zero leaks |
+| Historical forbidden-reference removal | BLOCKED | Ancestor references require an approved coordinated history rewrite |
+| Clean dependency install | PASS | `npm ci` completed and Prisma generated |
+| Unit/integration tests | PASS | 42 suites, 342 tests |
+| Setup E2E tests | PASS | Playwright Chromium 1/1 |
+| Production build | PASS | Next.js 15.5.22 optimized build |
+| Compose configuration | PASS | Main, external database, and setup files validate |
+| Docker image build | BLOCKED | Local Linux Docker engine unavailable; remote CI result required |
+| Production dependency audit | PASS | `npm audit --omit=dev`: zero vulnerabilities |
+| Full development dependency audit | BLOCKED | 33 development-tool findings require compatible upstream upgrades/risk decision |
+| Secret scan | PASS | Current public files, staged diff, and full history: zero Gitleaks findings |
+| CodeQL/container scan | NOT RUN | Remote Security workflow result required |
+| Clean Ubuntu Docker installation | NOT RUN | Clean host required |
+| Clean external-PostgreSQL installation | NOT RUN | Clean host and dedicated PostgreSQL 16 required |
+| Previous-schema realistic upgrade | BLOCKED | Disposable rehearsal added; local PostgreSQL unavailable; CI result required |
+| Full restore rehearsal | NOT RUN | Isolated restore target required |
 
-Until every blocking gate passes, keep the repository private and do not
-describe CompDesk as production-ready.
+**Release verdict: BLOCKED.** Keep the repository private and do not describe CompDesk as production-ready until every blocking gate passes.

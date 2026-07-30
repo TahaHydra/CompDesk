@@ -310,3 +310,5 @@ This table is appended as focused commits land.
 | Authentication and user hardening | `afeb9a7` | Distributed credential throttling, session revocation, normalized identities, atomic strict user administration, migration, tests, and documentation |
 | Attachment security | `79a894f` | Content verification, optional fail-closed ClamAV, private quarantine flow, race-safe quotas, audited tombstones, setup wiring, migration, tests, and documentation |
 | Webhook and external API hardening | `0c1d092` | SSRF-safe pinned delivery, encrypted signatures, durable outbox/retries/history, explicit API-client queue policy, distributed throttling, request auditing, tests, and documentation |
+| SMTP, settings, and UI hardening | `9b6b285` | SMTP delivery evidence, managed environment locking/recovery, quick-link authorization, settings errors, ticket links, mobile accessibility, and tests |
+| Deployment, CI, and public package | `2da454f` | Clean runtime/setup images, deployment topologies, backups, E2E, upgrade rehearsal, permission/configuration docs, security workflows, dependency updates, and repository hygiene gates |

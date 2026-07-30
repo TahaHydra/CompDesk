@@ -88,7 +88,7 @@ async function seedRealisticPreviousData() {
         }
         await client.query(
             `INSERT INTO "ticket_form_templates" ("id", "name", "description", "version", "is_system_default", "is_active", "created_at", "updated_at")
-             VALUES ('migration-template', 'Standard support', 'Upgrade rehearsal template', 1, true, true, $1, $1)`,
+             VALUES ('migration-template', 'Standard support', 'Upgrade rehearsal template', 1, false, true, $1, $1)`,
             [now],
         );
         await client.query(
