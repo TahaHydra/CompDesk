@@ -64,7 +64,7 @@ describe('department category and ticket-form migration contract', () => {
 
 describe('language and help-center migration contract', () => {
     it('adds a constrained per-user language without changing existing accounts', () => {
-        expect(schema).toContain('preferredLanguage String');
+        expect(schema).toMatch(/preferredLanguage\s+String/);
         expect(localizationMigration).toContain('ADD COLUMN "preferred_language" TEXT NOT NULL DEFAULT \'en\'');
         expect(localizationMigration).toContain("CHECK (\"preferred_language\" IN ('en', 'fr'))");
     });

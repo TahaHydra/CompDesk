@@ -123,7 +123,7 @@ export default function AdminUsersPage() {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['users'] });
             setDeleteUser(null);
-            toast({ title: data.deactivated ? 'User deactivated' : 'User deleted', description: data.message });
+            toast({ title: 'User deactivated', description: data.message });
         },
         onError: (err: Error) => toast({ title: 'Error', description: err.message, variant: 'destructive' }),
     });
@@ -282,7 +282,7 @@ export default function AdminUsersPage() {
                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => resetPassword.mutate(u.id)} disabled={!canManageUser} title="Reset password">
                                         <RotateCcw className="h-3.5 w-3.5" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteUser(u)} disabled={!canManageUser || u.id === session?.user?.id} title="Delete user">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteUser(u)} disabled={!canManageUser || u.id === session?.user?.id} title="Deactivate user">
                                         <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
                                 </div>
@@ -375,16 +375,16 @@ export default function AdminUsersPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Delete Confirmation */}
+            {/* Deactivation confirmation */}
             <AlertDialog open={!!deleteUser} onOpenChange={() => setDeleteUser(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2">
-                            <AlertTriangle className="h-5 w-5 text-destructive" /> Delete User
+                            <AlertTriangle className="h-5 w-5 text-destructive" /> Deactivate User
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            Are you sure you want to delete <strong>{deleteUser?.name}</strong> ({deleteUser?.email})?
-                            If they have associated tickets, they will be deactivated instead.
+                            Deactivate <strong>{deleteUser?.name}</strong> ({deleteUser?.email})?
+                            Their history will be retained, existing sessions will be revoked, and the account can be reactivated later.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -394,7 +394,7 @@ export default function AdminUsersPage() {
                             disabled={deleteUserMutation.isPending}
                             onClick={() => deleteUserMutation.mutate(deleteUser?.id)}
                         >
-                            {deleteUserMutation.isPending ? 'Deleting…' : 'Yes, delete'}
+                            {deleteUserMutation.isPending ? 'Deactivating…' : 'Yes, deactivate'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
