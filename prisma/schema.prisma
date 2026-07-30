@@ -89,6 +89,7 @@ model User {
   passwordHash      String?   @map("password_hash")
   role              Role      @default(USER)
   isActive          Boolean   @default(true) @map("is_active")
+  isDemo            Boolean   @default(false) @map("is_demo")
   preferredLanguage String    @default("en") @map("preferred_language")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
@@ -572,6 +573,20 @@ model ApiClient {
 
   @@index([isActive])
   @@map("api_clients")
+}
+
+// ── Installation state ────────────────────────────────────────
+
+model InstallationRecord {
+  id                String   @id @default("primary")
+  installedAt       DateTime @default(now()) @map("installed_at")
+  installedByEmail  String   @map("installed_by_email")
+  deploymentMode    String   @map("deployment_mode")
+  applicationUrl    String   @map("application_url")
+  demoDataInstalled Boolean  @default(false) @map("demo_data_installed")
+  setupVersion      Int      @default(1) @map("setup_version")
+
+  @@map("installation_records")
 }
 
 // ── App Settings ───────────────────────────────────────────────

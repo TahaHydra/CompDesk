@@ -56,9 +56,4 @@ coverage/
 # TypeScript build cache
 *.tsbuildinfo
 
-# Local tooling metadata
-.aitool-a/
-.cursor/
-AITOOL_A.md
-AITOOL_A_*.md
-AGENTS.md
+.compdesk/

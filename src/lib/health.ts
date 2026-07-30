@@ -14,11 +14,11 @@ export interface ReadinessChecks {
 async function databaseAndInstallationChecks(): Promise<Pick<ReadinessChecks, 'database' | 'installation'>> {
     try {
         await prisma.$queryRaw`SELECT 1`;
-        const firstAdministrator = await prisma.user.findFirst({
-            where: { role: 'SUPER_ADMIN', isActive: true },
+        const installation = await prisma.installationRecord.findUnique({
+            where: { id: 'primary' },
             select: { id: true },
         });
-        return { database: true, installation: Boolean(firstAdministrator) };
+        return { database: true, installation: Boolean(installation) };
     } catch {
         return { database: false, installation: false };
     }

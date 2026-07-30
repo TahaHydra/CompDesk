@@ -69,6 +69,10 @@ describe('application route and access contracts', () => {
             const route = appRoute(file, `${path.sep}app${path.sep}`);
             const source = readFileSync(file, 'utf8');
             if (route === '/api/auth/[...nextauth]') continue;
+            if (route === '/api/health/live' || route === '/api/health/ready') {
+                expect(source).toContain('Cache-Control');
+                continue;
+            }
             if (route === '/api/branding') {
                 expect(source).toContain('getPublicBranding');
                 continue;
