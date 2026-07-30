@@ -22,6 +22,22 @@ if (files.length === 0) {
     process.exit(2);
 }
 
+function hasExactSourceSuppression(result) {
+    const ruleId = result.ruleId;
+    const physical = result.locations?.[0]?.physicalLocation;
+    const uri = physical?.artifactLocation?.uri;
+    const startLine = physical?.region?.startLine;
+    if (!ruleId || !uri || !Number.isInteger(startLine) || startLine < 1) return false;
+    let decoded;
+    try { decoded = decodeURIComponent(uri); } catch { return false; }
+    if (decoded.includes('\0') || path.isAbsolute(decoded)) return false;
+    const candidate = path.resolve(process.cwd(), decoded);
+    const relative = path.relative(process.cwd(), candidate);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || !fs.existsSync(candidate)) return false;
+    const lines = fs.readFileSync(candidate, 'utf8').split(/\r?\n/);
+    return lines[startLine - 2]?.trim() === `// codeql[${ruleId}]`;
+}
+
 const findings = [];
 let inSourceSuppressions = 0;
 for (const file of files) {
@@ -29,7 +45,8 @@ for (const file of files) {
     for (const run of document.runs || []) {
         const rules = new Map((run.tool?.driver?.rules || []).map((rule) => [rule.id, rule]));
         for (const result of run.results || []) {
-            const sourceSuppressed = result.suppressions?.some((suppression) => suppression.kind === 'inSource');
+            const sourceSuppressed = result.suppressions?.some((suppression) => suppression.kind === 'inSource')
+                || hasExactSourceSuppression(result);
             if (sourceSuppressed) {
                 inSourceSuppressions += 1;
                 continue;

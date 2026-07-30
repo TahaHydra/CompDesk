@@ -84,6 +84,16 @@ describe('deployment engineering contracts', () => {
                 }] }],
             }));
             expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('1 documented in-source suppression');
+            const apiClientSource = source('src/lib/api-clients.ts');
+            const digestLine = apiClientSource.split(/\r?\n/).findIndex((line) => line.includes('const lookupDigest')) + 1;
+            fs.writeFileSync(target, JSON.stringify({
+                version: '2.1.0',
+                runs: [{ tool: { driver: { name: 'test' } }, results: [{
+                    ruleId: 'js/insufficient-password-hash', level: 'warning', message: { text: 'Reviewed random-token digest' },
+                    locations: [{ physicalLocation: { artifactLocation: { uri: 'src/lib/api-clients.ts' }, region: { startLine: digestLine } } }],
+                }] }],
+            }));
+            expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('1 documented in-source suppression');
             fs.writeFileSync(target, JSON.stringify({
                 version: '2.1.0',
                 runs: [{ tool: { driver: { name: 'test' } }, results: [{
