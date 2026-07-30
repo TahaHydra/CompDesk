@@ -123,7 +123,20 @@ export function renderEnvironment(config) {
         `TRUST_PROXY=${config.trustProxy ? 'true' : 'false'}`,
         `ATTACHMENT_STORAGE_DIR=${quoteEnvValue(config.privateAttachmentDir)}`,
         `UPLOAD_MAX_SIZE_MB=${String(config.uploadMaxSizeMb)}`,
+        `ATTACHMENT_MAX_FILES_PER_TICKET=${String(config.attachmentMaxFilesPerTicket)}`,
+        `ATTACHMENT_MAX_BYTES_PER_TICKET=${String(config.attachmentMaxMbPerTicket * 1024 * 1024)}`,
+        `ATTACHMENT_GLOBAL_MAX_BYTES=${String(config.attachmentGlobalMaxGb * 1024 * 1024 * 1024)}`,
+        `TEMP_ATTACHMENT_TTL_HOURS=${String(config.tempAttachmentTtlHours)}`,
+        `TEMP_ATTACHMENT_MAX_FILES_PER_USER=${String(config.tempAttachmentMaxFilesPerUser)}`,
+        `TEMP_ATTACHMENT_MAX_BYTES_PER_USER=${String(config.tempAttachmentMaxMbPerUser * 1024 * 1024)}`,
     ];
+    if (config.clamavEnabled) {
+        lines.push(
+            `CLAMAV_HOST=${quoteEnvValue(config.clamavHost)}`,
+            `CLAMAV_PORT=${String(config.clamavPort)}`,
+            'CLAMAV_TIMEOUT_MS=10000'
+        );
+    }
     if (config.dockerDatabase) {
         lines.push(
             `POSTGRES_DB=${quoteEnvValue(config.dockerDatabase.database)}`,
@@ -200,9 +213,17 @@ export function saveNonSecretState(target, input) {
             clientId: input.authentication?.clientId || '',
         },
         storage: {
-            privateAttachmentDir: input.storage?.privateAttachmentDir || 'storage',
-            uploadMaxSizeMb: Number(input.storage?.uploadMaxSizeMb || 25),
+            privateAttachmentDir: input.storage?.privateAttachmentDir || 'storage/attachments',
+            uploadMaxSizeMb: Number(input.storage?.uploadMaxSizeMb || 10),
+            attachmentMaxFilesPerTicket: Number(input.storage?.attachmentMaxFilesPerTicket || 20),
+            attachmentMaxMbPerTicket: Number(input.storage?.attachmentMaxMbPerTicket || 100),
+            attachmentGlobalMaxGb: Number(input.storage?.attachmentGlobalMaxGb || 10),
+            tempAttachmentTtlHours: Number(input.storage?.tempAttachmentTtlHours || 24),
+            tempAttachmentMaxFilesPerUser: Number(input.storage?.tempAttachmentMaxFilesPerUser || 20),
+            tempAttachmentMaxMbPerUser: Number(input.storage?.tempAttachmentMaxMbPerUser || 100),
             clamavEnabled: Boolean(input.storage?.clamavEnabled),
+            clamavHost: input.storage?.clamavHost || '',
+            clamavPort: Number(input.storage?.clamavPort || 3310),
         },
         smtp: {
             enabled: Boolean(input.smtp?.enabled),
