@@ -52,6 +52,21 @@ describe('deployment engineering contracts', () => {
         expect(output).not.toContain('secret-password');
     });
 
+    it('fails closed when static-analysis SARIF contains warning or error findings', () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-sarif-test-'));
+        const target = path.join(directory, 'result.sarif');
+        try {
+            fs.writeFileSync(target, JSON.stringify({ version: '2.1.0', runs: [{ tool: { driver: { name: 'test' } }, results: [] }] }));
+            expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('no warning/error findings');
+            fs.writeFileSync(target, JSON.stringify({
+                version: '2.1.0',
+                runs: [{ tool: { driver: { name: 'test' } }, results: [{ ruleId: 'security-test', level: 'warning', message: { text: 'Unsafe test result' } }] }],
+            }));
+            expect(() => execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { stdio: 'pipe' })).toThrow();
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
+    });
     it('verifies a complete backup and rejects manifest traversal', () => {
         const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-backup-test-'));
         try {
