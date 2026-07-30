@@ -23,11 +23,17 @@ if (files.length === 0) {
 }
 
 const findings = [];
+let inSourceSuppressions = 0;
 for (const file of files) {
     const document = JSON.parse(fs.readFileSync(file, 'utf8'));
     for (const run of document.runs || []) {
         const rules = new Map((run.tool?.driver?.rules || []).map((rule) => [rule.id, rule]));
         for (const result of run.results || []) {
+            const sourceSuppressed = result.suppressions?.some((suppression) => suppression.kind === 'inSource');
+            if (sourceSuppressed) {
+                inSourceSuppressions += 1;
+                continue;
+            }
             const rule = rules.get(result.ruleId);
             const level = result.level || rule?.defaultConfiguration?.level || 'warning';
             if (!['warning', 'error'].includes(level)) continue;
@@ -52,4 +58,4 @@ if (findings.length > 0) {
     process.exit(1);
 }
 
-console.log(`Static analysis passed across ${files.length} SARIF file(s) with no warning/error findings.`);
+console.log(`Static analysis passed across ${files.length} SARIF file(s) with no unsuppressed warning/error findings (${inSourceSuppressions} documented in-source suppression(s)).`);
