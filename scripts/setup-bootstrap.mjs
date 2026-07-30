@@ -256,7 +256,7 @@ async function diagnoseEntra(authentication, applicationUrl) {
     const metadataUrl = `https://login.microsoftonline.com/${encodeURIComponent(authentication.tenantId)}/v2.0/.well-known/openid-configuration`;
     try {
         // The tenant is a strict GUID and the Microsoft origin is fixed above.
-        // lgtm[js/request-forgery]
+        // codeql[js/request-forgery]
         const response = await fetch(metadataUrl, { signal: AbortSignal.timeout(8000), redirect: 'error' });
         if (!response.ok) throw Object.assign(new Error(`Microsoft Entra metadata returned HTTP ${response.status}.`), { statusCode: 400 });
         const metadata = await response.json();

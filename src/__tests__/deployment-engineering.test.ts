@@ -8,10 +8,20 @@ function source(relativePath: string) { return fs.readFileSync(path.join(process
 describe('deployment engineering contracts', () => {
     it('keeps the first-run browser script syntactically executable', () => {
         const html = source('scripts/setup-ui.html');
-        const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
-        expect(script).toBeDefined();
-        expect(() => new Function(script!)).not.toThrow();
+        const scriptStart = html.indexOf('<script>');
+        const scriptEnd = html.indexOf('</script>', scriptStart + 8);
+        expect(scriptStart).toBeGreaterThanOrEqual(0);
+        expect(scriptEnd).toBeGreaterThan(scriptStart);
+        const script = html.slice(scriptStart + 8, scriptEnd);
+        expect(() => new Function(script)).not.toThrow();
         expect(html).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML/);
+    });
+
+    it('keeps the dependency relay on its fixed upstream origins', () => {
+        const relay = source('scripts/dependency-relay.mjs');
+        expect(relay).toContain("incoming.origin !== RELAY_ORIGIN");
+        expect(relay).toContain("new URL(prismaRequest ? 'https://binaries.prisma.sh' : 'https://registry.npmjs.org')");
+        expect(relay).not.toContain("new URL(rawUrl, 'https://registry.npmjs.org')");
     });
 
     it('documents only runtime-backed configuration variables', () => {
