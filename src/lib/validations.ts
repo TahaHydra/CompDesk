@@ -31,8 +31,11 @@ export const updateTicketSchema = z.object({
     severity: z.nativeEnum(Severity).nullable().optional(),
     categoryId: z.string().uuid().nullable().optional(),
     queueId: z.string().uuid().optional(),
-    tagIds: z.array(z.string().uuid()).optional(),
-});
+    tagIds: z.array(z.string().uuid()).max(100).optional(),
+}).strict().refine(
+    (value) => Object.keys(value).length > 0,
+    { message: 'At least one ticket field is required' }
+);
 
 export const createCommentSchema = z.object({
     content: z.string().min(1, 'Comment cannot be empty').max(10000),

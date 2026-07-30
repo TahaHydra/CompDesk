@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { assertApiResponseSafe } from '@/lib/api-dto';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import bcrypt from 'bcryptjs';
@@ -36,6 +37,7 @@ export async function GET() {
             isActive: true,
             createdAt: true,
             entraObjectId: true,
+            passwordHash: true,
             queueMemberships: { select: { queueId: true } },
         } as const;
 
@@ -80,13 +82,16 @@ export async function GET() {
             });
         }
 
-        const usersWithMeta = users.map(u => ({
-            ...u,
-            loginMethod: u.entraObjectId ? 'SSO' : 'Local',
-            hasPassword: false,
-        }));
+        const usersWithMeta = users.map((user) => {
+            const { passwordHash, ...safeUser } = user;
+            return {
+                ...safeUser,
+                loginMethod: user.entraObjectId ? 'SSO' : 'Local',
+                hasPassword: Boolean(passwordHash),
+            };
+        });
 
-        return NextResponse.json(usersWithMeta);
+        return NextResponse.json(assertApiResponseSafe(usersWithMeta));
     } catch (error) {
         logger.error('Failed to fetch users', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

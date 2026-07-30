@@ -4,11 +4,16 @@ import {
     createTagSchema,
     createTicketSchema,
     updateTagSchema,
+    updateTicketSchema,
 } from '@/lib/validations';
 
 const queueId = '550e8400-e29b-41d4-a716-446655440000';
 
 describe('Ticket routing payload validation', () => {
+    test('rejects empty ticket updates', () => {
+        expect(updateTicketSchema.safeParse({}).success).toBe(false);
+    });
+
     test('accepts template-driven values', () => {
         const result = createTicketSchema.safeParse({
             queueId,

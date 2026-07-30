@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe } from '@/lib/api-dto';
 import { updateTicketSchema } from '@/lib/validations';
 import { canTransition, isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
@@ -150,7 +151,7 @@ export async function GET(
             formSchemaSnapshot: undefined,
             submittedFormValues: undefined,
         };
-        return NextResponse.json({
+        return NextResponse.json(assertApiResponseSafe({
             ...safeTicket,
             slaInfo,
             presenceInfo,
@@ -161,7 +162,7 @@ export async function GET(
                 fields: historicalFields,
                 values: historicalValues,
             } : null,
-        });
+        }));
     } catch (error) {
         logger.error('Failed to fetch ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -298,8 +299,8 @@ export async function PATCH(
                 data: updateData as any,
                 include: {
                     queue: true,
-                    requester: true,
-                    assignments: { include: { user: true } },
+                    requester: { select: PUBLIC_REQUESTER_SELECT },
+                    assignments: { include: { user: { select: STAFF_USER_SELECT } } },
                 },
             });
 
@@ -357,7 +358,7 @@ export async function PATCH(
             metadata: { changes: data },
         });
 
-        return NextResponse.json(updatedTicket);
+        return NextResponse.json(assertApiResponseSafe(updatedTicket));
     } catch (error) {
         logger.error('Failed to update ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
