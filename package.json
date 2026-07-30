@@ -1,6 +1,6 @@
 {
   "name": "compdesk",
-  "version": "1.0.0",
+  "version": "1.0.0-rc1",
   "private": true,
   "engines": {
     "node": ">=22.12.0 <25",
@@ -14,6 +14,7 @@
     "build": "next build && node scripts/copy-standalone-assets.js",
     "backup": "node scripts/backup.mjs",
     "backup:verify": "node scripts/verify-backup.mjs",
+    "backup:rehearse": "node scripts/restore-rehearsal.mjs",
     "validate:env": "node scripts/validate-runtime-env.mjs",
     "generate:settings-key": "node scripts/generate-settings-key.mjs",
     "start": "node scripts/launch.mjs",
@@ -41,7 +42,8 @@
     "test:e2e": "playwright test",
     "test:watch": "jest --watch",
     "postinstall": "prisma generate",
-    "test:migration:upgrade": "node scripts/validate-migration-upgrade.mjs"
+    "test:migration:upgrade": "node scripts/validate-migration-upgrade.mjs",
+    "test:integration:entra": "node --test scripts/entra-account-link.integration.test.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.11.3",

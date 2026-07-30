@@ -2,25 +2,44 @@ import fs from 'node:fs';
 import path from 'node:path';
 import nextEnv from '@next/env';
 import pg from 'pg';
+import { sanitizeSetupError } from './setup-core.mjs';
 
 const { loadEnvConfig } = nextEnv;
 const { Client } = pg;
 const root = process.cwd();
 loadEnvConfig(root);
 
+function databaseClientConfiguration() {
+    const connectionString = process.env.DATABASE_URL;
+    const configuration = { connectionString, connectionTimeoutMillis: 4000 };
+    if (!connectionString) return configuration;
+    const url = new URL(connectionString);
+    const sslMode = url.searchParams.get('sslmode');
+    const caPath = url.searchParams.get('sslrootcert') || process.env.DATABASE_CA_FILE;
+    if (caPath && ['verify-ca', 'verify-full'].includes(sslMode || '')) {
+        configuration.ssl = { rejectUnauthorized: true, ca: fs.readFileSync(path.resolve(caPath), 'utf8') };
+    }
+    return configuration;
+}
+
 async function installationExists() {
     if (!process.env.DATABASE_URL) return false;
-    const client = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 4000 });
+    let client;
     try {
+        client = new Client(databaseClientConfiguration());
         await client.connect();
         const result = await client.query("SELECT to_regclass('public.installation_records') AS table_name");
         if (!result.rows[0]?.table_name) return false;
         const installed = await client.query('SELECT id FROM installation_records WHERE id = $1', ['primary']);
         return installed.rowCount > 0;
-    } catch {
-        return false;
+    } catch (error) {
+        const diagnostic = sanitizeSetupError(error);
+        throw new Error(
+            `CompDesk is configured but PostgreSQL is unavailable (${diagnostic.stage}). Refusing to start first-run setup. ${diagnostic.message}`,
+            { cause: error }
+        );
     } finally {
-        await client.end().catch(() => undefined);
+        await client?.end().catch(() => undefined);
     }
 }
 

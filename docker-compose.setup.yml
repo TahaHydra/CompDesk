@@ -4,7 +4,7 @@ services:
   volume-init:
     image: alpine:3.22
     user: root
-    command: ['sh', '-c', 'chown -R ${SETUP_UID:-1000}:${SETUP_GID:-1000} /uploads /attachments']
+    command: ['sh', '-c', 'chown -R 1001:1001 /uploads /attachments && chmod -R u+rwX,g+rwX,o-rwx /uploads /attachments && find /uploads /attachments -type d -exec chmod g+s {} +']
     volumes:
       - uploads:/uploads
       - attachments:/attachments
@@ -35,6 +35,8 @@ services:
       target: setup
     init: true
     user: '${SETUP_UID:-1000}:${SETUP_GID:-1000}'
+    group_add:
+      - '1001'
     depends_on:
       volume-init:
         condition: service_completed_successfully

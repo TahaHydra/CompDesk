@@ -43,8 +43,10 @@ export const updateApiClientSchema = z.object({
 );
 
 function hashApiKey(apiKey: string): string {
-    // API keys are 192-bit random bearer tokens, not human passwords. A deterministic
-    // digest is intentionally used for indexed lookup without storing the raw key.
+    // CodeQL exception: API keys are 192-bit CSPRNG bearer tokens, not human passwords.
+    // SHA-256 is a one-way, deterministic lookup digest so an indexed equality query can
+    // authenticate without storing the bearer secret. Offline guessing remains bounded by
+    // the token's 192-bit entropy; bcrypt would add cost without improving that bound.
     // codeql[js/insufficient-password-hash]
     const lookupDigest = crypto.createHash('sha256').update(apiKey).digest('hex');
     return lookupDigest;

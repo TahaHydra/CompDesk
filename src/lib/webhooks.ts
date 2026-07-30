@@ -185,11 +185,13 @@ export async function processDueWebhookDeliveries(limit = 25): Promise<number> {
 }
 
 const workerState = globalThis as typeof globalThis & { __compdeskWebhookWorker?: NodeJS.Timeout };
-function scheduleDeliveryWorker(): void {
+export function startWebhookDeliveryWorker(): void {
     if (process.env.NODE_ENV === 'test' || workerState.__compdeskWebhookWorker) return;
-    const timer = setInterval(() => { void processDueWebhookDeliveries().catch((error) => {
+    const run = () => { void processDueWebhookDeliveries().catch((error) => {
         logger.error('Webhook delivery worker failed', { error: error instanceof Error ? error.message : 'Unknown worker error' });
-    }); }, 15_000);
+    }); };
+    run();
+    const timer = setInterval(run, 15_000);
     timer.unref();
     workerState.__compdeskWebhookWorker = timer;
 }
@@ -211,7 +213,7 @@ export async function fireWebhook(event: string, data: Record<string, unknown>) 
                 logger.error('Webhook delivery dispatch failed', { webhookId: webhook.id, deliveryId: id, error: error instanceof Error ? error.message : 'Unknown dispatch error' });
             });
         }
-        if (webhooks.length > 0) scheduleDeliveryWorker();
+        if (webhooks.length > 0) startWebhookDeliveryWorker();
     } catch (error) {
         logger.error('Failed to enqueue webhooks', { event, error: error instanceof Error ? error.message : 'Unknown enqueue error' });
     }

@@ -7,7 +7,7 @@ Docker Compose is the recommended deployment shape. Use the isolated first-run p
 - Docker Engine with Compose v2;
 - a DNS name and HTTPS reverse proxy for non-local use;
 - durable storage for PostgreSQL, attachments, and uploaded branding assets;
-- encrypted backup storage for `.compdesk/compdesk.env`.
+- encrypted backup storage for `.compdesk/compdesk.env` and, when generated, `.compdesk/database-ca.pem`.
 
 Fresh installation:
 
@@ -42,7 +42,7 @@ docker compose -f docker-compose.dev.yml up -d
 The development database binds only to `127.0.0.1`.
 ## External PostgreSQL
 
-Run the setup wizard locally, select “Existing PostgreSQL with the app in Docker,” and write the restricted configuration to `.compdesk/compdesk.env`. The database must require authenticated encrypted transport appropriate to its network.
+Run the setup wizard locally, select “Existing PostgreSQL with the app in Docker,” and write the restricted configuration to `.compdesk/compdesk.env`. The database must require authenticated encrypted transport appropriate to its network. When `verify-ca` or `verify-full` uses a private CA, setup writes `.compdesk/database-ca.pem` with restrictive permissions and places its `/app/config/database-ca.pem` path in `DATABASE_URL`; the external-database Compose file mounts that directory read-only into both the migration and application containers.
 
 ```bash
 docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml config

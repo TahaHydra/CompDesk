@@ -21,16 +21,22 @@ application under `/opt/compdesk`. Store runtime configuration outside the
 repository with mode `0600`. Private attachments and uploads require durable
 writable directories owned by the service account.
 
+From the exact release tag, run the verified first-run path as the unprivileged
+service account:
+
 ```bash
+git checkout v1.0.0-rc1
 npm ci
-npm run db:generate
 npm run verify
-npm run db:migrate:prod
-npm run build
-npm start
+npm run setup:bootstrap
 ```
 
-Run migrations once during deployment, not from every replica.
+Open the printed loopback URL through a protected SSH tunnel if necessary, use
+the one-time token, and complete the wizard. After completion, stop bootstrap
+and start the configured application with `npm start` (or systemd below). Setup
+runs migrations once and creates the first Super Admin. When a private
+PostgreSQL CA is selected, keep the generated `database-ca.pem` beside the
+runtime environment with mode `0600` and include both in backups.
 
 ## systemd example
 

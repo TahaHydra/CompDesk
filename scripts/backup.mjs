@@ -36,6 +36,7 @@ function postgresEnvironment(databaseUrl) {
         PGPASSWORD: decodeURIComponent(url.password),
         PGDATABASE: decodeURIComponent(url.pathname.replace(/^\//, '')),
         ...(url.searchParams.get('sslmode') ? { PGSSLMODE: url.searchParams.get('sslmode') } : {}),
+        ...(url.searchParams.get('sslrootcert') ? { PGSSLROOTCERT: url.searchParams.get('sslrootcert') } : {}),
     };
 }
 
@@ -44,13 +45,23 @@ const configPath = await firstExisting([
     path.join(root, '.compdesk', 'compdesk.env'),
     path.join(root, '.env'),
 ].filter(Boolean));
+const databaseUrlCa = process.env.DATABASE_URL
+    ? new URL(process.env.DATABASE_URL).searchParams.get('sslrootcert')
+    : null;
+const configuredCaPath = process.env.DATABASE_CA_FILE || databaseUrlCa;
+const databaseCa = await firstExisting([
+    configuredCaPath ? path.resolve(configuredCaPath) : '',
+    configPath ? path.join(path.dirname(configPath), 'database-ca.pem') : '',
+].filter(Boolean));
+if (configuredCaPath && !databaseCa) throw new Error('The configured PostgreSQL CA file is missing; refusing to create an incomplete recovery set.');
 
 if (dryRun) {
     console.log(JSON.stringify({
         mode: 'dry-run',
         destination,
-        includes: ['PostgreSQL custom dump', 'private attachments', 'uploaded branding/quick-link assets', 'one runtime configuration source'],
+        includes: ['PostgreSQL custom dump', 'private attachments', 'uploaded branding/quick-link assets', 'one runtime configuration source', ...(databaseCa ? ['PostgreSQL custom CA'] : [])],
         configurationFound: Boolean(configPath),
+        databaseCaFound: Boolean(databaseCa),
         warning: 'The backup contains authentication and encryption keys. Encrypt it and restrict access.',
     }, null, 2));
     process.exit(0);
@@ -69,6 +80,12 @@ await fs.mkdir(configurationDirectory, { mode: 0o700 });
 const configurationTarget = path.join(configurationDirectory, path.basename(configPath));
 await fs.copyFile(configPath, configurationTarget);
 await fs.chmod(configurationTarget, 0o600).catch(() => undefined);
+let databaseCaTarget = null;
+if (databaseCa) {
+    databaseCaTarget = path.join(configurationDirectory, 'database-ca.pem');
+    await fs.copyFile(databaseCa, databaseCaTarget);
+    await fs.chmod(databaseCaTarget, 0o600).catch(() => undefined);
+}
 
 const manifest = {
     format: 'compdesk-backup-v1',
@@ -77,6 +94,7 @@ const manifest = {
     attachments: 'attachments',
     uploads: 'uploads',
     configuration: path.join('configuration', path.basename(configPath)).replaceAll('\\', '/'),
+    ...(databaseCaTarget ? { databaseCa: 'configuration/database-ca.pem' } : {}),
     integrityNonce: crypto.randomBytes(16).toString('hex'),
     warning: 'Secret-bearing recovery set. Encrypt at rest and limit access.',
 };
