@@ -96,6 +96,9 @@ describe('webhook administration and outbox contracts', () => {
         expect(source).toContain('encryptSettingSecret(webhook.secret)');
         expect(source).not.toContain('X-Webhook-Secret');
         expect(source).not.toContain('fetch(webhook.url');
+        expect(source).toContain('export function startWebhookDeliveryWorker');
+        const instrumentation = read('src', 'instrumentation.ts');
+        expect(instrumentation).toContain('startWebhookDeliveryWorker()');
     });
 
     it('provides Super-Admin management, delivery history, test, and retry routes', () => {

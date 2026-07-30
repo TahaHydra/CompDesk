@@ -2,6 +2,7 @@ name: compdesk-external-db
 
 x-app-environment: &app-environment
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL for external PostgreSQL is required}
+  DATABASE_CA_FILE: ${DATABASE_CA_FILE:-}
   AUTH_URL: ${AUTH_URL:?AUTH_URL is required}
   AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
   APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:?APP_SETTINGS_ENCRYPTION_KEY is required}
@@ -43,6 +44,7 @@ services:
     environment: *app-environment
     command: ['sh', '-c', 'node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs']
     volumes:
+      - ./.compdesk:/app/config:ro
       - uploads:/app/public/uploads
       - attachments:/app/storage/attachments
 
@@ -59,6 +61,7 @@ services:
       - '${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000'
     environment: *app-environment
     volumes:
+      - ./.compdesk:/app/config:ro
       - uploads:/app/public/uploads
       - attachments:/app/storage/attachments
     healthcheck:

@@ -13,15 +13,23 @@ npm --version
 psql --version
 ```
 
-Create `.env` from `.env.example`, configure a dedicated PostgreSQL database
-and random secrets, then:
+From the exact release tag, install dependencies, build, and start the isolated
+first-run wizard. It tests the target PostgreSQL schema permissions, writes the
+restricted `.env` (and `database-ca.pem` when a private database CA is selected),
+runs migrations, and creates the first Super Admin:
 
 ```powershell
+git checkout v1.0.0-rc1
 npm ci
-npm run db:generate
 npm run verify
-npm run db:migrate:prod
-npm run build
+npm run setup:bootstrap
+```
+
+Open the printed loopback URL, enter the one-time console token, and complete the
+wizard. After it reports completion, stop bootstrap with `Ctrl+C` and start the
+configured application:
+
+```powershell
 npm start
 ```
 

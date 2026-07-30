@@ -60,6 +60,7 @@ coverage/
 *.tsbuildinfo
 
 .compdesk/
+/database-ca.pem
 
 # Browser test artifacts
 playwright-report/

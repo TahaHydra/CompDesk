@@ -15,6 +15,7 @@ import {
     SESSION_TTL_MS,
     TOKEN_TTL_MS,
     buildDatabaseUrl,
+    databaseCaPath,
     encryptEnvelope,
     isSameOrigin,
     isStrongPassword,
@@ -232,12 +233,20 @@ async function testDatabase(database) {
         await client.connect();
         try {
             await client.query('SELECT current_database(), current_user, version()');
-            await client.query('CREATE TEMP TABLE compdesk_setup_permission_check (id integer)');
-            await client.query('DROP TABLE compdesk_setup_permission_check');
+            const permissionTable = `compdesk_setup_permission_check_${crypto.randomUUID().replaceAll('-', '')}`;
+            await client.query('BEGIN');
+            try {
+                await client.query(`CREATE TABLE public."${permissionTable}" (id integer PRIMARY KEY)`);
+                await client.query(`CREATE INDEX "${permissionTable}_index" ON public."${permissionTable}" (id)`);
+                await client.query(`ALTER TABLE public."${permissionTable}" ADD COLUMN migration_probe text`);
+                await client.query(`DROP TABLE public."${permissionTable}"`);
+            } finally {
+                await client.query('ROLLBACK');
+            }
         } finally {
             await client.end();
         }
-        return { success: true, correlationId, message: 'PostgreSQL DNS, TCP, authentication, database access, and temporary schema permissions succeeded.', database: redactDatabaseInput(database) };
+        return { success: true, correlationId, message: 'PostgreSQL DNS, TCP, authentication, database access, and target-schema migration permissions succeeded.', database: redactDatabaseInput(database) };
     } catch (error) {
         const safe = sanitizeSetupError(error);
         console.error(JSON.stringify({ level: 'error', message: 'Setup PostgreSQL diagnostic failed', correlationId, stage: safe.stage }));
@@ -377,7 +386,10 @@ async function install(input) {
         }
         const authSecret = randomSecret(48);
         const settingsEncryptionKey = randomSecret(32);
-        const databaseUrl = buildDatabaseUrl(config.database);
+        const hasCustomCa = ['verify-ca', 'verify-full'].includes(config.database.sslMode) && Boolean(config.database.ca?.trim());
+        const databaseCaFile = hasCustomCa ? databaseCaPath(envPath) : null;
+        if (databaseCaFile) writeFileAtomic(databaseCaFile, `${config.database.ca.trim()}\n`, { mode: 0o600, backup: true });
+        const databaseUrl = buildDatabaseUrl(config.database, { sslRootCertPath: databaseCaFile });
         const privateAttachmentDir = path.resolve(root, config.storage.privateAttachmentDir || 'storage');
         fs.mkdirSync(privateAttachmentDir, { recursive: true, mode: 0o700 });
         fs.accessSync(privateAttachmentDir, fs.constants.R_OK | fs.constants.W_OK);
@@ -386,9 +398,11 @@ async function install(input) {
             AUTH_URL: config.identity.applicationUrl,
             AUTH_SECRET: authSecret,
             APP_SETTINGS_ENCRYPTION_KEY: settingsEncryptionKey,
+            ...(databaseCaFile ? { DATABASE_CA_FILE: databaseCaFile } : {}),
         };
         const envText = renderEnvironment({
             databaseUrl,
+            databaseCaFile,
             applicationUrl: config.identity.applicationUrl,
             authSecret,
             settingsEncryptionKey,
