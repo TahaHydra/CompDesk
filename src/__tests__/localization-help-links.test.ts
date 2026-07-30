@@ -3,6 +3,8 @@ import path from 'path';
 import { dashboardLinksSchema, parseDashboardLinks } from '@/lib/dashboard-links';
 import { normalizeLanguage, translate } from '@/lib/i18n';
 import { helpArticleInputSchema, helpCollectionInputSchema } from '@/lib/help-center';
+import { resolveArticleLink } from '@/lib/help-article-links';
+import { isUploadedImageUrl } from '@/lib/uploaded-image-url';
 
 const collectionId = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -41,6 +43,12 @@ describe('dashboard quick-link validation', () => {
         if (result.success) expect(result.data[0].iconUrl).toBe('');
     });
 
+    it('requires a literal extension separator in uploaded image URLs', () => {
+        const uuid = '123e4567-e89b-12d3-a456-426614174000';
+        expect(isUploadedImageUrl(`/uploads/quick-links/${uuid}.png`, 'quick-links')).toBe(true);
+        expect(isUploadedImageUrl(`/uploads/quick-links/${uuid}xpng`, 'quick-links')).toBe(false);
+    });
+
     it('rejects script URLs, SVGs, traversal, and excessive links', () => {
         expect(dashboardLinksSchema.safeParse([{ title: 'Bad', url: 'javascript:alert(1)' }]).success).toBe(false);
         expect(dashboardLinksSchema.safeParse([{ title: 'Bad', url: 'https://example.com', iconUrl: '/uploads/quick-links/logo.svg' }]).success).toBe(false);
@@ -50,6 +58,16 @@ describe('dashboard quick-link validation', () => {
 
     it('fails closed when stored JSON is malformed', () => {
         expect(parseDashboardLinks('{broken')).toEqual([]);
+    });
+
+    it('allows only local paths and credential-free HTTPS help links', () => {
+        expect(resolveArticleLink('/help/article')).toEqual({ href: '/help/article', external: false });
+        expect(resolveArticleLink('https://docs.example.com/guide')).toEqual({ href: 'https://docs.example.com/guide', external: true });
+        expect(resolveArticleLink('//evil.example/path')).toBeNull();
+        expect(resolveArticleLink('/\\evil.example/path')).toBeNull();
+        expect(resolveArticleLink('https://user:secret@docs.example.com')).toBeNull();
+        expect(resolveArticleLink('javascript:alert(1)')).toBeNull();
+        expect(resolveArticleLink('data:text/html,bad')).toBeNull();
     });
 });
 

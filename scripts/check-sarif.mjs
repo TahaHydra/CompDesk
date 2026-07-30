@@ -31,9 +31,13 @@ for (const file of files) {
             const rule = rules.get(result.ruleId);
             const level = result.level || rule?.defaultConfiguration?.level || 'warning';
             if (!['warning', 'error'].includes(level)) continue;
+            const physical = result.locations?.[0]?.physicalLocation;
+            const uri = physical?.artifactLocation?.uri;
+            const line = physical?.region?.startLine;
             findings.push({
                 ruleId: result.ruleId || 'unknown',
                 level,
+                location: uri ? `${uri}${line ? `:${line}` : ''}` : 'unknown location',
                 message: String(result.message?.text || 'Static-analysis finding').replaceAll(/\s+/g, ' ').slice(0, 240),
             });
         }
@@ -43,7 +47,7 @@ for (const file of files) {
 if (findings.length > 0) {
     console.error(`Static analysis reported ${findings.length} blocking finding(s).`);
     for (const finding of findings.slice(0, 50)) {
-        console.error(`${finding.level}: ${finding.ruleId}: ${finding.message}`);
+        console.error(`${finding.level}: ${finding.ruleId}: ${finding.location}: ${finding.message}`);
     }
     process.exit(1);
 }
