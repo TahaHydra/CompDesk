@@ -12,6 +12,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 
 const prisma = new PrismaClient();
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const productionSeedOverride = 'I_UNDERSTAND_THIS_CREATES_DEMO_DATA';
 
 if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_DEMO_SEED !== productionSeedOverride) {
@@ -241,17 +242,17 @@ async function main() {
     const users = new Map<string, Awaited<ReturnType<typeof prisma.user.upsert>>>();
     for (const spec of accountSpecs) {
         const user = await prisma.user.upsert({
-            where: { email: spec.email.toLowerCase() },
+            where: { normalizedEmail: normalizeEmail(spec.email) },
             update: { name: spec.name, role: spec.role, passwordHash, isActive: true, isDemo: true },
-            create: { ...spec, email: spec.email.toLowerCase(), passwordHash, isDemo: true, preferredLanguage: 'en' },
+            create: { ...spec, email: normalizeEmail(spec.email), normalizedEmail: normalizeEmail(spec.email), passwordHash, isDemo: true, preferredLanguage: 'en' },
         });
-        users.set(spec.email.toLowerCase(), user);
+        users.set(normalizeEmail(spec.email), user);
     }
-    const applicationAdmin = users.get(accountSpecs[1].email.toLowerCase())!;
-    const agent1 = users.get(accountSpecs[2].email.toLowerCase())!;
-    const agent2 = users.get(accountSpecs[3].email.toLowerCase())!;
-    const user1 = users.get(accountSpecs[4].email.toLowerCase())!;
-    const user2 = users.get(accountSpecs[5].email.toLowerCase())!;
+    const applicationAdmin = users.get(normalizeEmail(accountSpecs[1].email))!;
+    const agent1 = users.get(normalizeEmail(accountSpecs[2].email))!;
+    const agent2 = users.get(normalizeEmail(accountSpecs[3].email))!;
+    const user1 = users.get(normalizeEmail(accountSpecs[4].email))!;
+    const user2 = users.get(normalizeEmail(accountSpecs[5].email))!;
     await upsertTemplate(
         SYSTEM_TEMPLATE_ID,
         'Standard Request',

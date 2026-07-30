@@ -11,6 +11,7 @@ import { createTicketFromResolvedTemplate } from '@/lib/tickets/create-ticket';
 import { TemplateResolutionError } from '@/lib/ticket-form/service';
 import { TicketFormValidationError } from '@/lib/ticket-form/validation';
 import logger from '@/lib/logger';
+import { normalizeEmail } from '@/lib/email-identity';
 
 const externalTicketSchema = createTicketSchema.extend({ userEmail: z.string().email() });
 
@@ -73,12 +74,12 @@ export async function POST(req: NextRequest) {
         if (authResult.client.allowedQueueIds.length > 0 && !authResult.client.allowedQueueIds.includes(input.queueId)) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
-        let requester = await prisma.user.findUnique({ where: { email: userEmail.toLowerCase() } });
-        if (!requester) {
-            requester = await prisma.user.create({
-                data: { email: userEmail.toLowerCase(), name: userEmail.split('@')[0], role: Role.USER },
-            });
-        }
+        const normalizedEmail = normalizeEmail(userEmail);
+        const requester = await prisma.user.upsert({
+            where: { normalizedEmail },
+            update: {},
+            create: { email: normalizedEmail, normalizedEmail, name: normalizedEmail.split('@')[0], role: Role.USER },
+        });
         const result = await createTicketFromResolvedTemplate({
             source: 'api',
             actor: { id: requester.id, email: requester.email, role: Role.USER },

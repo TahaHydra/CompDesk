@@ -6,6 +6,7 @@ import logger from '@/lib/logger';
 import { authenticateApiRequest } from '@/lib/api-clients';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { canAccessQueue, isAgentRole } from '@/lib/permissions';
+import { normalizeEmail } from '@/lib/email-identity';
 
 const externalNoteSchema = z.object({
     content: z.string().trim().min(1).max(10_000),
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
 
         let author = authorEmail
-            ? await prisma.user.findUnique({ where: { email: authorEmail.toLowerCase() } })
+            ? await prisma.user.findUnique({ where: { normalizedEmail: normalizeEmail(authorEmail) } })
             : await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN', isActive: true }, orderBy: { createdAt: 'asc' } });
         if (authorEmail && (!author || !author.isActive || !isAgentRole(author.role))) {
             return NextResponse.json({ error: 'authorEmail must identify an active agent or administrator' }, { status: 400 });
