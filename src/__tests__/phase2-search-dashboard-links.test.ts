@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { NextRequest } from 'next/server';
 import { GET as getTickets } from '@/app/api/tickets/route';
-import { parseDashboardLinks } from '@/lib/dashboard-links';
+import { filterDashboardLinksForQueueAccess, parseDashboardLinks } from '@/lib/dashboard-links';
 import { broadestTicketView, buildTicketTextSearch, buildTicketVisibilityWhere } from '@/lib/ticket-search';
 
 function source(relativePath: string) { return fs.readFileSync(path.join(process.cwd(), ...relativePath.split('/')), 'utf8'); }
@@ -114,7 +114,17 @@ describe('Phase 2 dashboard and quick links', () => {
         expect(parsed[0]).not.toHaveProperty('templateId');
     });
 
-    it('uses role-specific dashboard scope and a multi-status pending link', () => {
+        it('filters ticket-form quick links by effective department access while preserving external links', () => {
+        const links = parseDashboardLinks([
+            { type: 'external', title: 'Docs', url: 'https://example.com', iconUrl: '' },
+            { type: 'ticket_form', title: 'Allowed', queueId, iconUrl: '' },
+            { type: 'ticket_form', title: 'Forbidden', queueId: '550e8400-e29b-41d4-a716-446655440099', iconUrl: '' },
+        ]);
+        expect(filterDashboardLinksForQueueAccess(links, [queueId]).map((link) => link.title)).toEqual(['Docs', 'Allowed']);
+        expect(filterDashboardLinksForQueueAccess(links, null)).toEqual(links);
+        expect(source('src/app/api/dashboard/stats/route.ts')).toContain('filterDashboardLinksForQueueAccess');
+    });
+it('uses role-specific dashboard scope and a multi-status pending link', () => {
         const dashboard = source('src/app/(dashboard)/dashboard/page.tsx');
         const stats = source('src/app/api/dashboard/stats/route.ts');
         expect(stats).toContain('broadestTicketView(role)');

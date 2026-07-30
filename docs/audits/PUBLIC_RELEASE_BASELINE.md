@@ -309,3 +309,4 @@ This table is appended as focused commits land.
 | Ticket integrity and concurrency | `2ef0d5a` | Ticket presence, lifecycle timestamps, SLA policy, optimistic concurrency, atomic assignment/escalation, withdrawal/tombstones, migrations, tests, and documentation |
 | Authentication and user hardening | `afeb9a7` | Distributed credential throttling, session revocation, normalized identities, atomic strict user administration, migration, tests, and documentation |
 | Attachment security | `79a894f` | Content verification, optional fail-closed ClamAV, private quarantine flow, race-safe quotas, audited tombstones, setup wiring, migration, tests, and documentation |
+| Webhook and external API hardening | `0c1d092` | SSRF-safe pinned delivery, encrypted signatures, durable outbox/retries/history, explicit API-client queue policy, distributed throttling, request auditing, tests, and documentation |

@@ -16,6 +16,9 @@ dist/
 .env.production.local
 .env.development.local
 .env.staging
+.env*.bak
+.env*.lock
+.env*.tmp
 
 # Debug
 npm-debug.log*
