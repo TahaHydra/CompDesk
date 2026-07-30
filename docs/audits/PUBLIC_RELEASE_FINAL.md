@@ -3,7 +3,7 @@
 Assessment date: 2026-07-30
 Branch: `release/public-hardening`
 Starting implementation: `06ccca0b08d44bc89c29c98dffb0a9016b93b69e`
-Implementation under assessment: `2da454ff8202df1ef631262ffab88ecccd0ea6c4`
+Implementation under assessment: `491bfcd9b9f984227fbd4f7955397eaa3b4c4df8`
 
 This document compares the repository with the findings captured in `PUBLIC_RELEASE_BASELINE.md`. It records observed evidence rather than making a production-readiness claim.
 
@@ -53,18 +53,18 @@ This document compares the repository with the findings captured in `PUBLIC_RELE
 | Gate | Result | Evidence |
 |---|---|---|
 | Clean dependency install | PASS | `npm ci`; 823 packages installed; Prisma Client generated |
-| Lint, type checking, Jest, production build | PASS | `npm run verify`; 42 suites and 342 tests; Next.js 15.5.22 build completed |
+| Lint, type checking, Jest, production build | PASS | `npm run verify`; 42 suites and 346 tests; Next.js 15.5.22 build completed |
 | Setup browser E2E | PASS | `npm run test:e2e`; Chromium, 1/1 passed |
 | Production dependency audit | PASS | `npm audit --omit=dev`; zero vulnerabilities |
 | Full development dependency audit | RISK ACCEPTANCE REQUIRED | 33 high findings are confined to Jest/ESLint transitive glob matchers; production dependencies are clean and the final runtime image omits development dependencies. No incompatible override was forced. |
-| Compose validation | PASS | Main, external-PostgreSQL, and setup topologies passed `docker compose ... config --quiet` |
-| Docker image build | BLOCKED LOCALLY | Docker 29.2.1 client exists, but the Desktop Linux engine pipe is absent. CI is configured to build without cache. |
+| Compose validation | PASS | Main, development, external-PostgreSQL, and setup topologies passed `docker compose ... config --quiet` |
+| Docker image build | PASS IN CI / NOT RUN LOCALLY | CI run `30562028485` built the exact `f83d7c2` image without cache. The local Docker Desktop Linux engine pipe is unavailable. |
 | Empty-database migration | PASS IN LOCAL DEVELOPMENT / CI GATE ADDED | Existing Prisma migration contract tests pass; CI applies all migrations to an empty PostgreSQL 16 service. |
-| Previous-release realistic upgrade | BLOCKED LOCALLY / CI GATE ADDED | Rehearsal script is implemented; local PostgreSQL at port 5433 refused connection. CI runs the disposable database rehearsal. |
+| Previous-release realistic upgrade | PASS IN CI / NOT RUN LOCALLY | CI run `30562028485` applied the previous release, seeded realistic data, upgraded it, and verified preservation against PostgreSQL 16. Local PostgreSQL was unavailable. |
 | Current public-tree secret scan | PASS | Gitleaks 8.30.1 scanned 1.52 MB with zero leaks; staged scan also found zero leaks |
 | Full Git-history secret scan | PASS | Gitleaks 8.30.1 scanned 48 commits / 2.97 MB with zero leaks |
-| Current-tree customer/model-vendor reference scan | PASS | No matches outside the encoded regression test; 342-test run includes the tracked-file gate |
-| Static/container security analysis | PENDING REMOTE EVIDENCE | CodeQL and Trivy jobs are configured; results must pass on the final commit |
+| Current-tree customer/model-vendor reference scan | PASS | No matches outside the encoded regression test; the 346-test run includes the tracked-file gate |
+| Static/container security analysis | BLOCKED ON ONE CODEQL REVIEW ITEM | Security run `30562028445`: Gitleaks PASS, production image build PASS, Trivy HIGH/CRITICAL scan PASS. CodeQL reports one `js/insufficient-password-hash` warning for the deterministic SHA-256 lookup of a randomly generated 192-bit API bearer token. The repository gate intentionally remains red until maintainers accept a narrowly documented exception or migrate hashes without breaking existing clients. |
 | Clean Ubuntu bundled-PostgreSQL installation | NOT RUN | Requires a clean Ubuntu 22.04/24.04 host or completed CI installation workflow |
 | Clean Ubuntu external-PostgreSQL installation | NOT RUN | Requires a clean Ubuntu host and dedicated PostgreSQL 16 test service |
 | Restore rehearsal | NOT RUN | Backup structure tests pass, but no isolated full PostgreSQL/files/config restore was performed here |
@@ -77,13 +77,12 @@ This document compares the repository with the findings captured in `PUBLIC_RELE
 
 ## Remaining blockers and risks
 
-1. Older ancestor commits contain deleted customer-specific references, and two ancestors contain the prohibited model-vendor reference. The current branch tree is clean, but a truly clean public history requires a coordinated repository-history rewrite, collaborator notification, branch/tag replacement, and fresh-clone verification. This was not performed because the task explicitly forbids automatic public-history rewriting and force-pushes.
-2. The exact production image has not been built or scanned locally because no Docker engine is running. Remote Docker/Trivy results must pass.
-3. No clean Ubuntu end-to-end installation has completed for either database topology.
-4. The realistic previous-release upgrade job must pass against PostgreSQL 16 in CI; the local host had no reachable disposable PostgreSQL service.
-5. A full isolated restore rehearsal has not been completed.
-6. Development-only dependency advisories remain in tooling. They are excluded from the production image, but maintainers should upgrade the Jest/ESLint ecosystem when compatible releases are available.
-7. ClamAV, SMTP delivery, Entra tenant behavior, reverse-proxy headers, and durable storage still depend on operator infrastructure and must be verified in the target environment.
+1. Older ancestor commits contain deleted customer-specific references, and two ancestors contain the prohibited model-vendor reference. The current branch tree is clean, but a truly clean public history requires a coordinated history rewrite, collaborator notification, branch/tag replacement, and fresh-clone verification. No automatic rewrite or force-push was performed.
+2. CodeQL has one unresolved review item at `src/lib/api-clients.ts`: SHA-256 is used as a deterministic database lookup digest for `cdk_` API keys generated from 192 random bits. This is not a human password, but the security gate remains blocked. Follow-up must either (a) adopt and audit an exact in-source exception that the self-contained SARIF gate recognizes, or (b) introduce a keyed digest with a migration/compatibility plan for existing clients. Do not simply delete the gate.
+3. No clean Ubuntu end-to-end installation has completed for either the bundled or external PostgreSQL topology.
+4. A full isolated PostgreSQL/files/config restore rehearsal has not been completed.
+5. Development-only dependency advisories remain in Jest/ESLint transitive tooling. Production dependencies and the production image scan are clean; maintainers should upgrade when compatible releases exist.
+6. ClamAV, SMTP delivery, Entra tenant behavior, reverse-proxy headers, and durable storage still depend on operator infrastructure and must be verified in the target environment.
 
 ## Unsupported or deliberately limited
 
@@ -97,4 +96,4 @@ This document compares the repository with the findings captured in `PUBLIC_RELE
 
 **BLOCKED**
 
-The implementation and local application gates are substantially hardened and green, but the public-release acceptance criteria are not all satisfied. Keep the repository private and do not describe this commit as production-ready until the history decision, remote Docker/CodeQL/Trivy jobs, clean Ubuntu installations, realistic upgrade, and restore rehearsal have documented passing evidence.
+The application, CI, migration-upgrade, Docker-build, Gitleaks, and Trivy evidence is green, but the public-release acceptance criteria are not all satisfied. Keep the repository private and do not describe this commit as production-ready until the history decision, remaining CodeQL review item, clean Ubuntu installations, and restore rehearsal have documented resolutions.
