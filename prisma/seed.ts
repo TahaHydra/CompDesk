@@ -227,8 +227,15 @@ async function seedHelpCenter() {
 
 async function main() {
     console.log('Seeding CompDesk demo data...');
-    const generatedPassword = !process.env.SEED_DEFAULT_PASSWORD;
-    const password = process.env.SEED_DEFAULT_PASSWORD ?? `${crypto.randomBytes(12).toString('base64url')}aA1!`;
+    const suppliedPassword = process.env.SEED_DEFAULT_PASSWORD;
+    let generatedPassword: string | undefined;
+    let password: string;
+    if (suppliedPassword) {
+        password = suppliedPassword;
+    } else {
+        generatedPassword = `${crypto.randomBytes(12).toString('base64url')}aA1!`;
+        password = generatedPassword;
+    }
     const passwordHash = await bcrypt.hash(password, 12);
     const domain = process.env.SEED_DEMO_DOMAIN ?? 'example.com';
     const accountSpecs = [
@@ -601,7 +608,7 @@ async function main() {
         await prisma.appSetting.upsert({ where: { key }, update: {}, create: { key, value } });
     }
     console.log(`Seed complete. Demo super administrator: ${accountSpecs[0].email}`);
-    if (generatedPassword) console.log(`Generated demo password (shown once): ${password}`);
+    if (generatedPassword) console.log(`Generated demo password (shown once): ${generatedPassword}`);
     console.log('Demo data is for disposable evaluation only. Remove or deactivate demo accounts before real use.');
 }
 

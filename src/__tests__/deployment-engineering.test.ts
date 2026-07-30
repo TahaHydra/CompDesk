@@ -11,6 +11,7 @@ describe('deployment engineering contracts', () => {
         const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
         expect(script).toBeDefined();
         expect(() => new Function(script!)).not.toThrow();
+        expect(html).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML/);
     });
 
     it('documents only runtime-backed configuration variables', () => {
@@ -34,6 +35,8 @@ describe('deployment engineering contracts', () => {
         expect(dockerfile).toContain('npm ci --omit=dev --ignore-scripts');
         expect(dockerfile).toContain('FROM runtime-base AS setup');
         expect(dockerfile).toContain('FROM runtime-base AS runner');
+        expect(dockerfile).toContain('rm -rf /usr/local/lib/node_modules/npm');
+        expect(dockerfile).toContain('rm -f /usr/local/bin/npm /usr/local/bin/npx');
         for (const file of ['docker-compose.yml', 'docker-compose.external-db.yml', 'docker-compose.setup.yml']) {
             expect(source(file)).toContain('target: setup');
         }
@@ -60,7 +63,7 @@ describe('deployment engineering contracts', () => {
             expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('no warning/error findings');
             fs.writeFileSync(target, JSON.stringify({
                 version: '2.1.0',
-                runs: [{ tool: { driver: { name: 'test' } }, results: [{ ruleId: 'security-test', level: 'warning', message: { text: 'Unsafe test result' } }] }],
+                runs: [{ tool: { driver: { name: 'test' } }, results: [{ ruleId: 'security-test', level: 'warning', message: { text: 'Unsafe test result' }, locations: [{ physicalLocation: { artifactLocation: { uri: 'src/example.ts' }, region: { startLine: 17 } } }] }] }],
             }));
             expect(() => execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { stdio: 'pipe' })).toThrow();
         } finally {
