@@ -67,3 +67,6 @@ playwright-report/
 test-results/
 .playwright/
 /backups/
+
+# Local CI artifacts
+ci-e2e-artifacts/
