@@ -27,18 +27,18 @@ Status values are `PASS`, `BLOCKED`, or `NOT RUN`. A release requires every bloc
 | Full Git-history secret scan | PASS | Gitleaks 8.30.1: 48 commits, zero leaks |
 | Historical forbidden-reference removal | BLOCKED | Ancestor references require an approved coordinated history rewrite |
 | Clean dependency install | PASS | `npm ci` completed and Prisma generated |
-| Unit/integration tests | PASS | 42 suites, 342 tests |
+| Unit/integration tests | PASS | 42 suites, 346 tests |
 | Setup E2E tests | PASS | Playwright Chromium 1/1 |
 | Production build | PASS | Next.js 15.5.22 optimized build |
 | Compose configuration | PASS | Main, external database, and setup files validate |
-| Docker image build | BLOCKED | Local Linux Docker engine unavailable; remote CI result required |
+| Docker image build | PASS | CI run `30562028485` completed a no-cache production image build; local engine unavailable |
 | Production dependency audit | PASS | `npm audit --omit=dev`: zero vulnerabilities |
 | Full development dependency audit | BLOCKED | 33 development-tool findings require compatible upstream upgrades/risk decision |
 | Secret scan | PASS | Current public files, staged diff, and full history: zero Gitleaks findings |
-| CodeQL/container scan | NOT RUN | Remote Security workflow result required |
+| CodeQL/container scan | BLOCKED | Run `30562028445`: Gitleaks and Trivy PASS; one reviewed API-token digest CodeQL item remains |
 | Clean Ubuntu Docker installation | NOT RUN | Clean host required |
 | Clean external-PostgreSQL installation | NOT RUN | Clean host and dedicated PostgreSQL 16 required |
-| Previous-schema realistic upgrade | BLOCKED | Disposable rehearsal added; local PostgreSQL unavailable; CI result required |
+| Previous-schema realistic upgrade | PASS | CI PostgreSQL 16 rehearsal applied previous schema/data and verified the upgrade |
 | Full restore rehearsal | NOT RUN | Isolated restore target required |
 
 **Release verdict: BLOCKED.** Keep the repository private and do not describe CompDesk as production-ready until every blocking gate passes.
