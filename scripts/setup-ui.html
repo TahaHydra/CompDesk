@@ -20,7 +20,7 @@
     </section>
     <form class="card hidden" id="wizard">
         <div id="message" class="notice hidden" role="alert"></div>
-        <section data-step="0"><h2>1. Welcome and system check</h2><p>This checker does not install privileged packages.</p><div id="system">Checking this server…</div></section>
+        <section data-step="0"><h2>1. Welcome and system check</h2><p>This checker does not install privileged packages.</p><div id="system">Checking this serverâ€¦</div></section>
         <section data-step="1" class="hidden"><h2>2. Deployment mode</h2><fieldset>
             <label class="choice full"><input type="radio" name="deploymentMode" value="docker-compose" checked> Recommended Docker Compose deployment</label>
             <label class="choice full"><input type="radio" name="deploymentMode" value="standalone"> Existing PostgreSQL with standalone Node.js</label>
@@ -148,7 +148,7 @@
             $('#login').classList.add('hidden'); form.classList.remove('hidden');
             const [system,state]=await Promise.all([api('/setup/api/system'),api('/setup/api/state')]);
             const systemNode = $('#system');
-            const checks = Object.entries(system.checks).map(([key,item])=>[key, `${item.ok?'✓':'⚠'} ${item.value||item.message}`]);
+            const checks = Object.entries(system.checks).map(([key,item])=>[key, `${item.ok?'âœ“':'âš '} ${item.value||item.message}`]);
             systemNode.replaceChildren(definitionList(checks), element('div', system.guidance.join('\n'), 'notice'));
             if(system.bootstrapDatabase){for(const [key,name] of Object.entries({host:'dbHost',port:'dbPort',database:'dbName',username:'dbUser',sslMode:'dbSslMode'}))form.elements[name].value=system.bootstrapDatabase[key];form.elements.dbPassword.placeholder='Managed by the Docker setup stack';}
             if(state.state) Object.entries(state.state.identity||{}).forEach(([key,item])=>{if(form.elements[key]&&typeof item!=='boolean')form.elements[key].value=item;});
@@ -163,7 +163,13 @@
     };
     $('#back').onclick=()=>{step=Math.max(0,step-1);render();};
     $('#next').onclick=async()=>{
-        if(!form.reportValidity())return;
+        const currentFields = [...sections[step].querySelectorAll('input, select, textarea')];
+        const invalidField = currentFields.find((field) => !field.checkValidity());
+        if (invalidField) {
+            invalidField.reportValidity();
+            invalidField.focus();
+            return;
+        }
         try{
             if(step===2) await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});
             await api('/setup/api/state',{method:'PUT',body:JSON.stringify(data())});
