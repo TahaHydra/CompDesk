@@ -187,7 +187,7 @@ describe('Phase 3 ticket-content and presence safety', () => {
         const page = source('src/app/(dashboard)/tickets/[id]/page.tsx');
         expect(api).toContain('exclusive: false');
         expect(api).toContain('Never used for authorization');
-        expect(page).toContain('non-exclusive activity');
+        expect(page).toContain('non-exclusive presence');
         expect(page).not.toContain('Being viewed by');
     });
 });

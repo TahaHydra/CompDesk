@@ -10,12 +10,18 @@ const mockSendAssigned = jest.fn();
 const mockAudit = jest.fn();
 const mockTimelineCreate = jest.fn();
 const mockWebhook = jest.fn();
-let mockFirstResponseAt: Date | null = null;
+let mockVersion = 1;
+let mockFirstAssignedAt: Date | null = null;
 
 const mockPrisma: any = {
     ticket: {
-        findUnique: jest.fn(async () => ({ id: 'ticket-1', key: 'TCK-1', title: 'Test', queueId: 'queue-1', requesterId: 'requester-1', firstResponseAt: mockFirstResponseAt })),
-        update: jest.fn(async ({ data }: any) => { if (data.firstResponseAt) mockFirstResponseAt = data.firstResponseAt; return {}; }),
+        findUnique: jest.fn(async () => ({ id: 'ticket-1', key: 'TCK-1', title: 'Test', queueId: 'queue-1', requesterId: 'requester-1', firstAssignedAt: mockFirstAssignedAt, version: mockVersion })),
+        updateMany: jest.fn(async ({ where, data }: any) => {
+            if (where.version !== mockVersion) return { count: 0 };
+            mockVersion += data.version?.increment ?? 0;
+            if (data.firstAssignedAt) mockFirstAssignedAt = data.firstAssignedAt;
+            return { count: 1 };
+        }),
     },
     user: { findUnique: jest.fn(async ({ where }: any) => mockUsers.get(where.id) ?? null) },
     ticketAssignee: {
@@ -60,7 +66,8 @@ function source(file: string) { return fs.readFileSync(path.join(process.cwd(), 
 beforeEach(() => {
     jest.clearAllMocks();
     mockAssignments.clear();
-    mockFirstResponseAt = null;
+    mockVersion = 1;
+    mockFirstAssignedAt = null;
     mockUsers.clear();
     for (const [id, role, active] of [[agent1, 'AGENT', true], [agent2, 'ADMIN', true], [outsider, 'AGENT', true]] as const) {
         mockUsers.set(id, { id, name: id === agent1 ? 'Agent One' : id === agent2 ? 'Agent Two' : 'Outside Agent', email: `${id}@example.com`, image: null, role, isActive: active });
@@ -73,26 +80,41 @@ beforeEach(() => {
 });
 
 describe('Phase 4 multi-assignee service', () => {
-    it('lets two different agents claim the same ticket and preserves both', async () => {
-        await Promise.all([claimTicket(actor(agent1), 'ticket-1'), claimTicket(actor(agent2, 'ADMIN'), 'ticket-1')]);
+    it('lets two different agents claim sequential versions and preserves both', async () => {
+        await claimTicket(actor(agent1), 'ticket-1', 1);
+        await claimTicket(actor(agent2, 'ADMIN'), 'ticket-1', 2);
         expect([...mockAssignments.values()].map((row) => row.userId).sort()).toEqual([agent1, agent2].sort());
+        expect(mockFirstAssignedAt).toBeInstanceOf(Date);
+        expect(mockPrisma.ticket.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ firstPublicResponseAt: expect.anything() }) }));
     });
 
-    it('makes duplicate and concurrent duplicate claims idempotent', async () => {
-        const results = await Promise.all([claimTicket(actor(agent1), 'ticket-1'), claimTicket(actor(agent1), 'ticket-1')]);
+    it('rejects one of two simultaneous stale assignment mutations', async () => {
+        const results = await Promise.allSettled([
+            claimTicket(actor(agent1), 'ticket-1', 1),
+            claimTicket(actor(agent2, 'ADMIN'), 'ticket-1', 1),
+        ]);
+        expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
         expect(mockAssignments.size).toBe(1);
-        expect(results.some((result) => result.alreadyAssigned)).toBe(true);
+    });
+
+    it('makes a duplicate claim idempotent when submitted against the current version', async () => {
+        await claimTicket(actor(agent1), 'ticket-1', 1);
+        const duplicate = await claimTicket(actor(agent1), 'ticket-1', 2);
+        expect(duplicate.alreadyAssigned).toBe(true);
+        expect(mockAssignments.size).toBe(1);
         expect(mockSendAssigned).toHaveBeenCalledTimes(1);
     });
 
     it('rejects USER assignment while permitting scoped ADMIN and global SUPER_ADMIN actors', async () => {
-        await expect(addAssignee({ id: 'requester-1', role: 'USER' }, 'ticket-1', agent1)).rejects.toMatchObject({ status: 403 });
-        await expect(addAssignee(actor(agent2, 'ADMIN'), 'ticket-1', agent1)).resolves.toMatchObject({ alreadyAssigned: false });
-        await removeAssignee(actor(agent2, 'ADMIN'), 'ticket-1', agent1);
-        await expect(addAssignee(actor(agent2, 'SUPER_ADMIN'), 'ticket-1', agent1)).resolves.toMatchObject({ alreadyAssigned: false });
+        await expect(addAssignee({ id: 'requester-1', role: 'USER' }, 'ticket-1', agent1, 1)).rejects.toMatchObject({ status: 403 });
+        await expect(addAssignee(actor(agent2, 'ADMIN'), 'ticket-1', agent1, 1)).resolves.toMatchObject({ alreadyAssigned: false });
+        await removeAssignee(actor(agent2, 'ADMIN'), 'ticket-1', agent1, 2);
+        await expect(addAssignee(actor(agent2, 'SUPER_ADMIN'), 'ticket-1', agent1, 3)).resolves.toMatchObject({ alreadyAssigned: false });
     });
+
     it('limits end-user assignment listings to safe identity fields', async () => {
-        await addAssignee(actor(agent1), 'ticket-1', agent2);
+        await addAssignee(actor(agent1), 'ticket-1', agent2, 1);
         const assignments = await listAssignments({ id: 'requester-1', role: 'USER' }, 'ticket-1');
         expect(assignments).toHaveLength(1);
         expect(assignments[0].user).toEqual({ id: agent2, name: 'Agent Two', image: null });
@@ -102,31 +124,30 @@ describe('Phase 4 multi-assignee service', () => {
 
     it('rejects unauthorized departments and inactive candidates', async () => {
         mockCanAccessTicket.mockResolvedValueOnce(false);
-        await expect(claimTicket(actor(agent1), 'ticket-1')).rejects.toMatchObject({ status: 403 });
+        await expect(claimTicket(actor(agent1), 'ticket-1', 1)).rejects.toMatchObject({ status: 403 });
         mockCanAccessTicket.mockResolvedValue(true);
         mockUsers.set(outsider, { ...mockUsers.get(outsider), isActive: false });
-        await expect(addAssignee(actor(agent1), 'ticket-1', outsider)).rejects.toMatchObject({ status: 400 });
+        await expect(addAssignee(actor(agent1), 'ticket-1', outsider, 1)).rejects.toMatchObject({ status: 400 });
     });
 
     it('removes one assignee without disturbing another and the final removal is unassigned', async () => {
-        await addAssignee(actor(agent1), 'ticket-1', agent1);
-        await addAssignee(actor(agent1), 'ticket-1', agent2);
-        await removeAssignee(actor(agent1), 'ticket-1', agent1);
+        await addAssignee(actor(agent1), 'ticket-1', agent1, 1);
+        await addAssignee(actor(agent1), 'ticket-1', agent2, 2);
+        await removeAssignee(actor(agent1), 'ticket-1', agent1, 3);
         expect([...mockAssignments.values()].map((row) => row.userId)).toEqual([agent2]);
-        const final = await removeAssignee(actor(agent2, 'ADMIN'), 'ticket-1', agent2);
+        const final = await removeAssignee(actor(agent2, 'ADMIN'), 'ticket-1', agent2, 4);
         expect(final.resultingAssignmentIds).toEqual([]);
         expect(mockAssignments.size).toBe(0);
     });
 
     it('records actor/source/history and only notifies a newly added user', async () => {
-        await addAssignee(actor(agent1), 'ticket-1', agent2, AssignmentSource.ESCALATION);
-        await addAssignee(actor(agent1), 'ticket-1', agent2, AssignmentSource.ESCALATION);
+        await addAssignee(actor(agent1), 'ticket-1', agent2, 1, AssignmentSource.ESCALATION);
+        await addAssignee(actor(agent1), 'ticket-1', agent2, 2, AssignmentSource.ESCALATION);
         expect(mockTimelineCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'ASSIGNMENT_CHANGE', metadata: expect.objectContaining({ addedUserId: agent2, source: 'ESCALATION' }) }) }));
         expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ userId: agent1, action: 'ticket.assignment_added' }));
         expect(mockSendAssigned).toHaveBeenCalledTimes(1);
     });
 });
-
 describe('Phase 4 migration and workflow contracts', () => {
     it('backfills and verifies legacy assignments before dropping the legacy column', () => {
         const sql = source('prisma/migrations/20260727130000_add_multiple_ticket_assignees/migration.sql');

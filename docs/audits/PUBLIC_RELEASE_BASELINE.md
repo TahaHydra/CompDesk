@@ -302,4 +302,7 @@ This table is appended as focused commits land.
 
 | Phase | Commit | Files |
 |---|---|---|
-| Baseline inventory | Pending | `docs/audits/PUBLIC_RELEASE_BASELINE.md` |
+| Baseline inventory | `098338e` | `docs/audits/PUBLIC_RELEASE_BASELINE.md` |
+| Deployment foundation and public files | `b4fc9f4` | Compose/Docker foundations, health routes, public project files, deployment/security documentation, and repository checks |
+| Secure setup bootstrap | `8349920` | Isolated setup server and wizard, installation record migration, setup/recovery/demo scripts, setup deployment configuration, tests, and setup documentation |
+| Safe API DTOs | `10ed6d8` | Central safe selectors/response assertion, ticket/user/external API serialization, strict update validation, and recursive secret-response tests |

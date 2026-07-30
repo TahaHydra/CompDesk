@@ -5,6 +5,7 @@ const STATUS_LABELS: Record<string, string> = {
     PENDING_AGENT: 'Pending Agent',
     RESOLVED: 'Resolved',
     CLOSED: 'Closed',
+    WITHDRAWN: 'Withdrawn',
 };
 
 const PRIORITY_LABELS: Record<string, string> = {

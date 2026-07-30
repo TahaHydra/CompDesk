@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
         }
 
         const statuses = parseStatuses(searchParams.get('status'));
+        if (statuses.length === 0) conditions.push({ status: { not: 'WITHDRAWN' } });
         if (statuses.length === 1) conditions.push({ status: statuses[0] });
         if (statuses.length > 1) conditions.push({ status: { in: statuses } });
 
@@ -136,7 +137,7 @@ export async function GET(req: NextRequest) {
         const now = Date.now();
         const enrichedTickets = tickets.map((ticket) => {
             let slaBreached = false;
-            if (ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED') {
+            if (ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && ticket.status !== 'WITHDRAWN') {
                 const resolutionMinutes = slaMap.get(`${ticket.queueId}:${ticket.priority}`);
                 if (resolutionMinutes !== undefined) {
                     slaBreached = (now - new Date(ticket.createdAt).getTime()) / 60000 > resolutionMinutes;

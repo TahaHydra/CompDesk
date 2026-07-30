@@ -94,7 +94,8 @@ describe('application route and access contracts', () => {
         expect(ticketRoute).toContain('buildTicketVisibilityWhere(userId, role, view, accessibleQueueIds)');
         expect(ticketRoute).toContain('getQueueInboxQueueIds(userId, role)');
         const ticketDetailRoute = readFileSync(path.join(appRoot, 'api', 'tickets', '[id]', 'route.ts'), 'utf8');
-        expect(ticketDetailRoute).toContain("'status', 'queueId', 'categoryId'");
+        expect(ticketDetailRoute).toContain("'queueId', 'categoryId', 'priority'");
+        expect(ticketDetailRoute).toContain('canTransition(existingTicket.status, changes.status, session.user.role)');
         expect(dashboardRoute).toContain("role !== 'SUPER_ADMIN'");
         expect(dashboardRoute).toContain('getQueueInboxQueueIds(userId, role)');
         expect(notificationRoute).toContain('getQueueInboxQueueIds(userId, role)');
