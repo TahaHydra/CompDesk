@@ -2,14 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches-ignore: [gh-pages]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  validate:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -29,6 +29,8 @@ jobs:
       DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/compdesk_ci?schema=public
       AUTH_URL: http://localhost:3000
       AUTH_SECRET: ci-only-stable-auth-secret-32-characters
+      APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      NODE_ENV: test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -36,5 +38,50 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run db:generate
       - run: npm run db:migrate:prod
-      - run: npm run verify
+      - run: npx prisma migrate status
+      - run: npm run test:migration:upgrade
+        env:
+          MIGRATION_TEST_DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/postgres
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:ci
+      - run: npm run build
+      - run: npm audit --omit=dev
+
+  setup-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: setup-e2e-artifacts
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_DB: compdesk_ci
+      POSTGRES_USER: compdesk
+      POSTGRES_PASSWORD: compose-ci-only
+      DATABASE_URL: postgresql://compdesk:compose-ci-only@database.example:5432/compdesk_ci?schema=public
+      AUTH_URL: https://helpdesk.example.com
+      AUTH_SECRET: ci-only-stable-auth-secret-32-characters
+      APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose config --quiet
+      - run: docker compose -f docker-compose.external-db.yml config --quiet
+      - run: docker build --no-cache -t compdesk-ci .

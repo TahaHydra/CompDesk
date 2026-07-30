@@ -109,7 +109,7 @@
         sections.forEach((section,index)=>section.classList.toggle('hidden',index!==step));
         $('#progress').style.width=`${(step+1)*10}%`; $('#stepLabel').textContent=`Step ${step+1} of 10`;
         $('#back').disabled=step===0; $('#next').classList.toggle('hidden',step===9); $('#install').classList.toggle('hidden',step!==9);
-        if(step===4) $('#callback').textContent=`${value('applicationUrl').replace(/\\/$/,'')}/api/auth/callback/microsoft-entra-id`;
+        if(step===4) $('#callback').textContent=`${value('applicationUrl').replace(/\/$/,'')}/api/auth/callback/microsoft-entra-id`;
         if(step===9) {
             const state=data();
             $('#review').innerHTML=`<dl><dt>Deployment</dt><dd>${state.deploymentMode}</dd><dt>Database</dt><dd>PostgreSQL at ${state.database.host}:${state.database.port}/${state.database.database}</dd><dt>Application URL</dt><dd>${state.identity.applicationUrl}</dd><dt>Authentication</dt><dd>${state.authentication.localEnabled?'Local ':''}${state.authentication.microsoftEnabled?'Microsoft Entra ID':''}</dd><dt>Administrator</dt><dd>${state.authentication.adminEmail}</dd><dt>SMTP</dt><dd>${state.smtp.enabled?'Configured':'Skipped'}</dd><dt>Demo data</dt><dd>${state.installDemoData?'Install':'Disabled'}</dd></dl><p>No passwords, tokens, connection strings, or encryption keys are shown here.</p>`;

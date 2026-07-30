@@ -1,7 +1,7 @@
-name: compdesk
+name: compdesk-external-db
 
 x-app-environment: &app-environment
-  DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}?schema=public
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL for external PostgreSQL is required}
   AUTH_URL: ${AUTH_URL:?AUTH_URL is required}
   AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
   APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:?APP_SETTINGS_ENCRYPTION_KEY is required}
@@ -34,36 +34,14 @@ x-app-environment: &app-environment
   NODE_ENV: production
 
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-
   migrate:
     build:
       context: .
       dockerfile: Dockerfile
       target: setup
     restart: 'no'
-    depends_on:
-      db:
-        condition: service_healthy
     environment: *app-environment
-    command:
-      - sh
-      - -c
-      - node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs
+    command: ['sh', '-c', 'node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs']
     volumes:
       - uploads:/app/public/uploads
       - attachments:/app/storage/attachments
@@ -75,8 +53,6 @@ services:
     restart: unless-stopped
     init: true
     depends_on:
-      db:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     ports:
@@ -86,11 +62,7 @@ services:
       - uploads:/app/public/uploads
       - attachments:/app/storage/attachments
     healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -98,9 +70,6 @@ services:
     stop_grace_period: 30s
 
 volumes:
-  pgdata:
-    name: ${POSTGRES_VOLUME_NAME:-compdesk_pgdata}
-    external: ${POSTGRES_VOLUME_EXTERNAL:-false}
   uploads:
     name: ${UPLOADS_VOLUME_NAME:-compdesk_uploads}
   attachments:
