@@ -85,6 +85,12 @@ enum AttachmentScanStatus {
   ERROR
 }
 
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
@@ -565,15 +571,42 @@ model CannedResponse {
 // ── Webhooks ───────────────────────────────────────────────────
 
 model WebhookConfig {
-  id        String   @id @default(uuid())
-  url       String
-  secret    String?
-  events    String[] // ["ticket.created", "ticket.resolved"]
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id           String    @id @default(uuid())
+  name         String    @default("Webhook")
+  url          String
+  secret       String?
+  events       String[] // ["ticket.created", "ticket.resolved"]
+  isActive     Boolean   @default(true) @map("is_active")
+  failureCount Int       @default(0) @map("failure_count")
+  disabledAt   DateTime? @map("disabled_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  deliveries WebhookDelivery[]
 
   @@map("webhook_configs")
+}
+
+model WebhookDelivery {
+  id             String                @id @default(uuid())
+  webhookId      String                @map("webhook_id")
+  event          String
+  body           String                @db.Text
+  status         WebhookDeliveryStatus @default(PENDING)
+  attemptCount   Int                   @default(0) @map("attempt_count")
+  nextAttemptAt  DateTime              @default(now()) @map("next_attempt_at")
+  lastAttemptAt  DateTime?             @map("last_attempt_at")
+  responseStatus Int?                  @map("response_status")
+  errorStage     String?               @map("error_stage")
+  deliveredAt    DateTime?             @map("delivered_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  webhook WebhookConfig @relation(fields: [webhookId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
 }
 
 // ── Audit Log ──────────────────────────────────────────────────
@@ -646,6 +679,7 @@ model ApiClient {
   keyHash         String    @unique @map("key_hash")
   scopes          String[]
   allowedQueueIds String[]  @default([]) @map("allowed_queue_ids")
+  allowAllQueues  Boolean   @default(false) @map("allow_all_queues")
   isActive        Boolean   @default(true) @map("is_active")
   lastUsedAt      DateTime? @map("last_used_at")
   createdAt       DateTime  @default(now()) @map("created_at")

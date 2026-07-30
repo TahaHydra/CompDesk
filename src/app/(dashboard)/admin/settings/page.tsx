@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2 } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
@@ -470,6 +470,7 @@ function ApiClientsTab() {
     const [name, setName] = useState('');
     const [selectedScopes, setSelectedScopes] = useState<string[]>(['tickets:read']);
     const [selectedQueueIds, setSelectedQueueIds] = useState<string[]>([]);
+    const [allowAllQueues, setAllowAllQueues] = useState(false);
     const [latestApiKey, setLatestApiKey] = useState('');
 
     const { data: clients } = useQuery({
@@ -498,7 +499,8 @@ function ApiClientsTab() {
                 body: JSON.stringify({
                     name,
                     scopes: selectedScopes,
-                    allowedQueueIds: selectedQueueIds,
+                    allowedQueueIds: allowAllQueues ? [] : selectedQueueIds,
+                    allowAllQueues,
                     isActive: true,
                 }),
             });
@@ -512,6 +514,7 @@ function ApiClientsTab() {
             setName('');
             setSelectedScopes(['tickets:read']);
             setSelectedQueueIds([]);
+            setAllowAllQueues(false);
             toast({ title: 'API client created' });
         },
         onError: (err: Error) => toast({ title: 'Failed to create API client', description: err.message, variant: 'destructive' }),
@@ -593,13 +596,17 @@ function ApiClientsTab() {
                         </div>
                     </div>
                     <div className="space-y-2">
-                        <Label>Department Restriction</Label>
-                        <p className="text-xs text-muted-foreground">Leave empty to allow all departments.</p>
+                        <Label>Department Access</Label>
+                        <p className="text-xs text-muted-foreground">Default deny: an empty selection grants access to no departments.</p>
+                        <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+                            <Switch checked={allowAllQueues} onCheckedChange={(checked) => { setAllowAllQueues(checked); if (checked) setSelectedQueueIds([]); }} />
+                            Explicitly allow all departments
+                        </label>
                         <div className="flex gap-2 flex-wrap">
                             {(queues ?? []).map((queue: any) => {
                                 const selected = selectedQueueIds.includes(queue.id);
                                 return (
-                                    <Button key={queue.id} type="button" variant={selected ? 'default' : 'outline'} size="sm" onClick={() => toggleQueue(queue.id)}>
+                                    <Button key={queue.id} type="button" variant={selected ? 'default' : 'outline'} size="sm" disabled={allowAllQueues} onClick={() => toggleQueue(queue.id)}>
                                         {queue.name}
                                     </Button>
                                 );
@@ -645,13 +652,29 @@ function ApiClientsTab() {
                                     {(client.scopes ?? []).map((scope: string) => (
                                         <Badge key={scope} variant="outline">{scope}</Badge>
                                     ))}
-                                    {(client.allowedQueueIds ?? []).length === 0 ? (
-                                        <Badge variant="outline">All departments</Badge>
+                                    {client.allowAllQueues ? (
+                                        <Badge variant="outline">All departments (explicit)</Badge>
+                                    ) : (client.allowedQueueIds ?? []).length === 0 ? (
+                                        <Badge variant="outline">No departments</Badge>
                                     ) : (
                                         client.allowedQueueIds.map((queueId: string) => (
-                                            <Badge key={queueId} variant="outline">{queueId}</Badge>
+                                            <Badge key={queueId} variant="outline">{(queues ?? []).find((queue: any) => queue.id === queueId)?.name ?? queueId}</Badge>
                                         ))
                                     )}
+                                </div>
+                                <div className="space-y-2 rounded-md border p-3">
+                                    <p className="text-xs font-medium">Department policy</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button type="button" size="sm" variant={client.allowAllQueues ? 'default' : 'outline'} onClick={() => updateClient.mutate({ id: client.id, allowAllQueues: !client.allowAllQueues, allowedQueueIds: [] })}>All departments</Button>
+                                        {(queues ?? []).map((queue: any) => {
+                                            const selected = !client.allowAllQueues && (client.allowedQueueIds ?? []).includes(queue.id);
+                                            return <Button key={queue.id} type="button" size="sm" variant={selected ? 'default' : 'outline'} onClick={() => {
+                                                const current = client.allowAllQueues ? [] : (client.allowedQueueIds ?? []);
+                                                const allowedQueueIds = selected ? current.filter((id: string) => id !== queue.id) : [...current, queue.id];
+                                                updateClient.mutate({ id: client.id, allowAllQueues: false, allowedQueueIds });
+                                            }}>{queue.name}</Button>;
+                                        })}
+                                    </div>
                                 </div>
                                 <div className="flex gap-2">
                                     <Button type="button" variant="outline" size="sm" onClick={() => updateClient.mutate({ id: client.id, rotateKey: true })}>
@@ -674,6 +697,133 @@ function ApiClientsTab() {
     );
 }
 
+const WEBHOOK_EVENTS = [
+    'ticket.created', 'ticket.resolved', 'ticket.assignment_added',
+    'ticket.assignment_removed', 'ticket.assignments_replaced',
+];
+
+function WebhooksTab() {
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const [name, setName] = useState('');
+    const [url, setUrl] = useState('');
+    const [events, setEvents] = useState<string[]>(['ticket.created']);
+    const [latestSecret, setLatestSecret] = useState('');
+    const [selectedWebhookId, setSelectedWebhookId] = useState<string | null>(null);
+
+    const webhooksQuery = useQuery({
+        queryKey: ['webhooks'],
+        queryFn: async () => {
+            const response = await fetch('/api/webhooks');
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to load webhooks');
+            return payload;
+        },
+    });
+    const deliveriesQuery = useQuery({
+        queryKey: ['webhook-deliveries', selectedWebhookId],
+        enabled: Boolean(selectedWebhookId),
+        queryFn: async () => {
+            const response = await fetch(`/api/webhooks/${selectedWebhookId}/deliveries`);
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to load delivery history');
+            return payload;
+        },
+    });
+
+    const createWebhook = useMutation({
+        mutationFn: async () => {
+            const response = await fetch('/api/webhooks', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, url, events, isActive: true }),
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to create webhook');
+            return payload;
+        },
+        onSuccess: (payload) => {
+            queryClient.invalidateQueries({ queryKey: ['webhooks'] });
+            setLatestSecret(payload.signingSecret);
+            setName(''); setUrl(''); setEvents(['ticket.created']);
+            toast({ title: 'Webhook created' });
+        },
+        onError: (error: Error) => toast({ title: 'Webhook creation failed', description: error.message, variant: 'destructive' }),
+    });
+
+    const updateWebhook = useMutation({
+        mutationFn: async (changes: Record<string, unknown>) => {
+            const response = await fetch('/api/webhooks', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to update webhook');
+            return payload;
+        },
+        onSuccess: (payload) => {
+            queryClient.invalidateQueries({ queryKey: ['webhooks'] });
+            if (payload.signingSecret) setLatestSecret(payload.signingSecret);
+            toast({ title: payload.signingSecret ? 'Signing secret rotated' : 'Webhook updated' });
+        },
+        onError: (error: Error) => toast({ title: 'Webhook update failed', description: error.message, variant: 'destructive' }),
+    });
+
+    const disableWebhook = useMutation({
+        mutationFn: async (id: string) => {
+            const response = await fetch(`/api/webhooks?id=${id}`, { method: 'DELETE' });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Failed to disable webhook');
+            return payload;
+        },
+        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['webhooks'] }); toast({ title: 'Webhook disabled; history retained' }); },
+        onError: (error: Error) => toast({ title: 'Webhook disable failed', description: error.message, variant: 'destructive' }),
+    });
+
+    const deliveryAction = useMutation({
+        mutationFn: async ({ webhookId, action, deliveryId }: { webhookId: string; action: 'test' | 'retry'; deliveryId?: string }) => {
+            const response = await fetch(`/api/webhooks/${webhookId}/deliveries`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...(deliveryId ? { deliveryId } : {}) }),
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Delivery action failed');
+            return payload;
+        },
+        onSuccess: () => {
+            setTimeout(() => queryClient.invalidateQueries({ queryKey: ['webhook-deliveries', selectedWebhookId] }), 500);
+            toast({ title: 'Webhook delivery queued' });
+        },
+        onError: (error: Error) => toast({ title: 'Delivery action failed', description: error.message, variant: 'destructive' }),
+    });
+
+    const toggleEvent = (event: string) => setEvents((current) => current.includes(event)
+        ? current.filter((candidate) => candidate !== event)
+        : [...current, event]);
+
+    return (
+        <div className="space-y-6">
+            <Card className="border-0 shadow-sm">
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Webhook className="h-4 w-4" /> Add Webhook</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="space-y-2"><Label htmlFor="webhook-name">Name</Label><Input id="webhook-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Incident automation" /></div>
+                    <div className="space-y-2"><Label htmlFor="webhook-url">HTTPS destination</Label><Input id="webhook-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://automation.example.com/compdesk" /></div>
+                    <div className="space-y-2"><Label>Events</Label><div className="flex flex-wrap gap-2">{WEBHOOK_EVENTS.map((event) => <Button key={event} type="button" size="sm" variant={events.includes(event) ? 'default' : 'outline'} aria-pressed={events.includes(event)} onClick={() => toggleEvent(event)}>{event}</Button>)}</div></div>
+                    <p className="text-xs text-muted-foreground">Destinations must resolve only to public addresses. Deliveries use a timestamped HMAC signature, reject redirects, and retry with bounded exponential backoff.</p>
+                    <Button onClick={() => createWebhook.mutate()} disabled={!name.trim() || !url.trim() || events.length === 0 || createWebhook.isPending}>{createWebhook.isPending ? 'Creating…' : 'Create Webhook'}</Button>
+                    {latestSecret ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:bg-amber-950/30"><p className="text-sm font-medium">Copy this signing secret now. It is shown only once.</p><code className="mt-2 block break-all text-xs">{latestSecret}</code><Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => { void navigator.clipboard.writeText(latestSecret); toast({ title: 'Signing secret copied' }); }}>Copy secret</Button></div> : null}
+                </CardContent>
+            </Card>
+
+            {webhooksQuery.isError ? <div role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">{webhooksQuery.error instanceof Error ? webhooksQuery.error.message : 'Failed to load webhooks'} <Button type="button" size="sm" variant="outline" onClick={() => webhooksQuery.refetch()}>Retry</Button></div> : null}
+            {(webhooksQuery.data ?? []).map((webhook: any) => (
+                <Card key={webhook.id} className="border-0 shadow-sm"><CardContent className="space-y-3 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-medium">{webhook.name}</p><p className="break-all text-xs text-muted-foreground">{webhook.url}</p></div><Switch checked={webhook.isActive} onCheckedChange={(checked) => updateWebhook.mutate({ id: webhook.id, isActive: checked })} /></div>
+                    <div className="flex flex-wrap gap-2">{webhook.events.map((event: string) => <Badge key={event} variant="outline">{event}</Badge>)}{webhook.secretNeedsEncryption ? <Badge variant="destructive">Secret migration required</Badge> : null}{webhook.failureCount ? <Badge variant="destructive">{webhook.failureCount} consecutive failures</Badge> : null}</div>
+                    <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => { setSelectedWebhookId(webhook.id); deliveryAction.mutate({ webhookId: webhook.id, action: 'test' }); }} disabled={!webhook.isActive}>Send Test</Button><Button type="button" size="sm" variant="outline" onClick={() => setSelectedWebhookId(selectedWebhookId === webhook.id ? null : webhook.id)}>Delivery History</Button><Button type="button" size="sm" variant="outline" onClick={() => updateWebhook.mutate({ id: webhook.id, rotateSecret: true })}>Rotate Secret</Button>{webhook.secretNeedsEncryption ? <Button type="button" size="sm" variant="outline" onClick={() => updateWebhook.mutate({ id: webhook.id, encryptExistingSecret: true })}>Encrypt Existing Secret</Button> : null}<ConfirmDestructiveAction title="Disable webhook?" description={<>Delivery history for <strong>{webhook.name}</strong> will be retained.</>} pending={disableWebhook.isPending} onConfirm={() => disableWebhook.mutate(webhook.id)} trigger={<Button type="button" size="sm" variant="destructive">Disable</Button>} /></div>
+                    {selectedWebhookId === webhook.id ? <div className="space-y-2 border-t pt-3"><p className="text-sm font-medium">Recent deliveries</p>{deliveriesQuery.isLoading ? <p className="text-xs text-muted-foreground">Loading delivery history…</p> : (deliveriesQuery.data ?? []).length === 0 ? <p className="text-xs text-muted-foreground">No deliveries yet.</p> : (deliveriesQuery.data ?? []).map((delivery: any) => <div key={delivery.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs"><Badge variant={delivery.status === 'DELIVERED' ? 'default' : delivery.status === 'FAILED' ? 'destructive' : 'outline'}>{delivery.status}</Badge><span>{delivery.event}</span><span>Attempts: {delivery.attemptCount}</span>{delivery.responseStatus ? <span>HTTP {delivery.responseStatus}</span> : null}{delivery.errorStage ? <span>{delivery.errorStage}</span> : null}{delivery.status === 'FAILED' ? <Button type="button" size="sm" variant="outline" onClick={() => deliveryAction.mutate({ webhookId: webhook.id, action: 'retry', deliveryId: delivery.id })}>Retry</Button> : null}</div>)}</div> : null}
+                </CardContent></Card>
+            ))}
+        </div>
+    );
+}
 export default function AdminSettingsPage() {
     return (
         <div className="space-y-6">
@@ -689,6 +839,7 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="security" className="gap-1 min-w-max"><Lock className="h-3.5 w-3.5" /> Security</TabsTrigger>
                     <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
                     <TabsTrigger value="api" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> API Clients</TabsTrigger>
+                    <TabsTrigger value="webhooks" className="gap-1 min-w-max"><Webhook className="h-3.5 w-3.5" /> Webhooks</TabsTrigger>
                 </TabsList>
                 <TabsContent value="branding"><BrandingSettings /></TabsContent>
                 <TabsContent value="smtp"><SmtpSettingsTab /></TabsContent>
@@ -698,6 +849,7 @@ export default function AdminSettingsPage() {
                 <TabsContent value="security"><SecuritySettingsTab /></TabsContent>
                 <TabsContent value="features"><FeatureFlagsTab /></TabsContent>
                 <TabsContent value="api"><ApiClientsTab /></TabsContent>
+                <TabsContent value="webhooks"><WebhooksTab /></TabsContent>
             </Tabs>
         </div>
     );
