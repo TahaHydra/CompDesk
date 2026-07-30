@@ -137,7 +137,7 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     await expect(page.getByRole('heading', { name: '1. Welcome and system check' })).toBeVisible();
     expect(page.url()).not.toContain(bootstrapToken);
 
-    await page.locator('input[name="deploymentMode"][value="standalone"]').check();
+    await page.getByText('Existing PostgreSQL with standalone Node.js', { exact: true }).click();
     await page.locator('input[name="dbHost"]').fill(databaseUrl.hostname);
     await page.locator('input[name="dbPort"]').fill(databaseUrl.port || '5432');
     await page.locator('input[name="dbName"]').fill(decodeURIComponent(databaseUrl.pathname.slice(1)));
