@@ -83,10 +83,44 @@ test('renders one deterministic environment file with the runtime storage key', 
         trustProxy: true,
         privateAttachmentDir: '/srv/compdesk/attachments',
         uploadMaxSizeMb: 25,
+        attachmentMaxFilesPerTicket: 20,
+        attachmentMaxMbPerTicket: 100,
+        attachmentGlobalMaxGb: 10,
+        tempAttachmentTtlHours: 24,
+        tempAttachmentMaxFilesPerUser: 20,
+        tempAttachmentMaxMbPerUser: 100,
     });
     assert.match(rendered, /ATTACHMENT_STORAGE_DIR=/);
+    assert.match(rendered, /ATTACHMENT_MAX_FILES_PER_TICKET=20/);
+    assert.match(rendered, /ATTACHMENT_MAX_BYTES_PER_TICKET=104857600/);
+    assert.match(rendered, /ATTACHMENT_GLOBAL_MAX_BYTES=10737418240/);
+    assert.match(rendered, /TEMP_ATTACHMENT_TTL_HOURS=24/);
     assert.doesNotMatch(rendered, /PRIVATE_ATTACHMENT_DIR=/);
     assert.doesNotMatch(rendered, /AZURE_AD_CLIENT_SECRET=/);
+    assert.doesNotMatch(rendered, /CLAMAV_HOST=/);
+
+    const withScanner = core.renderEnvironment({
+        databaseUrl: 'postgresql://user:pass@db/app',
+        applicationUrl: 'https://helpdesk.example.com',
+        authSecret: 'auth-secret',
+        settingsEncryptionKey: 'encryption-key',
+        localEnabled: true,
+        microsoftEnabled: false,
+        trustProxy: true,
+        privateAttachmentDir: '/srv/compdesk/attachments',
+        uploadMaxSizeMb: 25,
+        attachmentMaxFilesPerTicket: 20,
+        attachmentMaxMbPerTicket: 100,
+        attachmentGlobalMaxGb: 10,
+        tempAttachmentTtlHours: 24,
+        tempAttachmentMaxFilesPerUser: 20,
+        tempAttachmentMaxMbPerUser: 100,
+        clamavEnabled: true,
+        clamavHost: 'clamav.internal',
+        clamavPort: 3310,
+    });
+    assert.match(withScanner, /CLAMAV_HOST="clamav\.internal"/);
+    assert.match(withScanner, /CLAMAV_PORT=3310/);
 });
 
 test('uses same-origin comparison and constant-time token comparison', () => {

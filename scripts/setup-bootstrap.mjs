@@ -325,6 +325,24 @@ function validateInstall(input) {
     if (!Number.isInteger(storage.uploadMaxSizeMb) || storage.uploadMaxSizeMb < 1 || storage.uploadMaxSizeMb > 100) {
         throw Object.assign(new Error('Maximum upload size must be between 1 and 100 MB.'), { statusCode: 400 });
     }
+    const quotaValues = [
+        [storage.attachmentMaxFilesPerTicket, 1, 100, 'Files per ticket'],
+        [storage.attachmentMaxMbPerTicket, storage.uploadMaxSizeMb, 10_000, 'Ticket attachment storage'],
+        [storage.attachmentGlobalMaxGb, 1, 100_000, 'Global attachment storage'],
+        [storage.tempAttachmentTtlHours, 1, 168, 'Temporary attachment lifetime'],
+        [storage.tempAttachmentMaxFilesPerUser, 1, 100, 'Temporary files per user'],
+        [storage.tempAttachmentMaxMbPerUser, storage.uploadMaxSizeMb, 10_000, 'Temporary storage per user'],
+    ];
+    if (quotaValues.some(([value, minimum, maximum]) => !Number.isInteger(value) || value < minimum || value > maximum)) {
+        throw Object.assign(new Error('Attachment quota settings are outside their supported range.'), { statusCode: 400 });
+    }
+    if (storage.clamavEnabled) {
+        const clamavHost = String(storage.clamavHost || '').trim();
+        const clamavPort = Number(storage.clamavPort);
+        if (!clamavHost || clamavHost.length > 253 || /[\s/@]/.test(clamavHost) || !Number.isInteger(clamavPort) || clamavPort < 1 || clamavPort > 65535) {
+            throw Object.assign(new Error('Enter a valid ClamAV daemon hostname and port.'), { statusCode: 400 });
+        }
+    }
     return { ...input, identity: { ...input.identity, applicationUrl: url.origin }, authentication: { ...auth, adminEmail: email } };
 }
 
@@ -377,6 +395,15 @@ async function install(input) {
             trustProxy: Boolean(config.identity.reverseProxy),
             privateAttachmentDir,
             uploadMaxSizeMb: config.storage.uploadMaxSizeMb,
+            attachmentMaxFilesPerTicket: config.storage.attachmentMaxFilesPerTicket,
+            attachmentMaxMbPerTicket: config.storage.attachmentMaxMbPerTicket,
+            attachmentGlobalMaxGb: config.storage.attachmentGlobalMaxGb,
+            tempAttachmentTtlHours: config.storage.tempAttachmentTtlHours,
+            tempAttachmentMaxFilesPerUser: config.storage.tempAttachmentMaxFilesPerUser,
+            tempAttachmentMaxMbPerUser: config.storage.tempAttachmentMaxMbPerUser,
+            clamavEnabled: config.storage.clamavEnabled,
+            clamavHost: config.storage.clamavHost,
+            clamavPort: config.storage.clamavPort,
             dockerDatabase: config.deploymentMode === 'docker-compose' ? config.database : null,
             tenantId: config.authentication.tenantId,
             clientId: config.authentication.clientId,

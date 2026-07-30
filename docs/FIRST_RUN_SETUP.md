@@ -42,6 +42,7 @@ Do not add `-v` when stopping setup: the PostgreSQL volume contains the installe
 - Database checks distinguish DNS, TCP, TLS, authentication, missing database, and permission failures without returning a password or connection string.
 - At least one login method is mandatory. Local passwords require 14 characters with upper/lowercase, number, and symbol.
 - SMTP is optional. Verification and real-send are separate; relay acceptance is not proof of mailbox delivery.
+- Storage setup records per-file, per-ticket, per-user temporary, expiry, and global quotas. ClamAV is optional; enabling it requires a reachable `clamd` host/port and scan errors then fail closed.
 - Demo data is disabled by default. When enabled, credentials are random and shown once. `npm run demo:remove -- --confirm=REMOVE-DEMO-DATA` removes unreferenced demo accounts and deactivates referenced ones to preserve history.
 - Successful installation creates an immutable database installation record. Revisiting setup returns 410 and deleting a browser cookie cannot recreate the Super Admin.
 

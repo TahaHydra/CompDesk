@@ -64,8 +64,14 @@
         </fieldset><button type="button" class="secondary" id="testSmtp">Verify connection & authentication</button> <button type="button" class="secondary" id="sendSmtp">Send real test message</button><div id="smtpResult"></div></section>
         <section data-step="7" class="hidden"><h2>8. Storage and scanning</h2><fieldset>
             <label class="full">Private attachment directory<input name="privateAttachmentDir" value="storage/attachments" required></label>
-            <label>Maximum file size (MB)<input name="uploadMaxSizeMb" type="number" value="25" min="1" max="100"></label>
-            <label class="choice"><input name="clamavEnabled" type="checkbox"> Enable ClamAV integration when available</label>
+            <label>Maximum file size (MB)<input name="uploadMaxSizeMb" type="number" value="10" min="1" max="100"></label>
+            <label>Files per ticket<input name="attachmentMaxFilesPerTicket" type="number" value="20" min="1" max="100"></label>
+            <label>Storage per ticket (MB)<input name="attachmentMaxMbPerTicket" type="number" value="100" min="10" max="10000"></label>
+            <label>Global attachment storage (GB)<input name="attachmentGlobalMaxGb" type="number" value="10" min="1" max="100000"></label>
+            <label>Temporary upload lifetime (hours)<input name="tempAttachmentTtlHours" type="number" value="24" min="1" max="168"></label>
+            <label>Temporary files per user<input name="tempAttachmentMaxFilesPerUser" type="number" value="20" min="1" max="100"></label>
+            <label>Temporary storage per user (MB)<input name="tempAttachmentMaxMbPerUser" type="number" value="100" min="10" max="10000"></label>
+            <label class="choice"><input name="clamavEnabled" type="checkbox"> Connect to a ClamAV daemon (scan errors fail closed)</label><label>ClamAV host<input name="clamavHost" placeholder="127.0.0.1"></label><label>ClamAV port<input name="clamavPort" type="number" value="3310" min="1" max="65535"></label>
         </fieldset><p>Ticket attachments remain outside public static storage. Configure persistent volumes and backups for private attachments and branding assets.</p></section>
         <section data-step="8" class="hidden"><h2>9. Demo data</h2><label class="choice"><input name="installDemoData" type="checkbox"> Install optional demo data</label><p>Disabled by default. Demo credentials are randomly generated and shown once. Production seeding requires an explicit override.</p></section>
         <section data-step="9" class="hidden"><h2>10. Review and install</h2><div id="review"></div><label class="choice"><input id="confirmInstall" type="checkbox"> I confirm these non-secret settings and authorize migrations and installation.</label></section>
@@ -95,7 +101,7 @@
         identity:{applicationUrl:value('applicationUrl'),applicationName:value('applicationName'),supportEmail:value('supportEmail'),primaryColor:value('primaryColor'),accentColor:value('accentColor'),reverseProxy:checked('reverseProxy')},
         authentication:{localEnabled:checked('localEnabled'),microsoftEnabled:checked('microsoftEnabled'),adminName:value('adminName'),adminEmail:value('adminEmail'),adminPassword:value('adminPassword'),adminPasswordConfirm:value('adminPasswordConfirm'),tenantId:value('tenantId'),clientId:value('clientId'),clientSecret:value('clientSecret')},
         smtp:{enabled:checked('smtpEnabled'),host:value('smtpHost'),port:Number(value('smtpPort')),username:value('smtpUsername'),password:value('smtpPassword'),from:value('smtpFrom'),recipient:value('smtpRecipient'),secure:checked('smtpSecure'),requireTls:checked('smtpRequireTls')},
-        storage:{privateAttachmentDir:value('privateAttachmentDir'),uploadMaxSizeMb:Number(value('uploadMaxSizeMb')),clamavEnabled:checked('clamavEnabled')},
+        storage:{privateAttachmentDir:value('privateAttachmentDir'),uploadMaxSizeMb:Number(value('uploadMaxSizeMb')),attachmentMaxFilesPerTicket:Number(value('attachmentMaxFilesPerTicket')),attachmentMaxMbPerTicket:Number(value('attachmentMaxMbPerTicket')),attachmentGlobalMaxGb:Number(value('attachmentGlobalMaxGb')),tempAttachmentTtlHours:Number(value('tempAttachmentTtlHours')),tempAttachmentMaxFilesPerUser:Number(value('tempAttachmentMaxFilesPerUser')),tempAttachmentMaxMbPerUser:Number(value('tempAttachmentMaxMbPerUser')),clamavEnabled:checked('clamavEnabled'),clamavHost:value('clamavHost'),clamavPort:Number(value('clamavPort'))},
         installDemoData:checked('installDemoData')
     });
     const message = (text, kind = '') => { const el=$('#message'); el.textContent=text; el.className=`notice ${kind}`; };
