@@ -70,10 +70,26 @@ describe('deployment engineering contracts', () => {
         const target = path.join(directory, 'result.sarif');
         try {
             fs.writeFileSync(target, JSON.stringify({ version: '2.1.0', runs: [{ tool: { driver: { name: 'test' } }, results: [] }] }));
-            expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('no warning/error findings');
+            expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('no unsuppressed warning/error findings');
             fs.writeFileSync(target, JSON.stringify({
                 version: '2.1.0',
                 runs: [{ tool: { driver: { name: 'test' } }, results: [{ ruleId: 'security-test', level: 'warning', message: { text: 'Unsafe test result' }, locations: [{ physicalLocation: { artifactLocation: { uri: 'src/example.ts' }, region: { startLine: 17 } } }] }] }],
+            }));
+            expect(() => execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { stdio: 'pipe' })).toThrow();
+            fs.writeFileSync(target, JSON.stringify({
+                version: '2.1.0',
+                runs: [{ tool: { driver: { name: 'test' } }, results: [{
+                    ruleId: 'documented-exception', level: 'warning', message: { text: 'Reviewed exception' },
+                    suppressions: [{ kind: 'inSource', status: 'accepted' }],
+                }] }],
+            }));
+            expect(execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { encoding: 'utf8' })).toContain('1 documented in-source suppression');
+            fs.writeFileSync(target, JSON.stringify({
+                version: '2.1.0',
+                runs: [{ tool: { driver: { name: 'test' } }, results: [{
+                    ruleId: 'external-suppression', level: 'warning', message: { text: 'Not suppressed in source' },
+                    suppressions: [{ kind: 'external', status: 'accepted' }],
+                }] }],
             }));
             expect(() => execFileSync(process.execPath, ['scripts/check-sarif.mjs', directory], { stdio: 'pipe' })).toThrow();
         } finally {
