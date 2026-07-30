@@ -111,16 +111,20 @@ jobs:
     env:
       DATABASE_URL: postgresql://compdesk_restore:compdesk_restore_ci@localhost:5432/compdesk_restore_source?schema=public
       RESTORE_TEST_DATABASE_URL: postgresql://compdesk_restore:compdesk_restore_ci@localhost:5432/postgres?schema=public
-      COMPDESK_ENV_FILE: ${{ runner.temp }}/compdesk.env
-      DATABASE_CA_FILE: ${{ runner.temp }}/database-ca.pem
-      COMPDESK_BACKUP_DIR: ${{ runner.temp }}/backups
-      ATTACHMENT_STORAGE_DIR: ${{ runner.temp }}/attachments
+
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
+      - name: Configure backup rehearsal paths
+        shell: bash
+        run: |
+          echo "COMPDESK_ENV_FILE=$RUNNER_TEMP/compdesk.env" >> "$GITHUB_ENV"
+          echo "DATABASE_CA_FILE=$RUNNER_TEMP/database-ca.pem" >> "$GITHUB_ENV"
+          echo "COMPDESK_BACKUP_DIR=$RUNNER_TEMP/backups" >> "$GITHUB_ENV"
+          echo "ATTACHMENT_STORAGE_DIR=$RUNNER_TEMP/attachments" >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - run: npm ci
       - run: npm run db:migrate:prod
