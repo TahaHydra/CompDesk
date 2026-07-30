@@ -180,7 +180,7 @@ Removing `node_modules` and `.next` does not affect PostgreSQL data.
 
 The seed is idempotent and template-aware, but it intentionally creates demo departments, department-owned categories, useful templates, tickets, tags, Help Center content, and accounts. Do not run it on production unless you explicitly want demo data.
 
-Defaults:
+Defaults use generic `example.com` identities. No universal password is defined. If `SEED_DEFAULT_PASSWORD` is absent, the seed generates a cryptographically random password and prints it once to the local console.
 
 ```text
 SEED_DEMO_DOMAIN=example.com
@@ -190,10 +190,9 @@ SEED_AGENT1_EMAIL=agent1@example.com
 SEED_AGENT2_EMAIL=agent2@example.com
 SEED_USER1_EMAIL=user1@example.com
 SEED_USER2_EMAIL=user2@example.com
-SEED_DEFAULT_PASSWORD=Password123!
 ```
 
-For an existing private test environment, point every seed role at the accounts you intend to refresh. The seed updates those accounts' demo role, name, active state, and password. It does not alter unrelated accounts.
+For an isolated private test environment, optionally point every seed role at the accounts you intend to refresh and provide a strong temporary password through the process environment. The seed updates those demo accounts' role, name, active state, and password. It does not alter unrelated accounts. Never persist the seed password in `.env`, shell history, CI logs, or source control.
 
 PowerShell:
 

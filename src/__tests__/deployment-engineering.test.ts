@@ -1,0 +1,75 @@
+import { execFileSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+function source(relativePath: string) { return fs.readFileSync(path.join(process.cwd(), ...relativePath.split('/')), 'utf8'); }
+
+describe('deployment engineering contracts', () => {
+    it('keeps the first-run browser script syntactically executable', () => {
+        const html = source('scripts/setup-ui.html');
+        const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+        expect(script).toBeDefined();
+        expect(() => new Function(script!)).not.toThrow();
+    });
+
+    it('documents only runtime-backed configuration variables', () => {
+        const example = source('.env.example');
+        const configuration = source('docs/CONFIGURATION.md');
+        expect(example).not.toContain('RATE_LIMIT_WINDOW_MS');
+        expect(example).not.toContain('RATE_LIMIT_MAX_REQUESTS');
+        for (const variable of ['UPLOAD_MAX_SIZE_MB', 'ATTACHMENT_STORAGE_DIR', 'TEMP_ATTACHMENT_TTL_HOURS', 'AUTH_URL', 'TRUST_PROXY', 'SMTP_REQUIRE_TLS', 'APP_SETTINGS_ENCRYPTION_KEY']) {
+            expect(configuration).toContain('' + variable + '');
+        }
+    });
+
+    it('keeps migrations separate from normal multi-replica startup', () => {
+        for (const file of ['docker-compose.yml', 'docker-compose.external-db.yml']) {
+            const compose = source(file);
+            expect(compose).toContain('migrate:');
+            expect(compose).toContain('condition: service_completed_successfully');
+        }
+        const dockerfile = source('Dockerfile');
+        expect(dockerfile.match(/^CMD .*$/m)?.[0]).not.toContain('prisma migrate');
+        expect(dockerfile).toContain('npm ci --omit=dev --ignore-scripts');
+        expect(dockerfile).toContain('FROM runtime-base AS setup');
+        expect(dockerfile).toContain('FROM runtime-base AS runner');
+        for (const file of ['docker-compose.yml', 'docker-compose.external-db.yml', 'docker-compose.setup.yml']) {
+            expect(source(file)).toContain('target: setup');
+        }
+    });
+
+    it('dry-runs the complete backup scope without exposing a database URL', () => {
+        const output = execFileSync(process.execPath, ['scripts/backup.mjs', '--dry-run'], {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+            env: { ...process.env, DATABASE_URL: 'postgresql://secret-user:secret-password@db.example/private' },
+        });
+        expect(output).toContain('PostgreSQL custom dump');
+        expect(output).toContain('private attachments');
+        expect(output).toContain('uploaded branding/quick-link assets');
+        expect(output).not.toContain('secret-user');
+        expect(output).not.toContain('secret-password');
+    });
+
+    it('verifies a complete backup and rejects manifest traversal', () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-backup-test-'));
+        try {
+            fs.mkdirSync(path.join(directory, 'attachments'));
+            fs.mkdirSync(path.join(directory, 'uploads'));
+            fs.mkdirSync(path.join(directory, 'configuration'));
+            fs.writeFileSync(path.join(directory, 'database.dump'), 'database');
+            fs.writeFileSync(path.join(directory, 'configuration', 'compdesk.env'), 'AUTH_SECRET=test-only');
+            const manifest = {
+                format: 'compdesk-backup-v1', database: 'database.dump', attachments: 'attachments',
+                uploads: 'uploads', configuration: 'configuration/compdesk.env',
+            };
+            fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify(manifest));
+            expect(execFileSync(process.execPath, ['scripts/verify-backup.mjs', directory], { encoding: 'utf8' })).toContain('structure is complete');
+            fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify({ ...manifest, configuration: '../outside.env' }));
+            expect(() => execFileSync(process.execPath, ['scripts/verify-backup.mjs', directory], { stdio: 'pipe' })).toThrow();
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
+    });
+});
