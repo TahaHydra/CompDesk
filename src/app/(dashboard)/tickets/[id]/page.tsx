@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { use, useCallback, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -15,15 +15,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import {
-    ArrowLeft, MessageSquare, Lock, User, AlertTriangle,
+    ArrowLeft, MessageSquare, User, AlertTriangle,
     Send, Eye, Shield, XCircle, ArrowUpCircle,
     Paperclip, Download, FileIcon, Trash2, Upload,
-    Hand, Pencil, X, Check, Trash, ChevronDown,
+    Hand, Pencil, X, Check, ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
+import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
+import { parseTicketContent } from '@/lib/ticket-content';
 
 function formatFileSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
@@ -31,9 +34,6 @@ function formatFileSize(bytes: number) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function isImageType(mimetype: string) {
-    return mimetype.startsWith('image/');
-}
 
 const CONVERSATION_EVENT_TYPES = ['COMMENT', 'INTERNAL_NOTE'];
 const STATUS_OPTIONS = ['NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED'];
@@ -55,34 +55,14 @@ function PriorityBadge({ value }: { value: string }) {
     );
 }
 
-// Render description with inline images (markdown ![alt](url) syntax)
 function RenderDescription({ text }: { text: string }) {
-    const parts = text.split(/(!\[.*?\]\(.*?\))/g);
-    return (
-        <div className="text-sm space-y-2">
-            {parts.map((part, i) => {
-                const match = part.match(/^!\[(.*?)\]\((.*?)\)$/);
-                if (match) {
-                    return (
-                        <div key={i} className="my-2">
-                            <img
-                                src={match[2]}
-                                alt={match[1]}
-                                className="max-w-full max-h-96 rounded-lg border shadow-sm"
-                            />
-                            {match[1] && <p className="text-xs text-muted-foreground mt-1">{match[1]}</p>}
-                        </div>
-                    );
-                }
-                if (part.trim()) {
-                    return <p key={i} className="whitespace-pre-wrap">{part}</p>;
-                }
-                return null;
-            })}
-        </div>
-    );
+    return <div className="space-y-2 text-sm">{parseTicketContent(text).map((part, index) => {
+        if (part.kind === 'inline-image') return <div key={index} className="my-2"><img src={part.url} alt={part.alt} className="max-h-96 max-w-full rounded-lg border shadow-sm" />{part.alt ? <p className="mt-1 text-xs text-muted-foreground">{part.alt}</p> : null}</div>;
+        if (part.kind === 'external-image-link') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs">Remote image blocked. <a href={part.url} target="_blank" rel="noopener noreferrer" className="underline">Open link</a>{part.alt ? `: ${part.alt}` : ''}</p>;
+        if (part.kind === 'blocked-image') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">Unsafe image reference blocked{part.alt ? `: ${part.alt}` : ''}.</p>;
+        return part.value ? <p key={index} className="whitespace-pre-wrap">{part.value}</p> : null;
+    })}</div>;
 }
-
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const { data: session } = useSession();
@@ -94,15 +74,30 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [escalateOpen, setEscalateOpen] = useState(false);
     const [escalateReason, setEscalateReason] = useState('');
     const [escalateToId, setEscalateToId] = useState('');
+    const [assignmentCandidateId, setAssignmentCandidateId] = useState('');
     const [editingEventId, setEditingEventId] = useState<string | null>(null);
     const [editContent, setEditContent] = useState('');
-    const [deleteTicketOpen, setDeleteTicketOpen] = useState(false);
     const [timelineOpen, setTimelineOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const assignmentRequestLock = useRef(false);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
     const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
+    useEffect(() => {
+        if (!isAgent) return;
+        let active = true;
+        const heartbeat = () => {
+            if (active) void fetch(`/api/tickets/${id}/presence`, { method: 'POST' });
+        };
+        heartbeat();
+        const interval = window.setInterval(heartbeat, 45_000);
+        return () => {
+            active = false;
+            window.clearInterval(interval);
+            void fetch(`/api/tickets/${id}/presence`, { method: 'DELETE', keepalive: true });
+        };
+    }, [id, isAgent]);
     const { data: ticket, isLoading } = useQuery({
         queryKey: ['ticket', id],
         queryFn: async () => {
@@ -137,7 +132,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             const res = await fetch(`/api/tickets/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: JSON.stringify({ ...data, expectedVersion: ticket.version }),
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -154,6 +149,39 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         },
     });
 
+    const assignmentMutation = useMutation({
+        mutationFn: async ({ operation, userId }: { operation: 'add' | 'remove' | 'claim' | 'unclaim'; userId?: string }) => {
+            const claim = operation === 'claim' || operation === 'unclaim';
+            const method = operation === 'remove' || operation === 'unclaim' ? 'DELETE' : 'POST';
+            const versionQuery = `expectedVersion=${encodeURIComponent(String(ticket.version))}`;
+            const endpoint = claim
+                ? `/api/tickets/${id}/assignees/claim${method === 'DELETE' ? `?${versionQuery}` : ''}`
+                : `/api/tickets/${id}/assignees${method === 'DELETE' ? `?userId=${encodeURIComponent(userId ?? '')}&${versionQuery}` : ''}`;
+            const res = await fetch(endpoint, {
+                method,
+                headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+                body: method === 'POST' ? JSON.stringify(claim ? { expectedVersion: ticket.version } : { userId, expectedVersion: ticket.version }) : undefined,
+            });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || 'Assignment operation failed');
+            return { payload, operation };
+        },
+        onSuccess: ({ payload, operation }) => {
+            setAssignmentCandidateId('');
+            queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+            queryClient.invalidateQueries({ queryKey: ['tickets'] });
+            queryClient.invalidateQueries({ queryKey: ['queue-tickets'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            toast({ title: payload.alreadyAssigned ? 'Already assigned' : operation === 'remove' || operation === 'unclaim' ? 'Assignee removed' : 'Assignee added' });
+        },
+        onError: (error: Error) => toast({ title: 'Assignment failed', description: error.message, variant: 'destructive' }),
+        onSettled: () => { assignmentRequestLock.current = false; },
+    });
+    const runAssignment = (operation: 'add' | 'remove' | 'claim' | 'unclaim', userId?: string) => {
+        if (assignmentRequestLock.current) return;
+        assignmentRequestLock.current = true;
+        assignmentMutation.mutate({ operation, userId });
+    };
     const addComment = useMutation({
         mutationFn: async () => {
             const res = await fetch(`/api/tickets/${id}/comments`, {
@@ -202,13 +230,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             });
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || 'Failed to delete');
+                throw new Error(err.error || 'Failed to remove timeline entry');
             }
             return res.json();
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Timeline entry deleted' });
+            toast({ title: 'Timeline entry removed from conversation' });
         },
         onError: (e: Error) => {
             toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -217,15 +245,15 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
     const deleteTicket = useMutation({
         mutationFn: async () => {
-            const res = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/tickets/${id}?expectedVersion=${encodeURIComponent(String(ticket.version))}`, { method: 'DELETE' });
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || 'Failed to delete');
+                throw new Error(err.error || 'Failed to withdraw');
             }
             return res.json();
         },
         onSuccess: () => {
-            toast({ title: 'Ticket deleted' });
+            toast({ title: 'Ticket withdrawn' });
             router.push('/tickets');
         },
         onError: (e: Error) => {
@@ -238,7 +266,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             const res = await fetch(`/api/tickets/${id}/escalate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ escalateToId: escalateToId || null, reason: escalateReason }),
+                body: JSON.stringify({ escalateToId: escalateToId || null, reason: escalateReason, expectedVersion: ticket.version }),
             });
             if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Failed'); }
             return res.json();
@@ -305,7 +333,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     // Administrators can moderate conversation history. Agents and users can
     // modify only their own entries; users can never modify internal notes.
     const canEditTimelineEvent = (event: any) => {
-        if (!event.content || !isConversationEvent(event)) return false;
+        if (event.deletedAt || !event.content || !isConversationEvent(event)) return false;
         if (isAdministrator) return true;
         if (event.userId !== session?.user?.id) return false;
         if (session?.user?.role === 'USER' && event.type !== 'COMMENT') return false;
@@ -314,7 +342,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     };
 
     const canDeleteTimelineEvent = (event: any) => {
-        if (!isConversationEvent(event)) return false;
+        if (event.deletedAt || !isConversationEvent(event)) return false;
         if (isAdministrator) return true;
         return event.userId === session?.user?.id
             && !(session?.user?.role === 'USER' && event.type === 'INTERNAL_NOTE');
@@ -338,10 +366,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         );
     }
 
-    const imageAttachments = (ticket.attachments ?? []).filter((a: any) => isImageType(a.mimetype));
-    const fileAttachments = (ticket.attachments ?? []).filter((a: any) => !isImageType(a.mimetype));
+    const activeAttachments = (ticket.attachments ?? []).filter((attachment: any) => !attachment.deletedAt && attachment.path);
+    const removedAttachments = (ticket.attachments ?? []).filter((attachment: any) => Boolean(attachment.deletedAt));
     const isRequester = ticket.requesterId === session?.user?.id;
-    const canDeleteTicket = isRequester && !ticket.assigneeId;
+    const assignments = ticket.assignments ?? [];
+    const assignedToCurrentUser = assignments.some((assignment: any) => assignment.userId === session?.user?.id);
+    const canDeleteTicket = ticket.status !== 'WITHDRAWN' && (session?.user?.role === 'SUPER_ADMIN' || (isRequester && assignments.length === 0));
     const conversationEvents = (ticket.timeline ?? []).filter((event: any) => isConversationEvent(event));
     const timelineEvents = (ticket.timeline ?? []).filter((event: any) => !isConversationEvent(event));
 
@@ -350,6 +380,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         const showEditBtn = canEditTimelineEvent(event);
         const showDeleteBtn = canDeleteTimelineEvent(event);
         const isEdited = event.metadata?.edited;
+        const isDeleted = Boolean(event.deletedAt);
 
         return (
             <div
@@ -390,6 +421,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         {isEdited && (
                             <span className="text-xs text-muted-foreground italic">(edited)</span>
                         )}
+                        {isDeleted && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">Deleted · history retained</Badge>
+                        )}
                         <span className="text-xs text-muted-foreground">
                             {new Date(event.createdAt).toLocaleString()}
                         </span>
@@ -403,10 +437,17 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     </Button>
                                 )}
                                 {showDeleteBtn && (
-                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                        onClick={() => deleteComment.mutate(event.id)}>
-                                        <Trash2 className="h-3 w-3" />
-                                    </Button>
+                                    <ConfirmDestructiveAction
+                                        title="Remove timeline entry?"
+                                        description="The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators."
+                                        pending={deleteComment.isPending}
+                                        onConfirm={() => deleteComment.mutate(event.id)}
+                                        trigger={
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Remove timeline entry">
+                                                <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                        }
+                                    />
                                 )}
                             </div>
                         )}
@@ -457,43 +498,38 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 <div className="flex shrink-0 flex-wrap items-center gap-2 pl-11 sm:pl-0">
-                    {/* Claim button for agents when unassigned */}
-                    {isAgent && !ticket.assigneeId && (
-                        <Button
-                            onClick={() => updateTicket.mutate({ assigneeId: session?.user?.id })}
-                            className="gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg"
-                            disabled={updateTicket.isPending}
-                        >
+                    {isAgent && ticket.status !== 'WITHDRAWN' && !assignedToCurrentUser ? (
+                        <Button onClick={() => runAssignment('claim')} className="gap-2 bg-emerald-600 shadow-lg hover:bg-emerald-700" disabled={assignmentMutation.isPending}>
                             <Hand className="h-4 w-4" /> Claim Ticket
                         </Button>
-                    )}
+                    ) : null}
+                    {isAgent && ticket.status !== 'WITHDRAWN' && assignedToCurrentUser ? (
+                        <Button variant="outline" onClick={() => runAssignment('unclaim')} className="gap-2" disabled={assignmentMutation.isPending}>
+                            <Check className="h-4 w-4" /> Assigned · Unclaim myself
+                        </Button>
+                    ) : null}
 
-                    {/* Delete ticket for requester when unassigned */}
+                    {/* Super administrators can delete any ticket; requesters can withdraw unassigned tickets. */}
                     {canDeleteTicket && (
-                        <Dialog open={deleteTicketOpen} onOpenChange={setDeleteTicketOpen}>
-                            <DialogTrigger asChild>
+                        <ConfirmDestructiveAction
+                            title="Withdraw ticket?"
+                            description={<>Ticket <strong>{ticket.key}</strong> will be marked withdrawn. Its conversation, attachments, and audit history will be retained.</>}
+                            pending={deleteTicket.isPending}
+                            onConfirm={() => deleteTicket.mutate()}
+                            trigger={
                                 <Button variant="destructive" size="sm" className="gap-1.5">
-                                    <Trash className="h-3.5 w-3.5" /> Delete
+                                    <Trash2 className="h-3.5 w-3.5" /> Withdraw
                                 </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader><DialogTitle>Delete Ticket</DialogTitle></DialogHeader>
-                                <p className="text-sm text-muted-foreground">
-                                    Are you sure you want to delete ticket <strong>{ticket.key}</strong>? This action cannot be undone.
-                                </p>
-                                <DialogFooter>
-                                    <Button variant="outline" onClick={() => setDeleteTicketOpen(false)}>Cancel</Button>
-                                    <Button variant="destructive" onClick={() => deleteTicket.mutate()} disabled={deleteTicket.isPending}>
-                                        {deleteTicket.isPending ? 'Deleting...' : 'Delete'}
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
+                            }
+                        />
                     )}
 
-                    {ticket.lockInfo && ticket.lockInfo.lockedBy !== session?.user?.name && (
-                        <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300">
-                            <Lock className="h-3 w-3" /> Being viewed by {ticket.lockInfo.lockedBy}
+                    {Array.isArray(ticket.presenceInfo?.viewers) && ticket.presenceInfo.viewers.some((viewer: { id: string }) => viewer.id !== session?.user?.id) && (
+                        <Badge variant="outline" className="gap-1 text-muted-foreground">
+                            <Eye className="h-3 w-3" /> Viewing now: {ticket.presenceInfo.viewers
+                                .filter((viewer: { id: string }) => viewer.id !== session?.user?.id)
+                                .map((viewer: { name: string }) => viewer.name)
+                                .join(', ')} · non-exclusive presence
                         </Badge>
                     )}
                 </div>
@@ -516,45 +552,35 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base flex items-center gap-2">
-                                    <Paperclip className="h-4 w-4 text-primary" /> Attachments ({ticket.attachments.length})
+                                    <Paperclip className="h-4 w-4 text-primary" /> Attachments ({activeAttachments.length})
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
-                                {/* Image thumbnails */}
-                                {imageAttachments.length > 0 && (
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                        {imageAttachments.map((att: any) => (
-                                            <div key={att.id} className="relative group rounded-lg overflow-hidden border bg-muted/30">
-                                                <a href={att.path} target="_blank" rel="noopener noreferrer">
-                                                    <img src={att.path} alt={att.filename} className="w-full h-32 object-cover" />
-                                                </a>
-                                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                    <Button asChild size="icon" variant="ghost" className="h-8 w-8 text-white"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-4 w-4" /></a></Button>
-                                                    <Button size="icon" variant="ghost" className="text-white h-8 w-8" onClick={() => deleteAttachment(att.id)}>
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                                <p className="text-xs truncate p-1.5 text-muted-foreground">{att.filename}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* File list */}
-                                {fileAttachments.map((att: any) => (
+                                {activeAttachments.map((att: any) => (
                                     <div key={att.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
                                         <FileIcon className="h-8 w-8 text-muted-foreground p-1 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
+                                            <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured'}</p>
                                         </div>
-                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={`${att.path}?download=1`} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
-                                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteAttachment(att.id)}>
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
+                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
+                                        <ConfirmDestructiveAction
+                                            title="Remove attachment?"
+                                            description={<>The stored file <strong>{att.filename}</strong> will be removed, while its history record and audit evidence are retained.</>}
+                                            onConfirm={() => void deleteAttachment(att.id)}
+                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={`Remove ${att.filename}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                        />
                                     </div>
                                 ))}
-                            </CardContent>
+                                {removedAttachments.map((att: any) => (
+                                    <div key={att.id} className="flex items-center gap-3 rounded-lg border border-dashed p-2 text-muted-foreground">
+                                        <FileIcon className="h-8 w-8 p-1 shrink-0" />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium truncate">{att.filename}</p>
+                                            <p className="text-xs">Removed · history retained</p>
+                                        </div>
+                                    </div>
+                                ))}                            </CardContent>
                         </Card>
                     )}
 
@@ -577,7 +603,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             {/* Comment input */}
                             <Separator className="my-4" />
                             <div className="space-y-3">
-                                {isAgent && (
+                                {isAgent && ticket.status !== 'WITHDRAWN' && (
                                     <div className="flex items-center gap-2">
                                         <Button
                                             variant={isInternal ? 'default' : 'outline'}
@@ -635,7 +661,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 {/* Sidebar */}
                 <div className="space-y-4">
                     {/* Actions */}
-                    {isAgent && (
+                    {isAgent && ticket.status !== 'WITHDRAWN' && (
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base flex items-center gap-2">
@@ -662,20 +688,35 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     </Select>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground">Assignee</label>
-                                    <Select
-                                        value={ticket.assigneeId ?? 'unassigned'}
-                                        onValueChange={(v) => updateTicket.mutate({ assigneeId: v === 'unassigned' ? null : v })}
-                                    >
-                                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                                            {(users ?? []).filter((u: any) => u.role !== 'USER').map((u: any) => (
-                                                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                                <div className="space-y-3">
+                                    <label className="text-xs font-medium text-muted-foreground">Assignees</label>
+                                    {assignments.length === 0 ? <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Unassigned</p> : (
+                                        <div className="space-y-2">
+                                            {assignments.map((assignment: any) => (
+                                                <div key={assignment.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-medium">{assignment.user.name}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{assignment.user.email} · {assignment.user.role}</p>
+                                                    </div>
+                                                    <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${assignment.user.name}`} disabled={assignmentMutation.isPending} onClick={() => runAssignment('remove', assignment.userId)}>
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
                                             ))}
-                                        </SelectContent>
-                                    </Select>
+                                        </div>
+                                    )}
+                                    <UserSearchCombobox
+                                        kind="assignee"
+                                        queueId={ticket.queueId}
+                                        value={assignmentCandidateId}
+                                        placeholder="Search to add an assignee"
+                                        disabled={assignmentMutation.isPending}
+                                        onValueChange={(value) => {
+                                            if (!value || assignments.some((assignment: any) => assignment.userId === value) || assignmentMutation.isPending) return;
+                                            setAssignmentCandidateId(value);
+                                            runAssignment('add', value);
+                                        }}
+                                    />
                                 </div>
 
                                 <div className="space-y-2">
@@ -715,7 +756,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
 
                                 {/* Escalate button */}
-                                {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && (
+                                {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && ticket.status !== 'WITHDRAWN' && (
                                     <Dialog open={escalateOpen} onOpenChange={setEscalateOpen}>
                                         <DialogTrigger asChild>
                                             <Button variant="destructive" size="sm" className="w-full gap-2">
@@ -817,8 +858,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 <span className="font-medium">{ticket.requester?.name}</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Assignee</span>
-                                <span className="font-medium">{ticket.assignee?.name ?? 'Unassigned'}</span>
+                                <span className="text-muted-foreground">Assignees</span>
+                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : 'Unassigned'}</span>
                             </div>
                             {ticket.historicalForm ? (
                                 <div className="flex justify-between gap-4 text-sm">

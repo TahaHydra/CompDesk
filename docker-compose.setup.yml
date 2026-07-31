@@ -1,0 +1,88 @@
+# Shares the canonical "compdesk" project identity and volume names with
+# docker-compose.yml so the production stack takes over the same pgdata,
+# uploads, and attachments volumes without Compose "wrong project" warnings.
+name: compdesk
+
+services:
+  volume-init:
+    image: alpine:3.22
+    user: root
+    command: ['sh', '-c', 'chown -R 1001:1001 /uploads /attachments && chmod -R u+rwX,g+rwX,o-rwx /uploads /attachments && find /uploads /attachments -type d -exec chmod g+s {} +']
+    volumes:
+      - uploads:/uploads
+      - attachments:/attachments
+    networks:
+      - setup-private
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run npm run setup:docker:prepare first}
+      POSTGRES_USER: ${POSTGRES_USER:?Run npm run setup:docker:prepare first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run npm run setup:docker:prepare first}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - setup-private
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  setup:
+    # The Dockerfile's separate `setup` build target was removed when the
+    # stages were merged into one final image (see Dockerfile) — the merged
+    # image is a superset of the old `setup` stage, so this now builds the
+    # default (only) stage.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    user: '${SETUP_UID:-1000}:${SETUP_GID:-1000}'
+    group_add:
+      - '1001'
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    command: ['node', 'scripts/setup-bootstrap.mjs']
+    environment:
+      SETUP_ALLOW_REMOTE: 'true'
+      SETUP_HOST: 0.0.0.0
+      SETUP_PUBLIC_HOST: localhost
+      SETUP_PORT: 3000
+      COMPDESK_SETUP_STATE_DIR: /app/config
+      COMPDESK_ENV_FILE: /app/config/compdesk.env
+      COMPDESK_BOOTSTRAP_DB_HOST: db
+      COMPDESK_BOOTSTRAP_DB_PORT: 5432
+      COMPDESK_BOOTSTRAP_DB_NAME: ${POSTGRES_DB}
+      COMPDESK_BOOTSTRAP_DB_USER: ${POSTGRES_USER}
+      COMPDESK_BOOTSTRAP_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - '${SETUP_BIND_ADDRESS:-127.0.0.1}:${SETUP_PORT:-3000}:3000'
+    volumes:
+      - ./.compdesk:/app/config
+      - uploads:/app/public/uploads
+      - attachments:/app/storage/attachments
+    networks:
+      - setup-private
+      - setup-egress
+    read_only: true
+    tmpfs:
+      - /tmp
+
+networks:
+  setup-private:
+    internal: true
+  setup-egress:
+
+volumes:
+  pgdata:
+    name: ${POSTGRES_VOLUME_NAME:-compdesk_pgdata}
+  uploads:
+    name: ${UPLOADS_VOLUME_NAME:-compdesk_uploads}
+  attachments:
+    name: ${ATTACHMENTS_VOLUME_NAME:-compdesk_attachments}

@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
-import { mkdir, rename, stat } from 'fs/promises';
+import { mkdir, readFile, rename, stat } from 'fs/promises';
 import { Prisma, Role, type User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT } from '@/lib/api-dto';
 import { auditLog } from '@/lib/audit';
 import { sendNewTicketForDepartmentEmail, sendTicketCreatedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
@@ -20,6 +21,7 @@ import {
 import type { TicketFormFieldDefinition, UploadedFieldFile } from '@/lib/ticket-form/types';
 import logger from '@/lib/logger';
 import { authenticatedAttachmentUrl, privateAttachmentLocation, resolveTemporaryAttachmentPath } from '@/lib/attachment-storage';
+import { attachmentLimits, isAttachmentDownloadable } from '@/lib/attachment-security';
 
 export interface TicketCreationActor {
     id: string;
@@ -32,14 +34,19 @@ export interface CreateTicketOptions {
     actor: TicketCreationActor;
     requester: Pick<User, 'id' | 'email' | 'role'>;
     input: CreateTicketInput;
+    apiClient?: { id: string; name: string };
 }
 
 interface PreparedAttachment {
     id: string;
+    temporaryId: string;
     file: UploadedFieldFile;
     sourcePath: string;
     destinationPath: string;
     reference: string;
+    sha256: string;
+    scanStatus: 'NOT_CONFIGURED' | 'CLEAN' | 'INFECTED' | 'ERROR';
+    scannedAt: Date | null;
 }
 
 async function reserveNextTicketCount(tx: Prisma.TransactionClient, year: number): Promise<number> {
@@ -92,26 +99,57 @@ async function prepareUploadedFiles(
     files: UploadedFieldFile[],
     userId: string
 ): Promise<PreparedAttachment[]> {
+    const limits = attachmentLimits();
+    if (files.length > limits.maxFilesPerTicket) {
+        throw new TicketFormValidationError({ attachments: `A ticket may contain at most ${limits.maxFilesPerTicket} attachments` });
+    }
     const prepared: PreparedAttachment[] = [];
+    let totalBytes = 0;
     for (const file of files) {
         const source = safeTempSource(file.url, userId);
         if (!source) throw new TicketFormValidationError({ attachments: 'An uploaded file reference is invalid or expired' });
-        const info = await stat(source.absolutePath).catch(() => null);
-        if (!info?.isFile() || info.size !== file.size) {
-            throw new TicketFormValidationError({ attachments: `Uploaded file ${file.filename} is missing or invalid` });
+        const temporary = await prisma.temporaryAttachment.findUnique({ where: { path: file.url } });
+        if (!temporary || temporary.userId !== userId || temporary.expiresAt <= new Date()) {
+            throw new TicketFormValidationError({ attachments: 'An uploaded file reference is invalid or expired' });
+        }
+        if (!isAttachmentDownloadable(temporary.scanStatus)) {
+            throw new TicketFormValidationError({ attachments: `Uploaded file ${temporary.filename} did not pass malware scanning` });
+        }
+        const [info, buffer] = await Promise.all([
+            stat(source.absolutePath).catch(() => null),
+            readFile(source.absolutePath).catch(() => null),
+        ]);
+        if (!info?.isFile() || !buffer || info.size !== temporary.size) {
+            throw new TicketFormValidationError({ attachments: `Uploaded file ${temporary.filename} is missing or invalid` });
+        }
+        const checksum = createHash('sha256').update(buffer).digest('hex');
+        if (checksum !== temporary.sha256) {
+            throw new TicketFormValidationError({ attachments: `Uploaded file ${temporary.filename} failed its integrity check` });
+        }
+        totalBytes += temporary.size;
+        if (totalBytes > limits.maxBytesPerTicket) {
+            throw new TicketFormValidationError({ attachments: 'The combined attachment size exceeds the ticket limit' });
         }
         const location = privateAttachmentLocation(ticketId, source.filename);
         prepared.push({
             id: randomUUID(),
-            file,
+            temporaryId: temporary.id,
+            file: {
+                url: temporary.path,
+                filename: temporary.filename,
+                mimetype: temporary.detectedMimetype,
+                size: temporary.size,
+            },
             sourcePath: source.absolutePath,
             destinationPath: location.absolutePath,
             reference: location.reference,
+            sha256: temporary.sha256,
+            scanStatus: temporary.scanStatus,
+            scannedAt: temporary.scannedAt,
         });
     }
     return prepared;
 }
-
 async function restoreMovedFiles(files: PreparedAttachment[]): Promise<void> {
     for (const file of [...files].reverse()) {
         try {
@@ -144,7 +182,7 @@ function replaceUploadedUrls(
 }
 
 export async function createTicketFromResolvedTemplate(options: CreateTicketOptions) {
-    const { actor, requester, input, source } = options;
+    const { actor, requester, input, source, apiClient } = options;
     if (source === 'web') {
         if ((actor.role === Role.AGENT || actor.role === Role.ADMIN)
             && !(await canAccessQueue(actor.id, actor.role, input.queueId))) {
@@ -162,7 +200,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
     if (input.idempotencyKey) {
         const existing = await prisma.ticket.findFirst({
             where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
-            include: { queue: true, requester: true, assignee: true },
+            include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
         });
         if (existing) return { ticket: existing, replayed: true };
     }
@@ -221,7 +259,6 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     queueId: input.queueId,
                     categoryId: input.categoryId,
                     requesterId: requester.id,
-                    assigneeId: null,
                     dueAt,
                     resolvedTemplateId: resolved.template.id,
                     resolvedTemplateVersion: resolved.template.version,
@@ -238,8 +275,15 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
             }
 
             if (preparedAttachments.length > 0) {
+                const limits = attachmentLimits();
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(1449756210)`;
+                const globalUsage = await tx.attachment.aggregate({ where: { blobRemovedAt: null }, _sum: { size: true } });
+                const incomingBytes = preparedAttachments.reduce((total, item) => total + item.file.size, 0);
+                if ((globalUsage._sum.size ?? 0) + incomingBytes > limits.globalMaxBytes) {
+                    throw new TicketFormValidationError({ attachments: 'Global attachment storage limit reached' });
+                }
                 for (const file of preparedAttachments) {
-                    await mkdir(dirname(file.destinationPath), { recursive: true });
+                    await mkdir(dirname(file.destinationPath), { recursive: true, mode: 0o700 });
                     await rename(file.sourcePath, file.destinationPath);
                     movedFiles.push(file);
                 }
@@ -247,11 +291,19 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     data: preparedAttachments.map((item) => ({
                         id: item.id,
                         ticketId,
+                        uploaderId: actor.id,
                         filename: item.file.filename,
                         mimetype: item.file.mimetype,
+                        detectedMimetype: item.file.mimetype,
                         size: item.file.size,
                         path: item.reference,
+                        sha256: item.sha256,
+                        scanStatus: item.scanStatus,
+                        scannedAt: item.scannedAt,
                     })),
+                });
+                await tx.temporaryAttachment.deleteMany({
+                    where: { id: { in: preparedAttachments.map((item) => item.temporaryId) }, userId: actor.id },
                 });
             }
 
@@ -265,13 +317,13 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     userId: requester.id,
                     type: 'CREATED',
                     content: source === 'api' ? `Ticket created via API: ${validated.title}` : `Ticket created: ${validated.title}`,
-                    metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source },
+                    metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source, ...(apiClient ? { apiClientId: apiClient.id, apiClientName: apiClient.name } : {}) },
                 },
             });
 
             return tx.ticket.findUniqueOrThrow({
                 where: { id: ticketId },
-                include: { queue: true, requester: true, assignee: true },
+                include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
             });
         }, { maxWait: 5_000, timeout: 15_000 });
     } catch (error) {
@@ -279,7 +331,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         if (input.idempotencyKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
             const existing = await prisma.ticket.findFirst({
                 where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
-                include: { queue: true, requester: true, assignee: true },
+                include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
             });
             if (existing) return { ticket: existing, replayed: true };
         }
@@ -304,7 +356,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         action: 'ticket.created',
         entity: 'ticket',
         entityId: ticket.id,
-        metadata: { key: ticket.key, queueId: ticket.queueId, categoryId: ticket.categoryId, templateId: resolved.template.id, source },
+        metadata: { key: ticket.key, queueId: ticket.queueId, categoryId: ticket.categoryId, templateId: resolved.template.id, source, ...(apiClient ? { apiClientId: apiClient.id, apiClientName: apiClient.name } : {}) },
     });
 
     logger.info('Ticket created with resolved form template', {

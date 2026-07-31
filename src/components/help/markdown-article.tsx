@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { resolveArticleLink } from '@/lib/help-article-links';
 
 export interface HelpHeading {
     id: string;
@@ -31,9 +32,10 @@ function renderInline(text: string): ReactNode[] {
         if (token.startsWith('`') && token.endsWith('`')) return <code key={index} className="rounded bg-muted px-1.5 py-0.5 text-[0.9em]">{token.slice(1, -1)}</code>;
         const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token);
         if (link) {
-            const href = link[2];
-            const safe = href.startsWith('/') || /^https:\/\//i.test(href);
-            return safe ? <a key={index} href={href} target={href.startsWith('/') ? undefined : '_blank'} rel={href.startsWith('/') ? undefined : 'noreferrer'} className="font-medium text-primary underline decoration-primary/35 underline-offset-4 hover:decoration-primary">{link[1]}</a> : <span key={index}>{link[1]}</span>;
+            const safeLink = resolveArticleLink(link[2]);
+            return safeLink
+                ? <a key={index} href={safeLink.href} target={safeLink.external ? '_blank' : undefined} rel={safeLink.external ? 'noreferrer' : undefined} className="font-medium text-primary underline decoration-primary/35 underline-offset-4 hover:decoration-primary">{link[1]}</a>
+                : <span key={index}>{link[1]}</span>;
         }
         return <span key={index}>{token}</span>;
     });

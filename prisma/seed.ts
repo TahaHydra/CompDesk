@@ -1,4 +1,5 @@
 import {
+    AssignmentSource,
     BuiltInTicketField,
     FormFieldType,
     Prisma,
@@ -8,8 +9,15 @@ import {
     TicketStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 
 const prisma = new PrismaClient();
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const productionSeedOverride = 'I_UNDERSTAND_THIS_CREATES_DEMO_DATA';
+
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_DEMO_SEED !== productionSeedOverride) {
+    throw new Error('Demo seeding is disabled in production. Set ALLOW_PRODUCTION_DEMO_SEED=I_UNDERSTAND_THIS_CREATES_DEMO_DATA only for an intentional disposable demonstration.');
+}
 const SYSTEM_TEMPLATE_ID = '00000000-0000-0000-0000-000000000001';
 const IT_TEMPLATE_ID = '10000000-0000-0000-0000-000000000001';
 const ACCESS_TEMPLATE_ID = '20000000-0000-0000-0000-000000000001';
@@ -219,7 +227,15 @@ async function seedHelpCenter() {
 
 async function main() {
     console.log('Seeding CompDesk demo data...');
-    const password = process.env.SEED_DEFAULT_PASSWORD ?? 'Password123!';
+    const suppliedPassword = process.env.SEED_DEFAULT_PASSWORD;
+    let generatedPassword: string | undefined;
+    let password: string;
+    if (suppliedPassword) {
+        password = suppliedPassword;
+    } else {
+        generatedPassword = `${crypto.randomBytes(12).toString('base64url')}aA1!`;
+        password = generatedPassword;
+    }
     const passwordHash = await bcrypt.hash(password, 12);
     const domain = process.env.SEED_DEMO_DOMAIN ?? 'example.com';
     const accountSpecs = [
@@ -233,17 +249,17 @@ async function main() {
     const users = new Map<string, Awaited<ReturnType<typeof prisma.user.upsert>>>();
     for (const spec of accountSpecs) {
         const user = await prisma.user.upsert({
-            where: { email: spec.email.toLowerCase() },
-            update: { name: spec.name, role: spec.role, passwordHash, isActive: true },
-            create: { ...spec, email: spec.email.toLowerCase(), passwordHash, preferredLanguage: 'en' },
+            where: { normalizedEmail: normalizeEmail(spec.email) },
+            update: { name: spec.name, role: spec.role, passwordHash, isActive: true, isDemo: true },
+            create: { ...spec, email: normalizeEmail(spec.email), normalizedEmail: normalizeEmail(spec.email), passwordHash, isDemo: true, preferredLanguage: 'en' },
         });
-        users.set(spec.email.toLowerCase(), user);
+        users.set(normalizeEmail(spec.email), user);
     }
-    const applicationAdmin = users.get(accountSpecs[1].email.toLowerCase())!;
-    const agent1 = users.get(accountSpecs[2].email.toLowerCase())!;
-    const agent2 = users.get(accountSpecs[3].email.toLowerCase())!;
-    const user1 = users.get(accountSpecs[4].email.toLowerCase())!;
-    const user2 = users.get(accountSpecs[5].email.toLowerCase())!;
+    const applicationAdmin = users.get(normalizeEmail(accountSpecs[1].email))!;
+    const agent1 = users.get(normalizeEmail(accountSpecs[2].email))!;
+    const agent2 = users.get(normalizeEmail(accountSpecs[3].email))!;
+    const user1 = users.get(normalizeEmail(accountSpecs[4].email))!;
+    const user2 = users.get(normalizeEmail(accountSpecs[5].email))!;
     await upsertTemplate(
         SYSTEM_TEMPLATE_ID,
         'Standard Request',
@@ -495,7 +511,7 @@ async function main() {
             description: 'The VPN connects for a few seconds, then disconnects with error 812.',
             status: TicketStatus.OPEN, priority: Priority.HIGH, queueId: itQueue.id,
             categoryId: categories.get(`${itQueue.id}:Network & connectivity`)!.id,
-            requesterId: user1.id, assigneeId: agent1.id, template: itTemplate,
+            requesterId: user1.id, assigneeUserId: agent1.id, template: itTemplate,
             values: { title: 'VPN disconnects after authentication', description: 'The VPN connects for a few seconds, then disconnects with error 812.', priority: 'HIGH', device_type: 'Laptop', work_location: 'Remote', business_impact: 'One person', error_message: 'Error 812 after authentication.' },
         },
         {
@@ -503,7 +519,7 @@ async function main() {
             description: 'Read-only access is required for monthly management reporting.',
             status: TicketStatus.NEW, priority: Priority.NORMAL, queueId: itQueue.id,
             categoryId: categories.get(`${itQueue.id}:Access & permissions`)!.id,
-            requesterId: user2.id, assigneeId: null, template: accessTemplate,
+            requesterId: user2.id, assigneeUserId: null, template: accessTemplate,
             values: { title: 'Access to Finance reporting workspace', description: 'Read-only access is required for monthly management reporting.', priority: 'NORMAL', application_name: 'Finance reporting workspace', access_action: 'Grant access', access_level: 'Read-only', approver: 'Nadia Admin', business_justification: 'Required to prepare the monthly reporting pack.' },
         },
         {
@@ -511,7 +527,7 @@ async function main() {
             description: 'Please provide an employment certificate showing my position and start date.',
             status: TicketStatus.PENDING_AGENT, priority: Priority.NORMAL, queueId: hrQueue.id,
             categoryId: categories.get(`${hrQueue.id}:Employee documents`)!.id,
-            requesterId: user1.id, assigneeId: agent2.id, template: hrTemplate,
+            requesterId: user1.id, assigneeUserId: agent2.id, template: hrTemplate,
             values: { title: 'Employment certificate for rental application', description: 'Please provide an employment certificate showing my position and start date.', priority: 'NORMAL', hr_request_type: 'Employee document', confidential: false },
         },
         {
@@ -519,7 +535,7 @@ async function main() {
             description: 'The approved report has not yet appeared in this month’s payment.',
             status: TicketStatus.PENDING_AGENT, priority: Priority.NORMAL, queueId: financeQueue.id,
             categoryId: categories.get(`${financeQueue.id}:Expenses & reimbursements`)!.id,
-            requesterId: user2.id, assigneeId: agent2.id, template: financeTemplate,
+            requesterId: user2.id, assigneeUserId: agent2.id, template: financeTemplate,
             values: { title: 'Expense report ER-1048 reimbursement', description: 'The approved report has not yet appeared in this month’s payment.', priority: 'NORMAL', finance_request_type: 'Expense reimbursement', reference_number: 'ER-1048', amount: '284.50', currency: 'EUR', cost_center: 'CONSULTING' },
         },
         {
@@ -527,7 +543,7 @@ async function main() {
             description: 'The microphone in meeting room Atlas is not available in Teams.',
             status: TicketStatus.RESOLVED, priority: Priority.HIGH, queueId: itQueue.id,
             categoryId: categories.get(`${itQueue.id}:Hardware & devices`)!.id,
-            requesterId: user1.id, assigneeId: agent1.id, template: itTemplate,
+            requesterId: user1.id, assigneeUserId: agent1.id, template: itTemplate,
             values: { title: 'Teams meeting room microphone not detected', description: 'The microphone in meeting room Atlas is not available in Teams.', priority: 'HIGH', device_type: 'Other', work_location: 'Paris office - Atlas', business_impact: 'Several people', error_message: 'USB conference device was not listed in Teams.' },
         },
     ];
@@ -538,12 +554,24 @@ async function main() {
             create: {
                 key: item.key, title: item.title, description: item.description, status: item.status,
                 priority: item.priority, queueId: item.queueId, categoryId: item.categoryId,
-                requesterId: item.requesterId, assigneeId: item.assigneeId,
+                requesterId: item.requesterId,
                 resolvedTemplateId: item.template.id, resolvedTemplateVersion: item.template.version,
                 formSchemaSnapshot: snapshot(item.template), submittedFormValues: item.values,
                 resolvedAt: item.status === TicketStatus.RESOLVED ? new Date() : null,
             },
         });
+        if (item.assigneeUserId) {
+            await prisma.ticketAssignee.upsert({
+                where: { ticketId_userId: { ticketId: ticket.id, userId: item.assigneeUserId } },
+                update: {},
+                create: {
+                    ticketId: ticket.id,
+                    userId: item.assigneeUserId,
+                    assignedById: item.assigneeUserId,
+                    source: AssignmentSource.AUTOMATION,
+                },
+            });
+        }
         await prisma.ticketWatcher.upsert({
             where: { ticketId_userId: { ticketId: ticket.id, userId: item.requesterId } },
             update: {}, create: { ticketId: ticket.id, userId: item.requesterId },
@@ -580,7 +608,8 @@ async function main() {
         await prisma.appSetting.upsert({ where: { key }, update: {}, create: { key, value } });
     }
     console.log(`Seed complete. Demo super administrator: ${accountSpecs[0].email}`);
-    console.log('Set SEED_DEFAULT_PASSWORD and the SEED_* email variables before using demo seed data outside a disposable environment.');
+    if (generatedPassword) console.log(`Generated demo password (shown once): ${generatedPassword}`);
+    console.log('Demo data is for disposable evaluation only. Remove or deactivate demo accounts before real use.');
 }
 
 main()

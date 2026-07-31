@@ -8,7 +8,7 @@ jest.mock('@/lib/auth', () => ({ auth: mockAuth }));
 jest.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 jest.mock('@/lib/permissions', () => ({ canAccessTicket: jest.fn().mockResolvedValue(true) }));
 jest.mock('@/lib/audit', () => ({ auditLog: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendTicketUpdatedEmail: jest.fn() }));
+jest.mock('@/lib/email', () => ({ sendNewCommentEmail: jest.fn() }));
 jest.mock('@/lib/logger', () => ({ __esModule: true, default: { error: jest.fn() } }));
 
 import { NextRequest } from 'next/server';

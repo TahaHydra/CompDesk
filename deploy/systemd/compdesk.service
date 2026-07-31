@@ -1,0 +1,24 @@
+[Unit]
+Description=CompDesk helpdesk
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=compdesk
+Group=compdesk
+WorkingDirectory=/opt/compdesk
+EnvironmentFile=/etc/compdesk/compdesk.env
+ExecStart=/usr/bin/npm run start:app
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/compdesk /opt/compdesk/public/uploads
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

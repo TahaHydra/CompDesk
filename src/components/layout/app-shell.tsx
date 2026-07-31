@@ -50,7 +50,7 @@ import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
-import { releaseStaleInteractionLock } from '@/lib/browser-interaction';
+import { installInteractionLockGuard } from '@/lib/browser-interaction';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -98,7 +98,7 @@ export default function AppShell({
     children: React.ReactNode;
     initialSession: Session;
 }) {
-    const { data: clientSession, status, update: refreshSession } = useSession();
+    const { data: clientSession, status } = useSession();
     const branding = useBranding();
     const { t, language } = useLanguage();
     const pathname = usePathname();
@@ -118,35 +118,22 @@ export default function AppShell({
     const isAdminUser = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
     const initials = session?.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() ?? '?';
 
-    // Close the mobile drawer whenever the route changes
+    // Close the mobile drawer whenever the route changes. We deliberately do NOT
+    // refresh the session here: next-auth's `update` is re-created whenever the
+    // session or its loading flag changes, so depending on it — and calling it —
+    // creates a refetch/re-render loop that saturates the main thread and makes
+    // every control stop responding a few seconds after load. The SessionProvider
+    // already refreshes on an interval and on window focus.
     useEffect(() => {
         setMobileOpen(false);
-        void refreshSession();
-    }, [pathname, refreshSession]);
-
-    // A modal layer interrupted by client navigation or Edge's back/forward
-    // cache can leave `pointer-events: none` on <body> after it disappears.
-    // Recover only when no real interaction layer is currently open.
-    useEffect(() => {
-        const frame = window.requestAnimationFrame(() => {
-            releaseStaleInteractionLock(document);
-        });
-        return () => window.cancelAnimationFrame(frame);
     }, [pathname]);
 
-    useEffect(() => {
-        const recoverInteraction = () => {
-            window.requestAnimationFrame(() => {
-                releaseStaleInteractionLock(document);
-            });
-        };
-        window.addEventListener('pageshow', recoverInteraction);
-        window.addEventListener('focus', recoverInteraction);
-        return () => {
-            window.removeEventListener('pageshow', recoverInteraction);
-            window.removeEventListener('focus', recoverInteraction);
-        };
-    }, []);
+    // A modal layer (dialog, alert dialog, modal select) interrupted by client
+    // navigation or Edge's back/forward cache can leave `pointer-events: none`
+    // on <body> after it disappears, which silently kills every click on the
+    // page. The guard watches the body style and self-heals on the next frame
+    // whenever that lock leaks, while leaving genuine open modals untouched.
+    useEffect(() => installInteractionLockGuard(window), []);
 
     useEffect(() => {
         if (status === 'unauthenticated') {
@@ -154,6 +141,14 @@ export default function AppShell({
         }
     }, [router, status]);
 
+    useEffect(() => {
+        if (!mobileOpen) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setMobileOpen(false);
+        };
+        document.addEventListener('keydown', closeOnEscape);
+        return () => document.removeEventListener('keydown', closeOnEscape);
+    }, [mobileOpen]);
     // Lock body scroll while the mobile drawer is open
     useEffect(() => {
         if (mobileOpen) {
@@ -207,7 +202,7 @@ export default function AppShell({
         </a>
     );
     return (
-        <div className="flex h-screen overflow-hidden bg-background">
+        <div className="fixed inset-0 flex overflow-hidden bg-background">
             {/* Backdrop for mobile drawer */}
             {mobileOpen && (
                 <div
@@ -219,6 +214,8 @@ export default function AppShell({
 
             {/* Sidebar — off-canvas drawer on mobile, collapsible rail on desktop */}
             <aside
+                id="primary-navigation"
+                aria-label={t('Primary navigation')}
                 className={cn(
                     'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-card transition-transform duration-300 ease-in-out',
                     'lg:static lg:z-auto lg:translate-x-0 lg:transition-[width]',
@@ -282,6 +279,8 @@ export default function AppShell({
                             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
                             onClick={() => setMobileOpen(true)}
                             aria-label={t('Open menu')}
+                            aria-controls="primary-navigation"
+                            aria-expanded={mobileOpen}
                         >
                             <Menu className="h-5 w-5" />
                         </button>
@@ -378,7 +377,17 @@ export default function AppShell({
                                         <Shield className="mr-2 h-4 w-4" /> {t('Profile')}
                                     </Link>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer text-red-500 focus:text-red-500">
+                                <DropdownMenuItem
+                                    onSelect={(event) => {
+                                        // Take signout off Radix's select/focus-return path and send
+                                        // it straight to the sign-in page. The default callbackUrl is
+                                        // the current protected route, which bounces through an extra
+                                        // redirect and makes the first click look like it did nothing.
+                                        event.preventDefault();
+                                        void signOut({ callbackUrl: '/auth/signin' });
+                                    }}
+                                    className="cursor-pointer text-red-500 focus:text-red-500"
+                                >
                                     <LogOut className="mr-2 h-4 w-4" />
                                     <span>{t('Sign out')}</span>
                                 </DropdownMenuItem>

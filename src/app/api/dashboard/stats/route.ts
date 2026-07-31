@@ -4,8 +4,9 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
-import { parseDashboardLinks } from '@/lib/dashboard-links';
+import { filterDashboardLinksForQueueAccess, parseDashboardLinks } from '@/lib/dashboard-links';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
+import { broadestTicketView } from '@/lib/ticket-search';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -17,58 +18,33 @@ export async function GET() {
         const role = session.user.role;
 
         let whereClause: Prisma.TicketWhereInput = {};
-
         if (role === 'USER') {
-            // End users see only their own tickets
             whereClause = { requesterId: userId };
-        } else if (role === 'AGENT') {
-            // Agents see tickets in their departments (via groups and direct memberships)
-            const [groupDepts, directDepts] = await Promise.all([
-                prisma.queueGroup.findMany({
-                    where: {
-                        group: { members: { some: { userId } } },
-                        role: 'agent',
-                    },
-                    select: { queueId: true },
-                }),
-                prisma.queueMember.findMany({
-                    where: { userId, role: 'agent' },
-                    select: { queueId: true },
-                })
-            ]);
-            const deptIds = [...new Set([
-                ...groupDepts.map((d: { queueId: string }) => d.queueId),
-                ...directDepts.map((d: { queueId: string }) => d.queueId)
-            ])];
-
-            if (deptIds.length > 0) {
-                whereClause = { queueId: { in: deptIds } };
-            } else {
-                // Agent not assigned to any department — show only assigned
-                whereClause = { assigneeId: userId };
-            }
-        } else if (role === 'ADMIN') {
+        } else if (role !== 'SUPER_ADMIN') {
             const departmentIds = await getQueueInboxQueueIds(userId, role);
             whereClause = departmentIds?.length
                 ? { queueId: { in: departmentIds } }
                 : { queueId: { in: ['__none__'] } };
         }
-        // SUPER_ADMIN: no filter, see all tickets
-
+        const activeWhereClause: Prisma.TicketWhereInput = {
+            AND: [whereClause, { status: { not: 'WITHDRAWN' } }],
+        };
         const dashboardLinksEnabled = await getFeatureFlag('feature_dashboard_links_enabled');
-
         const [total, open, pending, resolved, urgent, recentTickets, escalated, dashboardLinksSetting] = await Promise.all([
-            prisma.ticket.count({ where: whereClause }),
-            prisma.ticket.count({ where: { ...whereClause, status: { in: ['NEW', 'OPEN'] } } }),
-            prisma.ticket.count({ where: { ...whereClause, status: { in: ['PENDING_USER', 'PENDING_AGENT'] } } }),
-            prisma.ticket.count({ where: { ...whereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
-            prisma.ticket.count({ where: { ...whereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
+            prisma.ticket.count({ where: activeWhereClause }),
+            prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['NEW', 'OPEN'] } } }),
+            prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['PENDING_USER', 'PENDING_AGENT'] } } }),
+            prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
+            prisma.ticket.count({ where: { ...activeWhereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
             prisma.ticket.findMany({
-                where: whereClause,
+                where: activeWhereClause,
                 include: {
                     queue: { select: { name: true } },
                     requester: { select: { name: true } },
-                    assignee: { select: { name: true } },
+                    assignments: {
+                        select: { user: { select: { id: true, name: true } } },
+                        orderBy: { assignedAt: 'asc' },
+                    },
                 },
                 orderBy: { updatedAt: 'desc' },
                 take: 5,
@@ -76,7 +52,7 @@ export async function GET() {
             // Count escalated tickets (escalation level > 0 and not resolved)
             prisma.ticket.count({
                 where: {
-                    ...whereClause,
+                    ...activeWhereClause,
                     escalationLevel: { gt: 0 },
                     status: { notIn: ['CLOSED', 'RESOLVED'] },
                 },
@@ -86,14 +62,24 @@ export async function GET() {
                 : Promise.resolve(null)
         ]);
 
-        const customLinks = dashboardLinksEnabled
+        const parsedLinks = dashboardLinksEnabled
             ? parseDashboardLinks(dashboardLinksSetting?.value)
             : [];
+        const allowedTicketFormQueueIds = role === 'SUPER_ADMIN'
+            ? null
+            : role === 'USER'
+                ? (await prisma.queue.findMany({
+                    where: { isActive: true, isPublic: true },
+                    select: { id: true },
+                })).map((queue) => queue.id)
+                : await getQueueInboxQueueIds(userId, role) ?? [];
+        const customLinks = filterDashboardLinksForQueueAccess(parsedLinks, allowedTicketFormQueueIds);
 
-return NextResponse.json({
+        return NextResponse.json({
             stats: { total, open, pending, resolved, urgent, escalated },
             recentTickets,
             customLinks,
+            ticketView: broadestTicketView(role),
         });
     } catch (error) {
         logger.error('Failed to fetch dashboard stats', { error });

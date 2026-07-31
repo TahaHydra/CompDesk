@@ -1,48 +1,12 @@
-import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import {
+    brandingConfigSchema,
+    type BrandingAssetField,
+    type BrandingConfig,
+} from '@/lib/branding-schema';
 
-const assetPathSchema = z.string().max(500).refine(
-    (value) => value === '' || /^\/uploads\/branding\/[0-9a-f-]{36}\.(?:png|jpg|webp|gif|ico)$/.test(value),
-    'Brand assets must be uploaded through the branding asset endpoint'
-);
-
-const optionalEmailSchema = z.string().max(254).refine(
-    (value) => value === '' || z.string().email().safeParse(value).success,
-    'Enter a valid support email address'
-);
-
-export const brandingConfigSchema = z.object({
-    applicationName: z.string().trim().min(1).max(80),
-    shortApplicationName: z.string().trim().min(1).max(24),
-    subtitle: z.string().trim().max(120),
-    description: z.string().trim().max(500),
-    mainLogoUrl: assetPathSchema,
-    compactLogoUrl: assetPathSchema,
-    lightLogoUrl: assetPathSchema,
-    darkLogoUrl: assetPathSchema,
-    faviconUrl: assetPathSchema,
-    primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a six-digit hex color'),
-    accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a six-digit hex color'),
-    loginHeading: z.string().trim().min(1).max(120),
-    loginDescription: z.string().trim().max(300),
-    loginBackgroundImageUrl: assetPathSchema,
-    supportEmail: optionalEmailSchema,
-    footerText: z.string().trim().max(300),
-    showDemoAccounts: z.boolean(),
-    demoAccountInfo: z.string().trim().max(1000),
-    showLocalLogin: z.boolean(),
-    showMicrosoftLogin: z.boolean(),
-    microsoftButtonText: z.string().trim().min(1).max(80),
-});
-
-export type BrandingConfig = z.infer<typeof brandingConfigSchema>;
-export type BrandingAssetField =
-    | 'mainLogoUrl'
-    | 'compactLogoUrl'
-    | 'lightLogoUrl'
-    | 'darkLogoUrl'
-    | 'faviconUrl'
-    | 'loginBackgroundImageUrl';
+export { brandingConfigSchema } from '@/lib/branding-schema';
+export type { BrandingAssetField, BrandingConfig } from '@/lib/branding-schema';
 
 export interface PublicBranding extends BrandingConfig {
     microsoftLoginConfigured: boolean;
@@ -140,6 +104,9 @@ export async function getPublicBranding(): Promise<PublicBranding> {
 }
 
 export async function saveBrandingConfig(input: BrandingConfig): Promise<BrandingConfig> {
+    if (!input.showLocalLogin && (!input.showMicrosoftLogin || !process.env.AZURE_AD_CLIENT_ID || !process.env.AZURE_AD_CLIENT_SECRET || !process.env.AZURE_AD_TENANT_ID)) {
+        throw new Error('Local login can be disabled only while Microsoft login is enabled and configured in the running application.');
+    }
     const config = brandingConfigSchema.parse(input);
     const storedConfig = { ...config };
     delete (storedConfig as Partial<BrandingConfig>).showLocalLogin;

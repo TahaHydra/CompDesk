@@ -2,14 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches-ignore: [gh-pages]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  validate:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -29,6 +29,8 @@ jobs:
       DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/compdesk_ci?schema=public
       AUTH_URL: http://localhost:3000
       AUTH_SECRET: ci-only-stable-auth-secret-32-characters
+      APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      NODE_ENV: test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -36,5 +38,155 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run db:generate
       - run: npm run db:migrate:prod
-      - run: npm run verify
+      - run: npx prisma migrate status
+      - run: npm run test:migration:upgrade
+        env:
+          MIGRATION_TEST_DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/postgres
+      - run: npm run test:integration:entra
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:ci
+      - run: npm run build
+      - run: npm audit --omit=dev
+
+  setup-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: compdesk_setup
+          POSTGRES_PASSWORD: compdesk_setup_ci
+          POSTGRES_DB: compdesk_setup_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compdesk_setup -d compdesk_setup_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      E2E_DATABASE_URL: postgresql://compdesk_setup:compdesk_setup_ci@localhost:5432/compdesk_setup_ci?sslmode=disable
+      DATABASE_URL: postgresql://compdesk_setup:compdesk_setup_ci@localhost:5432/compdesk_setup_ci?schema=public
+      AUTH_URL: http://127.0.0.1:3000
+      AUTH_SECRET: ci-only-stable-auth-secret-32-characters
+      APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: setup-e2e-artifacts
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
+  backup-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: compdesk_restore
+          POSTGRES_PASSWORD: compdesk_restore_ci
+          POSTGRES_DB: compdesk_restore_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compdesk_restore -d compdesk_restore_source"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://compdesk_restore:compdesk_restore_ci@localhost:5432/compdesk_restore_source?schema=public
+      RESTORE_TEST_DATABASE_URL: postgresql://compdesk_restore:compdesk_restore_ci@localhost:5432/postgres?schema=public
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Configure backup rehearsal paths
+        shell: bash
+        run: |
+          echo "COMPDESK_ENV_FILE=$RUNNER_TEMP/compdesk.env" >> "$GITHUB_ENV"
+          echo "DATABASE_CA_FILE=$RUNNER_TEMP/database-ca.pem" >> "$GITHUB_ENV"
+          echo "COMPDESK_BACKUP_DIR=$RUNNER_TEMP/backups" >> "$GITHUB_ENV"
+          echo "ATTACHMENT_STORAGE_DIR=$RUNNER_TEMP/attachments" >> "$GITHUB_ENV"
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: npm ci
+      - run: npm run db:migrate:prod
+      - name: Create recoverable fixture files
+        run: |
+          install -d "$ATTACHMENT_STORAGE_DIR" public/uploads
+          printf 'attachment fixture\n' > "$ATTACHMENT_STORAGE_DIR/release-fixture.txt"
+          printf 'upload fixture\n' > public/uploads/release-fixture.txt
+          printf 'DATABASE_URL="%s"\nAUTH_SECRET="restore-rehearsal-secret"\nDATABASE_CA_FILE="%s"\n' "$DATABASE_URL" "$DATABASE_CA_FILE" > "$COMPDESK_ENV_FILE"
+          printf '%s\n' '-----BEGIN CERTIFICATE-----' 'RESTORE-REHEARSAL-ONLY' '-----END CERTIFICATE-----' > "$DATABASE_CA_FILE"
+          chmod 600 "$COMPDESK_ENV_FILE" "$DATABASE_CA_FILE"
+      - run: npm run backup
+      - name: Verify and restore the recovery set
+        run: |
+          backup_dir="$(find "$COMPDESK_BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          node scripts/verify-backup.mjs "$backup_dir"
+          npm run backup:rehearse -- "$backup_dir"
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      COMPDESK_VERSION: ci
+      POSTGRES_DB: compdesk_ci
+      POSTGRES_USER: compdesk
+      POSTGRES_PASSWORD: compose-ci-only
+      DATABASE_URL: postgresql://compdesk:compose-ci-only@database.example:5432/compdesk_ci?schema=public
+      AUTH_URL: https://helpdesk.example.com
+      AUTH_SECRET: ci-only-stable-auth-secret-32-characters
+      APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v5
+      # Canonical unified stack, its local-build override, and every
+      # deprecated/adjacent Compose file must all resolve cleanly.
+      - run: docker compose config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.build.yml config --quiet
+      - run: docker compose -f docker-compose.external-db.yml config --quiet
+      - run: docker compose -f docker-compose.legacy.yml config --quiet
+      - run: docker compose -f docker-compose.setup.yml config --quiet
+      # Builds once; every check below reuses this same image. (No BuildKit
+      # cache is configured for this job, so this is already a from-scratch
+      # build on the fresh GitHub-hosted runner — a second --no-cache
+      # rebuild here would not validate anything this one doesn't.)
+      - run: docker build -t compdesk-ci .
+      - name: config-init fixes ownership on fresh uploads/attachments/config volumes
+        run: >-
+          docker run --rm --user root
+          -e COMPDESK_CHOWN_PATHS=/config:/app/public/uploads:/app/storage/attachments
+          -e COMPDESK_CONFIG_DIR=/config
+          -e COMPDESK_PGDATA_CHECK_DIR=/pgdata-check
+          -v compdesk_ci_uploads:/app/public/uploads
+          -v compdesk_ci_attachments:/app/storage/attachments
+          -v compdesk_ci_config:/config
+          -v compdesk_ci_pgdata:/pgdata-check:ro
+          compdesk-ci node scripts/config-init.mjs
+      - run: >-
+          docker run --rm
+          -v compdesk_ci_uploads:/uploads
+          -v compdesk_ci_attachments:/attachments
+          -v compdesk_ci_config:/config
+          alpine:3.22 sh -c
+          'test "$(stat -c %u:%g /uploads)" = 1001:1001 && test "$(stat -c %u:%g /attachments)" = 1001:1001 && test "$(stat -c %u:%g /config)" = 1001:1001 && test "$(stat -c %a /config)" = 700'
+      - run: >-
+          docker run --rm --user 1001:1001
+          -v compdesk_ci_uploads:/uploads -v compdesk_ci_attachments:/attachments -v compdesk_ci_config:/config
+          alpine:3.22 sh -c 'test -w /uploads && test -w /attachments && test -w /config && touch /uploads/runtime-write /attachments/runtime-write'

@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { Priority, Severity, TicketStatus } from '@prisma/client';
+import { attachmentLimits } from '@/lib/attachment-security';
 
 const uploadedFileSchema = z.object({
     url: z.string().regex(/^temporary\/[0-9a-f-]{36}\/[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/, 'Invalid temporary file reference'),
     filename: z.string().trim().min(1).max(255),
     mimetype: z.string().trim().min(1).max(120),
-    size: z.number().int().min(0).max(10 * 1024 * 1024),
+    size: z.number().int().positive().max(attachmentLimits().maxFileBytes),
 });
 
 export const createTicketSchema = z.object({
@@ -24,16 +25,19 @@ export const createTicketSchema = z.object({
 }).strict();
 
 export const updateTicketSchema = z.object({
+    expectedVersion: z.number().int().positive(),
     title: z.string().min(3).max(200).optional(),
     description: z.string().max(10000).optional(),
     status: z.nativeEnum(TicketStatus).optional(),
     priority: z.nativeEnum(Priority).optional(),
     severity: z.nativeEnum(Severity).nullable().optional(),
     categoryId: z.string().uuid().nullable().optional(),
-    assigneeId: z.string().uuid().nullable().optional(),
     queueId: z.string().uuid().optional(),
-    tagIds: z.array(z.string().uuid()).optional(),
-});
+    tagIds: z.array(z.string().uuid()).max(100).optional(),
+}).strict().refine(
+    (value) => Object.keys(value).some((key) => key !== 'expectedVersion'),
+    { message: 'At least one ticket field is required' }
+);
 
 export const createCommentSchema = z.object({
     content: z.string().min(1, 'Comment cannot be empty').max(10000),

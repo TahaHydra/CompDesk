@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
+import { AssigneeSummary } from '@/components/tickets/assignee-summary';
 import type { DashboardLink } from '@/lib/dashboard-links';
 
 interface RecentTicket {
@@ -32,13 +33,14 @@ interface RecentTicket {
     createdAt: string;
     slaBreached?: boolean;
     requester?: { name: string } | null;
-    assignee?: { name: string } | null;
+    assignments?: Array<{ user: { id: string; name: string } }>;
 }
 
 interface DashboardData {
     stats: { total: number; open: number; pending: number; resolved: number; urgent: number; escalated: number };
     recentTickets: RecentTicket[];
     customLinks: DashboardLink[];
+    ticketView: 'my' | 'queue' | 'all';
 }
 
 export default function DashboardPage() {
@@ -57,12 +59,14 @@ export default function DashboardPage() {
     const stats = data?.stats ?? { total: 0, open: 0, pending: 0, resolved: 0, urgent: 0, escalated: 0 };
     const recentTickets = data?.recentTickets ?? [];
     const customLinks = data?.customLinks ?? [];
+    const ticketView = data?.ticketView ?? 'my';
+    const ticketHref = (filters = '') => `/tickets?view=${ticketView}${filters}`;
     const statCards = [
-        { label: 'Total Tickets', value: stats.total, icon: Ticket, className: 'text-primary', href: '/tickets?view=all' },
-        { label: 'Open', value: stats.open, icon: AlertCircle, className: 'text-sky-700 dark:text-sky-300', href: '/tickets?view=all&status=OPEN' },
-        { label: 'Pending', value: stats.pending, icon: Clock, className: 'text-amber-700 dark:text-amber-300', href: '/tickets?view=all&status=PENDING_USER' },
-        { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, className: 'text-emerald-700 dark:text-emerald-300', href: '/tickets?view=all&status=RESOLVED' },
-        { label: 'Urgent', value: stats.urgent, icon: Flame, className: 'text-rose-700 dark:text-rose-300', href: '/tickets?view=all&priority=URGENT' },
+        { label: 'Total Tickets', value: stats.total, icon: Ticket, className: 'text-primary', href: ticketHref() },
+        { label: 'Open', value: stats.open, icon: AlertCircle, className: 'text-sky-700 dark:text-sky-300', href: ticketHref('&status=OPEN') },
+        { label: 'Pending', value: stats.pending, icon: Clock, className: 'text-amber-700 dark:text-amber-300', href: ticketHref('&status=pending') },
+        { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, className: 'text-emerald-700 dark:text-emerald-300', href: ticketHref('&status=RESOLVED,CLOSED') },
+        { label: 'Urgent', value: stats.urgent, icon: Flame, className: 'text-rose-700 dark:text-rose-300', href: ticketHref('&priority=URGENT') },
     ];
     const dateFormatter = new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-GB', { dateStyle: 'short' });
 
@@ -91,19 +95,15 @@ export default function DashboardPage() {
                 <section className="space-y-4">
                     <h2 className="flex items-center gap-2 text-lg font-semibold"><LinkIcon className="h-5 w-5 text-primary" />{t('Quick Links')}</h2>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        {customLinks.map((link) => (
-                            <a href={link.url} target="_blank" rel="noopener noreferrer" key={`${link.title}:${link.url}`} className="group block">
-                                <Card className="h-full border shadow-sm transition-colors hover:border-primary/45">
-                                    <CardContent className="flex items-center gap-3 p-4">
-                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/35">
-                                            {link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}
-                                        </div>
-                                        <p className="min-w-0 flex-1 truncate text-sm font-medium">{link.title}</p>
-                                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                                    </CardContent>
-                                </Card>
-                            </a>
-                        ))}
+                        {customLinks.map((link) => {
+                            const content = <Card className="h-full border shadow-sm transition-colors hover:border-primary/45"><CardContent className="flex items-center gap-3 p-4"><div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/35">{link.iconUrl ? <Image src={link.iconUrl} alt="" width={32} height={32} className="h-8 w-8 object-contain" unoptimized /> : <LinkIcon className="h-4 w-4 text-muted-foreground" />}</div><p className="min-w-0 flex-1 truncate text-sm font-medium">{link.title}</p><ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" /></CardContent></Card>;
+                            if (link.type === 'ticket_form') {
+                                const params = new URLSearchParams({ queueId: link.queueId });
+                                if (link.categoryId) params.set('categoryId', link.categoryId);
+                                return <Link href={`/tickets/new?${params}`} key={`ticket_form:${link.queueId}:${link.categoryId ?? ''}`} className="group block">{content}</Link>;
+                            }
+                            return <a href={link.url} target="_blank" rel="noopener noreferrer" key={`external:${link.url}`} className="group block">{content}</a>;
+                        })}
                     </div>
                 </section>
             ) : null}
@@ -124,11 +124,11 @@ export default function DashboardPage() {
                                 <thead><tr className="border-b bg-muted/35"><Header>{t('ID')}</Header><Header>{t('Title')}</Header><Header className="hidden md:table-cell">{t('Requester')}</Header><Header className="hidden lg:table-cell">{t('Assignee')}</Header><Header>{t('Status')}</Header><Header className="hidden sm:table-cell">{t('Priority')}</Header><Header className="hidden lg:table-cell">{t('Date')}</Header></tr></thead>
                                 <tbody className="divide-y">
                                     {recentTickets.map((ticket) => (
-                                        <tr key={ticket.id} className="cursor-pointer transition-colors hover:bg-muted/30" onClick={() => window.location.href = `/tickets/${ticket.id}`}>
+                                        <tr key={ticket.id} className="transition-colors hover:bg-muted/30">
                                             <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td>
-                                            <td className="max-w-[200px] truncate px-4 py-3 font-medium">{ticket.title}</td>
+                                            <td className="max-w-[200px] px-4 py-3 font-medium"><Link href={`/tickets/${ticket.id}`} className="block truncate rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{ticket.title}</Link></td>
                                             <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{ticket.requester?.name ?? '—'}</td>
-                                            <td className="hidden px-4 py-3 lg:table-cell">{ticket.assignee?.name ?? <span className="text-xs font-medium text-amber-700 dark:text-amber-300">{t('Unassigned')}</span>}</td>
+                                            <td className="hidden px-4 py-3 lg:table-cell"><AssigneeSummary assignees={(ticket.assignments ?? []).map((assignment) => assignment.user)} /></td>
                                             <td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>{ticket.status.replaceAll('_', ' ')}</Badge></td>
                                             <td className="hidden px-4 py-3 sm:table-cell"><Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>{ticket.priority}</Badge></td>
                                             <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-muted-foreground lg:table-cell">{dateFormatter.format(new Date(ticket.createdAt))}</td>
