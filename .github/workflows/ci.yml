@@ -32,7 +32,7 @@ jobs:
       APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       NODE_ENV: test
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -74,7 +74,7 @@ jobs:
       AUTH_SECRET: ci-only-stable-auth-secret-32-characters
       APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -113,7 +113,7 @@ jobs:
       RESTORE_TEST_DATABASE_URL: postgresql://compdesk_restore:compdesk_restore_ci@localhost:5432/postgres?schema=public
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -155,7 +155,7 @@ jobs:
       AUTH_SECRET: ci-only-stable-auth-secret-32-characters
       APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # Canonical unified stack, its local-build override, and every
       # deprecated/adjacent Compose file must all resolve cleanly.
       - run: docker compose config --quiet
