@@ -19,7 +19,7 @@ describe('health endpoints', () => {
     it('keeps liveness independent from database readiness', async () => {
         const response = await live();
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ status: 'live' });
+        expect(await response.json()).toEqual({ status: 'live', mode: 'production' });
         expect(response.headers.get('Cache-Control')).toBe('no-store');
     });
 

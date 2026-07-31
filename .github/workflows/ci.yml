@@ -146,6 +146,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     env:
+      COMPDESK_VERSION: ci
       POSTGRES_DB: compdesk_ci
       POSTGRES_USER: compdesk
       POSTGRES_PASSWORD: compose-ci-only
@@ -155,21 +156,37 @@ jobs:
       APP_SETTINGS_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@v5
+      # Canonical unified stack, its local-build override, and every
+      # deprecated/adjacent Compose file must all resolve cleanly.
       - run: docker compose config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.build.yml config --quiet
       - run: docker compose -f docker-compose.external-db.yml config --quiet
-      - run: docker compose -f docker-compose.setup.yml run --rm volume-init
+      - run: docker compose -f docker-compose.legacy.yml config --quiet
+      - run: docker compose -f docker-compose.setup.yml config --quiet
+      # Builds once; every check below reuses this same image. (No BuildKit
+      # cache is configured for this job, so this is already a from-scratch
+      # build on the fresh GitHub-hosted runner — a second --no-cache
+      # rebuild here would not validate anything this one doesn't.)
+      - run: docker build -t compdesk-ci .
+      - name: config-init fixes ownership on fresh uploads/attachments/config volumes
+        run: >-
+          docker run --rm --user root
+          -e COMPDESK_CHOWN_PATHS=/config:/app/public/uploads:/app/storage/attachments
+          -e COMPDESK_CONFIG_DIR=/config
+          -e COMPDESK_PGDATA_CHECK_DIR=/pgdata-check
+          -v compdesk_ci_uploads:/app/public/uploads
+          -v compdesk_ci_attachments:/app/storage/attachments
+          -v compdesk_ci_config:/config
+          -v compdesk_ci_pgdata:/pgdata-check:ro
+          compdesk-ci node scripts/config-init.mjs
       - run: >-
           docker run --rm
-          -v compdesk_uploads:/uploads
-          -v compdesk_attachments:/attachments
+          -v compdesk_ci_uploads:/uploads
+          -v compdesk_ci_attachments:/attachments
+          -v compdesk_ci_config:/config
           alpine:3.22 sh -c
-          'test "$(stat -c %u:%g /uploads)" = 1001:1001 && test "$(stat -c %u:%g /attachments)" = 1001:1001'
-      - run: >-
-          docker run --rm --user 1000:1000 --group-add 1001
-          -v compdesk_uploads:/uploads -v compdesk_attachments:/attachments
-          alpine:3.22 sh -c 'touch /uploads/setup-write /attachments/setup-write'
+          'test "$(stat -c %u:%g /uploads)" = 1001:1001 && test "$(stat -c %u:%g /attachments)" = 1001:1001 && test "$(stat -c %u:%g /config)" = 1001:1001 && test "$(stat -c %a /config)" = 700'
       - run: >-
           docker run --rm --user 1001:1001
-          -v compdesk_uploads:/uploads -v compdesk_attachments:/attachments
-          alpine:3.22 sh -c 'test -w /uploads && test -w /attachments && rm /uploads/setup-write /attachments/setup-write && touch /uploads/runtime-write /attachments/runtime-write'
-      - run: docker build --no-cache -t compdesk-ci .
+          -v compdesk_ci_uploads:/uploads -v compdesk_ci_attachments:/attachments -v compdesk_ci_config:/config
+          alpine:3.22 sh -c 'test -w /uploads && test -w /attachments && test -w /config && touch /uploads/runtime-write /attachments/runtime-write'

@@ -246,8 +246,15 @@ export function saveNonSecretState(target, input) {
     return safe;
 }
 
-export function deploymentNextSteps({ deploymentMode, applicationUrl }) {
+export function deploymentNextSteps({ deploymentMode, applicationUrl, orchestratorManaged = false }) {
     const loginUrl = `${applicationUrl}/auth/signin`;
+    if (deploymentMode === 'docker-compose' && orchestratorManaged) {
+        return {
+            summary: 'CompDesk is starting. This container automatically switches from setup to production on the same address — no additional command is required.',
+            commands: [],
+            loginUrl,
+        };
+    }
     if (deploymentMode === 'docker-compose') {
         return {
             summary: 'This installer is an ephemeral Docker Compose setup stack. Stop it, then start production so the application can bind the same port.',

@@ -44,6 +44,7 @@ test('states exactly what will be deleted and the required confirmation phrase b
     assert.match(result.output, /pgdata/i);
     assert.match(result.output, /uploads/i);
     assert.match(result.output, /attachments/i);
+    assert.match(result.output, /compdesk_config/i);
     assert.match(result.output, /\.compdesk/);
     assert.match(result.output, /cannot be undone/i);
     assert.ok(result.output.includes('DELETE COMPDESK'), 'must state the exact confirmation phrase up front');

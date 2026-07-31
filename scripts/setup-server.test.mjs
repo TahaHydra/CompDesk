@@ -17,7 +17,7 @@ async function availablePort() {
     });
 }
 
-async function startSetup(stateDirectory) {
+async function startSetup(stateDirectory, envOverrides = {}) {
     const port = await availablePort();
     const child = spawn(process.execPath, [path.join(process.cwd(), 'scripts', 'setup-bootstrap.mjs')], {
         cwd: process.cwd(),
@@ -27,6 +27,7 @@ async function startSetup(stateDirectory) {
             SETUP_HOST: '127.0.0.1',
             SETUP_ALLOW_REMOTE: 'false',
             COMPDESK_SETUP_STATE_DIR: stateDirectory,
+            ...envOverrides,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
@@ -114,6 +115,37 @@ test('completed setup endpoints return gone', async () => {
     }
 });
 
+test('detects a config-init-generated bootstrap database from files instead of legacy env vars', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-bootstrap-file-db-'));
+    fs.mkdirSync(path.join(stateDirectory, 'secrets'), { recursive: true });
+    fs.writeFileSync(path.join(stateDirectory, 'secrets', 'postgres_password'), 'generated-bootstrap-password');
+    fs.writeFileSync(path.join(stateDirectory, 'secrets', 'postgres_identity.json'), JSON.stringify({ user: 'compdesk', db: 'compdesk' }));
+    const running = await startSetup(stateDirectory);
+    try {
+        const origin = `http://127.0.0.1:${running.port}`;
+        const session = await fetch(`${origin}/setup/api/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: origin },
+            body: JSON.stringify({ token: running.token }),
+        });
+        const { csrfToken } = await session.json();
+        const cookie = session.headers.get('set-cookie').split(';')[0];
+        const system = await fetch(`${origin}/setup/api/system`, {
+            headers: { Cookie: cookie, 'X-CSRF-Token': csrfToken },
+        });
+        const body = await system.json();
+        assert.equal(body.bootstrapDatabase.username, 'compdesk');
+        assert.equal(body.bootstrapDatabase.database, 'compdesk');
+        assert.equal(body.bootstrapDatabase.host, 'db');
+        assert.equal(body.bootstrapDatabase.hasCustomCa, false);
+        // Never returns the actual password, even redacted alongside the rest.
+        assert.equal(JSON.stringify(body.bootstrapDatabase).includes('generated-bootstrap-password'), false);
+    } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
+
 test('reopening installed setup shows a friendly HTML page for browsers and plain JSON for API clients', async () => {
     const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-installed-'));
     fs.writeFileSync(path.join(stateDirectory, 'installation.json'), JSON.stringify({
@@ -136,6 +168,98 @@ test('reopening installed setup shows a friendly HTML page for browsers and plai
         assert.equal(apiRequest.status, 410);
         assert.equal(apiRequest.headers.get('content-type'), 'application/json; charset=utf-8');
         assert.deepEqual(await apiRequest.json(), { error: 'First-run setup is no longer available.' });
+    } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
+
+
+test('explicit SETUP_PUBLIC_ORIGIN is enforced independently of the listener port', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-explicit-origin-'));
+    const publicOrigin = 'https://helpdesk.example.test';
+    const running = await startSetup(stateDirectory, { SETUP_PUBLIC_ORIGIN: publicOrigin });
+    const socketOrigin = `http://127.0.0.1:${running.port}`;
+    try {
+        const accepted = await fetch(`${socketOrigin}/setup/api/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: publicOrigin },
+            body: JSON.stringify({ token: running.token }),
+        });
+        assert.equal(accepted.status, 200);
+    } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
+
+test('setup session rejects a missing Origin and a malformed Host header', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-invalid-origin-'));
+    const running = await startSetup(stateDirectory);
+    const origin = `http://127.0.0.1:${running.port}`;
+    try {
+        const missingOrigin = await fetch(`${origin}/setup/api/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: running.token }),
+        });
+        assert.equal(missingOrigin.status, 403);
+
+        const malformedHostResponse = await new Promise((resolve, reject) => {
+            const socket = net.createConnection({ host: '127.0.0.1', port: running.port }, () => {
+                socket.write(`POST /setup/api/session HTTP/1.1\r\nHost: bad/host\r\nOrigin: http://bad/host\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`);
+            });
+            let response = '';
+            socket.on('data', (chunk) => { response += chunk.toString(); });
+            socket.on('end', () => resolve(response));
+            socket.on('error', reject);
+        });
+        assert.match(malformedHostResponse, /^HTTP\/1\.1 403/m);
+    } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
+
+test('untrusted forwarded origin is ignored', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-untrusted-proxy-'));
+    const running = await startSetup(stateDirectory);
+    const origin = `http://127.0.0.1:${running.port}`;
+    try {
+        const response = await fetch(`${origin}/setup/api/session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Origin: 'https://proxy.example.test',
+                'X-Forwarded-Host': 'proxy.example.test',
+                'X-Forwarded-Proto': 'https',
+            },
+            body: JSON.stringify({ token: running.token }),
+        });
+        assert.equal(response.status, 403);
+    } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
+
+test('trusted forwarded origin is accepted only when explicitly enabled', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-trusted-proxy-'));
+    const running = await startSetup(stateDirectory, { SETUP_TRUST_PROXY: 'true' });
+    const socketOrigin = `http://127.0.0.1:${running.port}`;
+    const publicOrigin = 'https://proxy.example.test';
+    try {
+        const response = await fetch(`${socketOrigin}/setup/api/session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Origin: publicOrigin,
+                'X-Forwarded-Host': 'proxy.example.test',
+                'X-Forwarded-Proto': 'https',
+            },
+            body: JSON.stringify({ token: running.token }),
+        });
+        assert.equal(response.status, 200);
     } finally {
         await stop(running.child);
         fs.rmSync(stateDirectory, { recursive: true, force: true });

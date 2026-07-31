@@ -10,6 +10,7 @@ export const DEFAULT_VOLUME_NAMES = {
     pgdata: 'compdesk_pgdata',
     uploads: 'compdesk_uploads',
     attachments: 'compdesk_attachments',
+    config: 'compdesk_config',
 };
 export const RESET_CONFIRMATION_PHRASE = 'DELETE COMPDESK';
 const PGDATA_PROBE_IMAGE = 'alpine:3.22';
@@ -28,6 +29,7 @@ export function resolveVolumeNames(env = process.env) {
         pgdata: env.POSTGRES_VOLUME_NAME || DEFAULT_VOLUME_NAMES.pgdata,
         uploads: env.UPLOADS_VOLUME_NAME || DEFAULT_VOLUME_NAMES.uploads,
         attachments: env.ATTACHMENTS_VOLUME_NAME || DEFAULT_VOLUME_NAMES.attachments,
+        config: env.CONFIG_VOLUME_NAME || DEFAULT_VOLUME_NAMES.config,
     };
 }
 
@@ -128,13 +130,14 @@ export function prepareDockerBootstrap({ stateDirectory, rotateIncomplete = fals
 
 export function planDockerReset({ env = process.env, stateDirectory }) {
     const volumes = resolveVolumeNames(env);
-    const volumeNames = [volumes.pgdata, volumes.uploads, volumes.attachments];
+    const volumeNames = [volumes.pgdata, volumes.uploads, volumes.attachments, volumes.config];
     const projectNames = [CANONICAL_COMPOSE_PROJECT_NAME, ...LEGACY_COMPOSE_PROJECT_NAMES];
     const warning = [
         'This will permanently delete CompDesk Docker resources:',
         `  - PostgreSQL database volume: ${volumes.pgdata}`,
         `  - Uploads volume: ${volumes.uploads}`,
         `  - Attachments volume: ${volumes.attachments}`,
+        `  - Persistent configuration/secrets volume: ${volumes.config}`,
         `  - Generated configuration directory: ${stateDirectory}`,
         `  - Containers and networks for project(s): ${projectNames.join(', ')}`,
         '',

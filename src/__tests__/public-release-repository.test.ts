@@ -39,9 +39,13 @@ describe('public release repository hygiene', () => {
 
     it('keeps PostgreSQL private and requires production database credentials', () => {
         const compose = fs.readFileSync(path.join(repositoryRoot, 'docker-compose.yml'), 'utf8');
-        const databaseService = compose.slice(compose.indexOf('  db:'), compose.indexOf('\n  migrate:'));
+        const databaseService = compose.slice(compose.indexOf('  db:'), compose.indexOf('\n  compdesk:'));
         expect(databaseService).not.toMatch(/\n\s+ports:/);
-        expect(databaseService).toContain('POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?');
+        // The unified stack consumes the PostgreSQL password from a file
+        // written by config-init (never a plaintext Compose environment
+        // variable, never visible in `docker inspect`).
+        expect(databaseService).toContain('POSTGRES_PASSWORD_FILE: /run/compdesk-config/secrets/postgres_password');
+        expect(databaseService).not.toMatch(/\bPOSTGRES_PASSWORD:/);
         expect(compose).not.toContain('compdesk_dev_only');
 
         const developmentCompose = fs.readFileSync(path.join(repositoryRoot, 'docker-compose.dev.yml'), 'utf8');

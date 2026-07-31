@@ -47,7 +47,7 @@ function sequencedRun(scriptByKey) {
     };
 }
 
-function cleanVolumeInspects(volumeNames = [DEFAULT_VOLUME_NAMES.pgdata, DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments]) {
+function cleanVolumeInspects(volumeNames = [DEFAULT_VOLUME_NAMES.pgdata, DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments, DEFAULT_VOLUME_NAMES.config]) {
     return Object.fromEntries(volumeNames.map((name) => [`volume inspect ${name}`, [NOT_FOUND_VOLUME(name)]]));
 }
 
@@ -56,6 +56,10 @@ test('resolves default volume names and honors overrides', () => {
     assert.deepEqual(resolveVolumeNames({ POSTGRES_VOLUME_NAME: 'custom_pgdata' }), {
         ...DEFAULT_VOLUME_NAMES,
         pgdata: 'custom_pgdata',
+    });
+    assert.deepEqual(resolveVolumeNames({ CONFIG_VOLUME_NAME: 'custom_config' }), {
+        ...DEFAULT_VOLUME_NAMES,
+        config: 'custom_config',
     });
 });
 
@@ -196,18 +200,24 @@ for (const state of ['inspection-error', 'probe-error']) {
 test('planDockerReset covers the canonical and legacy project names, every named volume, and the confirmation phrase', () => {
     const plan = planDockerReset({ env: {}, stateDirectory: path.join('tmp', '.compdesk') });
     assert.deepEqual(plan.projectNames, [CANONICAL_COMPOSE_PROJECT_NAME, ...LEGACY_COMPOSE_PROJECT_NAMES]);
-    assert.deepEqual(plan.volumeNames, [DEFAULT_VOLUME_NAMES.pgdata, DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments]);
+    assert.deepEqual(plan.volumeNames, [DEFAULT_VOLUME_NAMES.pgdata, DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments, DEFAULT_VOLUME_NAMES.config]);
     assert.match(plan.warning, /permanently delete/i);
     assert.match(plan.warning, /compdesk_pgdata/);
+    assert.match(plan.warning, /compdesk_config/);
     assert.match(plan.warning, /\.compdesk/);
     assert.ok(plan.warning.includes(RESET_CONFIRMATION_PHRASE));
 });
 
 test('planDockerReset resolves exact environment-overridden volume names, never a substring', () => {
-    const plan = planDockerReset({ env: { POSTGRES_VOLUME_NAME: 'override_pgdata_volume' }, stateDirectory: '.compdesk' });
-    assert.deepEqual(plan.volumeNames, ['override_pgdata_volume', DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments]);
+    const plan = planDockerReset({
+        env: { POSTGRES_VOLUME_NAME: 'override_pgdata_volume', CONFIG_VOLUME_NAME: 'override_config_volume' },
+        stateDirectory: '.compdesk',
+    });
+    assert.deepEqual(plan.volumeNames, ['override_pgdata_volume', DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments, 'override_config_volume']);
     assert.match(plan.warning, /override_pgdata_volume/);
+    assert.match(plan.warning, /override_config_volume/);
     assert.doesNotMatch(plan.warning, /compdesk_pgdata/);
+    assert.doesNotMatch(plan.warning, /compdesk_config/);
 });
 
 test('executeDockerReset: happy path removes every discovered resource, verifies absence, and only then removes .compdesk', () => {
@@ -225,6 +235,7 @@ test('executeDockerReset: happy path removes every discovered resource, verifies
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.pgdata}`]: [{ status: 0, stdout: '' }],
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.uploads}`]: [{ status: 0, stdout: '' }],
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.attachments}`]: [{ status: 0, stdout: '' }],
+            [`volume rm -f ${DEFAULT_VOLUME_NAMES.config}`]: [{ status: 0, stdout: '' }],
             ...cleanVolumeInspects(),
         };
         const result = executeDockerReset(plan, { run: sequencedRun(script) });
@@ -282,7 +293,7 @@ test('executeDockerReset: a real volume removal failure is reported and blocks s
         const plan = planDockerReset({ env: {}, stateDirectory });
         const script = {
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.pgdata}`]: [{ status: 1, stderr: 'Error response from daemon: volume is in use - [abc123]' }],
-            ...cleanVolumeInspects([DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments]),
+            ...cleanVolumeInspects([DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments, DEFAULT_VOLUME_NAMES.config]),
             [`volume inspect ${DEFAULT_VOLUME_NAMES.pgdata}`]: [{ status: 0, stdout: '[]' }],
         };
         const result = executeDockerReset(plan, { run: sequencedRun(script) });
@@ -348,7 +359,7 @@ test('executeDockerReset: final verification catches a volume still present desp
     const script = {
         [`volume rm -f ${DEFAULT_VOLUME_NAMES.pgdata}`]: [{ status: 0, stdout: '' }],
         [`volume inspect ${DEFAULT_VOLUME_NAMES.pgdata}`]: [{ status: 0, stdout: '[]' }],
-        ...cleanVolumeInspects([DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments]),
+        ...cleanVolumeInspects([DEFAULT_VOLUME_NAMES.uploads, DEFAULT_VOLUME_NAMES.attachments, DEFAULT_VOLUME_NAMES.config]),
     };
     const result = executeDockerReset(plan, { run: sequencedRun(script), existsSync: () => false });
     assert.equal(result.ok, false);
@@ -368,6 +379,7 @@ test('executeDockerReset: a configuration-removal failure after successful Docke
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.pgdata}`]: [{ status: 0, stdout: '' }],
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.uploads}`]: [{ status: 0, stdout: '' }],
             [`volume rm -f ${DEFAULT_VOLUME_NAMES.attachments}`]: [{ status: 0, stdout: '' }],
+            [`volume rm -f ${DEFAULT_VOLUME_NAMES.config}`]: [{ status: 0, stdout: '' }],
             ...cleanVolumeInspects(),
         };
         const permissionError = Object.assign(new Error('EACCES: permission denied, rmdir'), { code: 'EACCES' });
@@ -447,6 +459,16 @@ test('executeDockerReset: targets only the exact environment-resolved volume nam
     assert.ok(calls.includes('volume inspect override_pgdata_volume'));
     assert.ok(!calls.some((call) => call.includes('compdesk_pgdata')));
     assert.ok(!calls.some((call) => call.startsWith('volume ls')));
+});
+
+test('executeDockerReset: targets only the exact environment-resolved compdesk_config volume name, never a substring match', () => {
+    const plan = planDockerReset({ env: { CONFIG_VOLUME_NAME: 'override_config_volume' }, stateDirectory: path.join('tmp', 'compdesk-config-volume-scope', '.compdesk') });
+    const calls = [];
+    const run = (_command, args) => { calls.push(args.join(' ')); return { status: 0, stdout: '' }; };
+    executeDockerReset(plan, { run, existsSync: () => false });
+    assert.ok(calls.includes('volume rm -f override_config_volume'));
+    assert.ok(calls.includes('volume inspect override_config_volume'));
+    assert.ok(!calls.some((call) => call.includes('compdesk_config')));
 });
 
 test('formatResetOutcome: full success (Docker resources and configuration removed) prints Done and exits 0', () => {

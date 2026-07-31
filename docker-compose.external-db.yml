@@ -36,10 +36,7 @@ x-app-environment: &app-environment
 
 services:
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: setup
+    image: ${COMPDESK_IMAGE:-ghcr.io/tahahydra/compdesk}:${COMPDESK_VERSION:-0.0.0-local}
     restart: 'no'
     environment: *app-environment
     command: ['sh', '-c', 'node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs']
@@ -49,9 +46,7 @@ services:
       - attachments:/app/storage/attachments
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${COMPDESK_IMAGE:-ghcr.io/tahahydra/compdesk}:${COMPDESK_VERSION:-0.0.0-local}
     restart: unless-stopped
     init: true
     depends_on:
