@@ -16,6 +16,9 @@ dist/
 .env.production.local
 .env.development.local
 .env.staging
+.env*.bak
+.env*.lock
+.env*.tmp
 
 # Debug
 npm-debug.log*
@@ -56,11 +59,14 @@ coverage/
 # TypeScript build cache
 *.tsbuildinfo
 
-# Local tooling metadata
-.claude/
-.codex/
-.cursor/
-.windsurf/
-CLAUDE.md
-CLAUDE_*.md
-AGENTS.md
+.compdesk/
+/database-ca.pem
+
+# Browser test artifacts
+playwright-report/
+test-results/
+.playwright/
+/backups/
+
+# Local CI artifacts
+ci-e2e-artifacts/

@@ -7,6 +7,16 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { auditLog } from '@/lib/audit';
 import type { Role } from '@prisma/client';
+import { isLoginMethodEnabled } from '@/lib/login-policy';
+import { scheduleEntraStartupDiagnostic } from '@/lib/entra-diagnostic';
+import { normalizeEmail } from '@/lib/email-identity';
+import { applyLoginFailureDelay, checkLoginThrottle, clearLoginFailures, recordLoginFailure } from '@/lib/login-throttle';
+import { isSessionTokenCurrent } from '@/lib/session-security';
+import { requestSourceIp } from '@/lib/request-ip';
+scheduleEntraStartupDiagnostic();
+
+const DUMMY_PASSWORD_HASH = '$2b$12$VjAsOWYkTDNoqAiLrdLiKe7cDytL3er7DkCV.wXN5TQAXsF3csbLC';
+
 
 declare module 'next-auth' {
     interface Session {
@@ -18,11 +28,13 @@ declare module 'next-auth' {
             image?: string | null;
             role: Role;
             groupIds: string[];
+            sessionVersion: number;
         };
     }
     interface User {
         role?: Role;
         entraObjectId?: string | null;
+        sessionVersion?: number;
     }
 }
 
@@ -32,19 +44,7 @@ declare module 'next-auth' {
         role: Role;
         entraObjectId?: string | null;
         groupIds: string[];
-    }
-}
-
-// Check if local login is enabled via app settings
-async function isLoginMethodEnabled(key: 'login_local_enabled' | 'login_microsoft_enabled'): Promise<boolean> {
-    try {
-        const setting = await prisma.appSetting.findUnique({
-            where: { key },
-        });
-        // Default to true if setting doesn't exist
-        return setting ? setting.value !== 'false' : true;
-    } catch {
-        return true; // Fail open
+        sessionVersion: number;
     }
 }
 
@@ -67,12 +67,15 @@ export const authConfig: NextAuthConfig = {
                         scope: 'openid profile email User.Read',
                     },
                 },
+                // This tenant-specific OIDC provider validates Microsoft-issued tokens before
+                // Auth.js sees the normalized email. Linking avoids duplicate local/Entra users.
+                allowDangerousEmailAccountLinking: true,
                 profile(profile) {
                     return {
                         id: profile.sub,
                         entraObjectId: profile.oid ?? profile.sub,
                         name: profile.name ?? profile.preferred_username,
-                        email: profile.email ?? profile.preferred_username,
+                        email: normalizeEmail(profile.email ?? profile.preferred_username ?? ''),
                         image: null,
                     };
                 },
@@ -86,62 +89,55 @@ export const authConfig: NextAuthConfig = {
                 email: { label: 'Email', type: 'email', placeholder: 'you@example.com' },
                 password: { label: 'Password', type: 'password' },
             },
-            async authorize(credentials) {
+            async authorize(credentials, request) {
                 if (!credentials?.email || !credentials?.password) return null;
 
-                const email = (credentials.email as string).toLowerCase().trim();
-                const password = credentials.password as string;
-
-                // Check if local login is enabled
+                const email = normalizeEmail(String(credentials.email));
+                const password = String(credentials.password);
+                const sourceIp = requestSourceIp(request);
                 const localEnabled = await isLoginMethodEnabled('login_local_enabled');
-                if (!localEnabled) {
-                    return null; // Local login disabled by admin
-                }
+                if (!localEnabled) return null;
 
-                const user = await prisma.user.findUnique({
-                    where: { email },
-                }) as any;
-
-                if (!user || !user.passwordHash) {
-                    // Log failed attempt
-                    auditLog({
+                const throttle = await checkLoginThrottle(email, sourceIp);
+                if (throttle.blocked) {
+                    void auditLog({
                         action: 'auth.login_failed',
                         entity: 'auth',
-                        metadata: { email, reason: !user ? 'user_not_found' : 'no_password_set', method: 'credentials' },
+                        metadata: { email, reason: 'rate_limited', method: 'credentials', retryAfterSeconds: throttle.retryAfterSeconds },
+                        ipAddress: sourceIp,
                     });
+                    await applyLoginFailureDelay(throttle.delayMs);
                     return null;
                 }
 
-                // Check if user is active
-                if (!user.isActive) {
-                    auditLog({
-                        userId: user.id,
+                const user = await prisma.user.findUnique({ where: { normalizedEmail: email } });
+                const isValid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+                if (!user || !user.passwordHash || !user.isActive || !isValid) {
+                    const failure = await recordLoginFailure(email, sourceIp);
+                    void auditLog({
+                        userId: user?.id,
                         action: 'auth.login_failed',
                         entity: 'auth',
-                        metadata: { email, reason: 'account_deactivated', method: 'credentials' },
+                        metadata: {
+                            email,
+                            reason: !user ? 'user_not_found' : !user.passwordHash ? 'no_password_set' : !user.isActive ? 'account_deactivated' : 'invalid_password',
+                            method: 'credentials',
+                            rateLimited: failure.blocked,
+                        },
+                        ipAddress: sourceIp,
                     });
+                    await applyLoginFailureDelay(failure.delayMs);
                     return null;
                 }
 
-                const isValid = await bcrypt.compare(password, user.passwordHash as string);
-                if (!isValid) {
-                    auditLog({
-                        userId: user.id,
-                        action: 'auth.login_failed',
-                        entity: 'auth',
-                        metadata: { email, reason: 'invalid_password', method: 'credentials' },
-                    });
-                    return null;
-                }
-
-                // Log successful local login
-                auditLog({
+                await clearLoginFailures(email, sourceIp);
+                void auditLog({
                     userId: user.id,
                     action: 'auth.login',
                     entity: 'auth',
                     metadata: { method: 'credentials', email },
+                    ipAddress: sourceIp,
                 });
-
                 return {
                     id: user.id,
                     email: user.email,
@@ -149,76 +145,77 @@ export const authConfig: NextAuthConfig = {
                     image: user.image,
                     role: user.role,
                     entraObjectId: user.entraObjectId,
+                    sessionVersion: user.sessionVersion,
                 };
             },
         }),
     ],
     callbacks: {
         async signIn({ user, account }) {
-            if (account?.provider === 'microsoft-entra-id' && !(await isLoginMethodEnabled('login_microsoft_enabled'))) {
-                auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: user.email, reason: 'microsoft_login_disabled', method: 'sso' } });
+            const normalizedEmail = user.email ? normalizeEmail(user.email) : null;
+            if (normalizedEmail) user.email = normalizedEmail;
+            if (account?.provider === 'microsoft-entra-id' && !normalizedEmail) {
+                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { reason: 'missing_email_claim', method: 'sso' } });
                 return false;
             }
-            if (account?.provider === 'microsoft-entra-id' && user.email) {
-                // Upsert user with Entra Object ID
-                const existingUser = await prisma.user.findUnique({
-                    where: { email: user.email },
-                });
-
+            if (account?.provider === 'microsoft-entra-id' && !(await isLoginMethodEnabled('login_microsoft_enabled'))) {
+                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'microsoft_login_disabled', method: 'sso' } });
+                return false;
+            }
+            if (account?.provider === 'microsoft-entra-id' && normalizedEmail) {
+                const existingUser = await prisma.user.findUnique({ where: { normalizedEmail } });
                 if (existingUser) {
-                    // Check if user is active
                     if (!existingUser.isActive) {
-                        auditLog({
+                        void auditLog({
                             userId: existingUser.id,
                             action: 'auth.login_failed',
                             entity: 'auth',
-                            metadata: { email: user.email, reason: 'account_deactivated', method: 'sso' },
+                            metadata: { email: normalizedEmail, reason: 'account_deactivated', method: 'sso' },
                         });
-                        return false; // Block deactivated users
+                        return false;
                     }
-
                     await prisma.user.update({
                         where: { id: existingUser.id },
-                        data: {
-                            entraObjectId: user.entraObjectId,
-                            name: user.name ?? existingUser.name,
-                        },
+                        data: { entraObjectId: user.entraObjectId, name: user.name ?? existingUser.name, email: normalizedEmail },
                     });
-
-                    // Log SSO login
-                    auditLog({
+                    void auditLog({
                         userId: existingUser.id,
                         action: 'auth.login',
                         entity: 'auth',
-                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: user.email },
+                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: normalizedEmail },
                     });
                 } else {
-                    // Log new SSO user creation
-                    auditLog({
+                    void auditLog({
                         action: 'auth.login',
                         entity: 'auth',
-                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: user.email, newUser: true },
+                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: normalizedEmail, newUser: true },
                     });
                 }
             }
             return true;
         },
         async jwt({ token, user }) {
-            // Refresh authorization data on every session read. Roles, active state,
-            // and memberships are security data and must not remain stale in a JWT.
+            const isInitialSignIn = Boolean(user);
             const userId = typeof user?.id === 'string'
                 ? user.id
                 : typeof token.id === 'string' ? token.id : null;
             const email = typeof user?.email === 'string'
-                ? user.email
-                : typeof token.email === 'string' ? token.email : null;
+                ? normalizeEmail(user.email)
+                : typeof token.email === 'string' ? normalizeEmail(token.email) : null;
             if (!userId && !email) return null;
 
             const dbUser = await prisma.user.findUnique({
-                where: userId ? { id: userId } : { email: email! },
+                where: userId ? { id: userId } : { normalizedEmail: email! },
                 include: { groupMemberships: true },
             });
             if (!dbUser?.isActive) return null;
+            if (!isSessionTokenCurrent({
+                isInitialSignIn,
+                tokenSessionVersion: token.sessionVersion,
+                tokenIssuedAtSeconds: token.iat,
+                databaseSessionVersion: dbUser.sessionVersion,
+                credentialsChangedAt: dbUser.credentialsChangedAt,
+            })) return null;
 
             token.id = dbUser.id;
             token.email = dbUser.email;
@@ -227,6 +224,7 @@ export const authConfig: NextAuthConfig = {
             token.role = dbUser.role;
             token.entraObjectId = dbUser.entraObjectId;
             token.groupIds = dbUser.groupMemberships.map((membership) => membership.groupId);
+            token.sessionVersion = dbUser.sessionVersion;
             return token;
         },
         async session({ session, token }) {
@@ -235,6 +233,7 @@ export const authConfig: NextAuthConfig = {
                 session.user.role = token.role as Role;
                 session.user.entraObjectId = token.entraObjectId as string | null;
                 session.user.groupIds = (token.groupIds as string[]) ?? [];
+                session.user.sessionVersion = token.sessionVersion as number;
             }
             return session;
         },

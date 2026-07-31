@@ -267,6 +267,7 @@ Download or remove an attachment subject to ticket authorization.
 - `/api/audit-logs`
 - `/api/settings`, `/api/settings/test-email`, and `/api/settings/quick-link-icons`
 - `/api/api-clients`
+- `/api/webhooks` and `/api/webhooks/[id]/deliveries` (Super Admin only)
 
 All write operations use server-side role checks. Global settings, branding, API clients, groups, audit logs, tags, and user management require Super Admin. Department Admin ticket data is restricted to administered or agent-assigned departments. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.
 
@@ -278,4 +279,4 @@ Enable the external API feature flag and create an API client in Admin → Setti
 - `POST /api/v1/tickets` requires `tickets:write`, accepts `userEmail` plus the same routing/`values` payload, and uses the same template resolver/validator.
 - `POST /api/v1/tickets/[id]/notes` appends an integration note.
 
-Allowed department IDs configured on the API client are independently enforced.
+Department access is default-deny. An empty list grants no access, selected IDs grant only those departments, and global access requires the separate `allowAllQueues` policy. Authentication failures and request limits are PostgreSQL-backed, every request is audited with API-client attribution, and list responses are capped at 50 items per page. See `docs/WEBHOOKS_AND_EXTERNAL_API.md`.

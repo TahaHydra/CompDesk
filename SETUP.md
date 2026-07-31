@@ -180,7 +180,7 @@ Removing `node_modules` and `.next` does not affect PostgreSQL data.
 
 The seed is idempotent and template-aware, but it intentionally creates demo departments, department-owned categories, useful templates, tickets, tags, Help Center content, and accounts. Do not run it on production unless you explicitly want demo data.
 
-Defaults:
+Defaults use generic `example.com` identities. No universal password is defined. If `SEED_DEFAULT_PASSWORD` is absent, the seed generates a cryptographically random password and prints it once to the local console.
 
 ```text
 SEED_DEMO_DOMAIN=example.com
@@ -190,10 +190,9 @@ SEED_AGENT1_EMAIL=agent1@example.com
 SEED_AGENT2_EMAIL=agent2@example.com
 SEED_USER1_EMAIL=user1@example.com
 SEED_USER2_EMAIL=user2@example.com
-SEED_DEFAULT_PASSWORD=Password123!
 ```
 
-For an existing private test environment, point every seed role at the accounts you intend to refresh. The seed updates those accounts' demo role, name, active state, and password. It does not alter unrelated accounts.
+For an isolated private test environment, optionally point every seed role at the accounts you intend to refresh and provide a strong temporary password through the process environment. The seed updates those demo accounts' role, name, active state, and password. It does not alter unrelated accounts. Never persist the seed password in `.env`, shell history, CI logs, or source control.
 
 PowerShell:
 
@@ -224,6 +223,17 @@ npm run db:seed
 ```
 
 The seed assigns the department administrator to all three demo departments, gives each department a matching default Ticket Template, and applies the Access & Permission template to relevant category overrides. Known legacy demo category aliases are renamed in place so referenced tickets retain history. Known misplaced zero-ticket demo categories are removed; referenced categories are archived instead.
+
+## Settings encryption key
+
+Generate the database-settings encryption key once after creating `.env`:
+
+```bash
+npm run generate:settings-key
+```
+
+The command is idempotent: it never prints or overwrites a valid existing key. Restart `npm start` after changing the key. Docker Compose passes the key into the application container. Never generate a new key on every build or startup because existing `enc:v1` SMTP passwords require the original key (or the documented previous rotation key) to decrypt.
+
 ## Upgrading an existing CompDesk database
 
 Never reset the database. Back it up, then use the production migration command:
@@ -242,7 +252,7 @@ Recommended PostgreSQL backup before any production upgrade:
 pg_dump --format=custom --file=compdesk-before-upgrade.dump "$DATABASE_URL"
 ```
 
-For Docker PostgreSQL, use `docker compose exec db pg_dump -U excodesk -d excodesk -Fc` and redirect/copy the output according to your backup procedure.
+For Docker PostgreSQL, use `docker compose exec db pg_dump -U compdesk -d compdesk -Fc` and redirect/copy the output according to your backup procedure.
 
 ## Uploaded files
 

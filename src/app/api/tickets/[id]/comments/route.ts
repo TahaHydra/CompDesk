@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createCommentSchema } from '@/lib/validations';
 import { sanitizeHtml, isAgentOrAbove } from '@/lib/utils';
-import { sendTicketUpdatedEmail } from '@/lib/email';
+import { sendNewCommentEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessTicket } from '@/lib/permissions';
@@ -33,7 +33,13 @@ export async function POST(
             return NextResponse.json({ error: 'Only agents can create internal notes' }, { status: 403 });
         }
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: {
+                requester: { select: { id: true, email: true } },
+                assignments: { include: { user: { select: { id: true, email: true } } } },
+            },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
@@ -43,25 +49,27 @@ export async function POST(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const event = await prisma.timelineEvent.create({
-            data: {
-                ticketId: id,
-                userId: session.user.id,
-                type: isInternal ? 'INTERNAL_NOTE' : 'COMMENT',
-                content: sanitizeHtml(content),
-            },
-            include: {
-                user: { select: { id: true, name: true, image: true } },
-            },
-        });
-
-        // First response tracking
-        if (!ticket.firstResponseAt && isAgentOrAbove(session.user.role) && !isInternal) {
-            await prisma.ticket.update({
-                where: { id },
-                data: { firstResponseAt: new Date() },
+        const isFirstPublicStaffResponse = !ticket.firstPublicResponseAt && isAgentOrAbove(session.user.role) && !isInternal;
+        const event = await prisma.$transaction(async (tx) => {
+            const created = await tx.timelineEvent.create({
+                data: {
+                    ticketId: id,
+                    userId: session.user.id,
+                    type: isInternal ? 'INTERNAL_NOTE' : 'COMMENT',
+                    content: sanitizeHtml(content),
+                },
+                include: {
+                    user: { select: { id: true, name: true, image: true } },
+                },
             });
-        }
+            if (isFirstPublicStaffResponse) {
+                await tx.ticket.updateMany({
+                    where: { id, firstPublicResponseAt: null },
+                    data: { firstPublicResponseAt: new Date(), version: { increment: 1 } },
+                });
+            }
+            return created;
+        });
 
         // Notify watchers (not for internal notes)
         if (!isInternal) {
@@ -69,9 +77,15 @@ export async function POST(
                 where: { ticketId: id, userId: { not: session.user.id } },
                 include: { user: { select: { email: true } } },
             });
-            const emails = watchers.map((w) => w.user.email).filter(Boolean);
+            const watcherEmails = watchers.map((watcher) => watcher.user.email).filter(Boolean);
+            const assigneeEmails = ticket.assignments
+                .filter((assignment) => assignment.user.id !== session.user.id)
+                .map((assignment) => assignment.user.email)
+                .filter(Boolean);
+            const requesterEmails = ticket.requester.id === session.user.id ? [] : [ticket.requester.email];
+            const emails = [...new Set([...watcherEmails, ...assigneeEmails, ...requesterEmails])];
             if (emails.length > 0) {
-                sendTicketUpdatedEmail(emails, ticket.key, ticket.title, 'New Comment', content.substring(0, 200));
+                void sendNewCommentEmail(emails, ticket.key, ticket.title, content.substring(0, 200));
             }
         }
 
@@ -108,8 +122,17 @@ export async function PATCH(
         if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
             return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
         }
+        if (event.deletedAt) {
+            return NextResponse.json({ error: 'Deleted timeline entries are immutable' }, { status: 409 });
+        }
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: {
+                requester: { select: { id: true, email: true } },
+                assignments: { include: { user: { select: { id: true, email: true } } } },
+            },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
@@ -191,8 +214,17 @@ export async function DELETE(
         if (event.type !== 'COMMENT' && event.type !== 'INTERNAL_NOTE') {
             return NextResponse.json({ error: 'System timeline events are immutable' }, { status: 409 });
         }
+        if (event.deletedAt) {
+            return NextResponse.json({ error: 'Timeline entry is already deleted' }, { status: 409 });
+        }
 
-        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const ticket = await prisma.ticket.findUnique({
+            where: { id },
+            include: {
+                requester: { select: { id: true, email: true } },
+                assignments: { include: { user: { select: { id: true, email: true } } } },
+            },
+        });
         if (!ticket) {
             return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
         }
@@ -209,17 +241,30 @@ export async function DELETE(
             return NextResponse.json({ error: 'You can only delete your own comments' }, { status: 403 });
         }
 
-        await prisma.timelineEvent.delete({ where: { id: eventId } });
-
-        auditLog({
-            userId: session.user.id,
-            action: 'timeline_event.deleted',
-            entity: 'timelineEvent',
-            entityId: eventId,
-            metadata: { ticketId: id, type: event.type, deletedContent: event.content?.substring(0, 200) },
+        const deletedAt = new Date();
+        await prisma.timelineEvent.update({
+            where: { id: eventId },
+            data: {
+                deletedAt,
+                deletedById: session.user.id,
+                deleteReason: 'user_requested',
+                metadata: {
+                    ...((event.metadata as Record<string, unknown>) ?? {}),
+                    deleted: true,
+                    deletedAt: deletedAt.toISOString(),
+                },
+            },
         });
 
-        return NextResponse.json({ success: true });
+        void auditLog({
+            userId: session.user.id,
+            action: 'timeline_event.tombstoned',
+            entity: 'timelineEvent',
+            entityId: eventId,
+            metadata: { ticketId: id, type: event.type, contentLength: event.content?.length ?? 0, historyPreserved: true },
+        });
+
+        return NextResponse.json({ success: true, tombstoned: true });
     } catch (error) {
         logger.error('Failed to delete comment', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import { BRANDING_ASSET_FIELDS, brandingConfigSchema, DEFAULT_BRANDING, getBrandingConfig, saveBrandingConfig } from '@/lib/branding';
-import { unlink } from 'fs/promises';
-import path from 'path';
 import logger from '@/lib/logger';
+import { removeUploadedImage } from '@/lib/uploaded-image';
 
 export async function GET() {
     const session = await auth();
@@ -58,12 +57,8 @@ export async function DELETE(req: NextRequest) {
         }
         const previous = await getBrandingConfig();
         const branding = await saveBrandingConfig(DEFAULT_BRANDING);
-        const base = path.resolve(process.cwd(), 'public', 'uploads', 'branding');
         const assets = new Set(BRANDING_ASSET_FIELDS.map((field) => previous[field]).filter(Boolean));
-        await Promise.all([...assets].map(async (assetUrl) => {
-            const candidate = path.resolve(process.cwd(), 'public', assetUrl.replace(/^\/+/, ''));
-            if (candidate.startsWith(`${base}${path.sep}`)) await unlink(candidate).catch(() => undefined);
-        }));
+        await Promise.all([...assets].map((assetUrl) => removeUploadedImage(assetUrl, 'branding')));
         await auditLog({
             userId: session.user.id,
             action: 'branding.reset',

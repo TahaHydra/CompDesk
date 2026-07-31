@@ -4,7 +4,7 @@ export const FEATURE_FLAGS = {
     feature_attachments_enabled: true,
     feature_dashboard_links_enabled: true,
     feature_external_api_enabled: false,
-    feature_webhooks_enabled: true,
+    feature_webhooks_enabled: false,
 } as const;
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

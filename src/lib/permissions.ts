@@ -107,3 +107,16 @@ export async function canAccessTicket(
     if (role === 'AGENT') return canAccessQueue(userId, role, ticket.queueId);
     return false;
 }
+/**
+ * Hard deletion is intentionally narrower than ticket access.
+ * Super administrators can remove any ticket. Every other role may only
+ * withdraw a ticket they requested while it is still unassigned.
+ */
+export function canDeleteTicket(
+    userId: string,
+    role: Role,
+    ticket: { requesterId: string; assignmentCount: number }
+): boolean {
+    if (role === 'SUPER_ADMIN') return true;
+    return ticket.requesterId === userId && ticket.assignmentCount === 0;
+}

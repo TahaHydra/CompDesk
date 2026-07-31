@@ -1,0 +1,132 @@
+# DEPRECATED — kept only for rollback during migration validation.
+#
+# This is the pre-unification two-stack production file (paired with the
+# also-deprecated docker-compose.setup.yml). New installs should use
+# docker-compose.yml, which is one canonical image-based Compose file that
+# transitions itself from first-run setup to production automatically.
+#
+# Rollback from the unified stack, if something goes wrong during migration
+# validation (see docs/DEPLOY_DOCKER.md "Migration from the two-stack
+# deployment"):
+#
+#   docker compose down                      # stop the unified stack, no -v
+#   docker compose --env-file .compdesk/compdesk.env -f docker-compose.legacy.yml up -d
+#
+# It reuses the same default compdesk_pgdata/compdesk_uploads/compdesk_attachments
+# volume names as docker-compose.yml, so it reattaches to the same data.
+#
+# Note: the Dockerfile's separate `setup` build target was removed when the
+# stages were merged into one final image (see Dockerfile). That merged image
+# is a superset of the old `setup` stage (it still ships the Prisma CLI and
+# engines), so the `migrate` service below targets the default (only) stage.
+name: compdesk
+
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}?schema=public
+  AUTH_URL: ${AUTH_URL:?AUTH_URL is required}
+  AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+  APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:?APP_SETTINGS_ENCRYPTION_KEY is required}
+  APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS: ${APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS:-}
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  LOGIN_LOCAL_ENABLED: ${LOGIN_LOCAL_ENABLED:-true}
+  LOGIN_MICROSOFT_ENABLED: ${LOGIN_MICROSOFT_ENABLED:-false}
+  AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID:-}
+  AZURE_AD_CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET:-}
+  AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  ATTACHMENT_STORAGE_DIR: /app/storage/attachments
+  UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-10}
+  ATTACHMENT_MAX_FILES_PER_TICKET: ${ATTACHMENT_MAX_FILES_PER_TICKET:-20}
+  ATTACHMENT_MAX_BYTES_PER_TICKET: ${ATTACHMENT_MAX_BYTES_PER_TICKET:-104857600}
+  ATTACHMENT_GLOBAL_MAX_BYTES: ${ATTACHMENT_GLOBAL_MAX_BYTES:-10737418240}
+  TEMP_ATTACHMENT_TTL_HOURS: ${TEMP_ATTACHMENT_TTL_HOURS:-24}
+  TEMP_ATTACHMENT_MAX_FILES_PER_USER: ${TEMP_ATTACHMENT_MAX_FILES_PER_USER:-20}
+  TEMP_ATTACHMENT_MAX_BYTES_PER_USER: ${TEMP_ATTACHMENT_MAX_BYTES_PER_USER:-104857600}
+  CLAMAV_HOST: ${CLAMAV_HOST:-}
+  CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+  CLAMAV_TIMEOUT_MS: ${CLAMAV_TIMEOUT_MS:-10000}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  NODE_ENV: production
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: 'no'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-environment
+    command:
+      - sh
+      - -c
+      - node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs
+    volumes:
+      - uploads:/app/public/uploads
+      - attachments:/app/storage/attachments
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    # The merged image's default CMD is now the orchestrator (scripts/orchestrator.mjs),
+    # which expects a mounted compdesk_config volume and would otherwise start
+    # first-run setup again. Explicitly restore the pre-unification command so
+    # rollback runs the plain production server, not the new orchestrator.
+    command: ['sh', '-c', 'node scripts/validate-runtime-env.mjs && exec node server.js']
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - '${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000'
+    environment: *app-environment
+    volumes:
+      - uploads:/app/public/uploads
+      - attachments:/app/storage/attachments
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+
+volumes:
+  pgdata:
+    name: ${POSTGRES_VOLUME_NAME:-compdesk_pgdata}
+    external: ${POSTGRES_VOLUME_EXTERNAL:-false}
+  uploads:
+    name: ${UPLOADS_VOLUME_NAME:-compdesk_uploads}
+  attachments:
+    name: ${ATTACHMENTS_VOLUME_NAME:-compdesk_attachments}

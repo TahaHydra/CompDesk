@@ -1,0 +1,139 @@
+# Publishes the CompDesk runtime image to GHCR. PREPARED, NOT YET ACTIVE:
+# no version tag has ever been pushed on this repository, so this workflow
+# has never run and ghcr.io/tahahydra/compdesk does not yet exist. It only
+# ever triggers on an explicit `vMAJOR.MINOR.PATCH[-prerelease]` tag push —
+# never on branch pushes or pull requests, and never produces a `latest` tag
+# for a prerelease.
+#
+# Source tree vs. release asset: the git-tracked docker-compose.yml defaults
+# COMPDESK_VERSION to "0.0.0-local" (a placeholder never published by this
+# workflow) so local development needs no environment variable at all. This
+# workflow additionally generates a version-PINNED docker-compose.yml (via
+# scripts/generate-release-compose.mjs, with the literal image:version baked
+# in — no variable left to set) and attaches it to the GitHub Release, so a
+# real release asset works with a plain, literal `docker compose up -d`.
+#
+# Build/scan/publish identity: the image is built and pushed exactly once, to
+# a temporary "scan-candidate" tag. Trivy scans that exact push BY DIGEST.
+# Only if the scan passes does `docker buildx imagetools create` run, which
+# adds the real release tags (version, commit-SHA, and `latest` when stable)
+# to that SAME digest — a registry-side, no-rebuild, no-reupload metadata
+# operation, so the published tags are provably the same bytes that were
+# scanned. The scan-candidate tag is a CI-internal staging artifact, not a
+# user-facing release; leaving it in the registry after promotion is harmless
+# (it points at the identical, already-scanned manifest) but could be pruned
+# by a separate registry-hygiene job if desired.
+name: Publish image
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Defense in depth on top of the tag-only trigger above: a fork pushing
+    # its own version tags must never publish into the upstream namespace.
+    if: github.repository == 'TahaHydra/CompDesk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed only to attach the release Compose asset below
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Validate the tag is a strict semantic version and derive the image version
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$tag' is not a valid semantic version (expected vMAJOR.MINOR.PATCH[-prerelease])."
+            exit 1
+          fi
+          version="${tag#v}"
+          {
+            echo "version=$version"
+            if [[ "$version" == *-* ]]; then
+              echo "stable=false"
+            else
+              echo "stable=true"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The ONE build+push action in this workflow. Its digest output is the
+      # single source of truth used by both the scan step and the promotion
+      # step below — nothing here is built a second time.
+      - name: Build and push the single candidate artifact
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/tahahydra/compdesk:scan-candidate-${{ github.run_id }}
+          labels: |
+            org.opencontainers.image.title=CompDesk
+            org.opencontainers.image.description=Self-hosted helpdesk and ticketing platform.
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Scan the exact artifact that was just built and pushed, by its digest
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ghcr.io/tahahydra/compdesk@${{ steps.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # No rebuild: this adds tag references to the exact digest that was
+      # just scanned. Immutable version + commit-SHA tags always; `latest`
+      # only for a stable (non-prerelease) version.
+      - name: Promote the scanned digest to its immutable release tags
+        run: |
+          digest="${{ steps.build.outputs.digest }}"
+          image="ghcr.io/tahahydra/compdesk"
+          args=(--tag "$image:${{ steps.version.outputs.version }}" --tag "$image:sha-${{ github.sha }}")
+          if [ "${{ steps.version.outputs.stable }}" = "true" ]; then
+            args+=(--tag "$image:latest")
+          fi
+          docker buildx imagetools create "${args[@]}" "$image@$digest"
+
+      # A plain `docker compose up -d` release asset, with this exact
+      # version baked in as a literal image reference — no environment
+      # variable to set, and no way for it to silently resolve to a
+      # different (unscanned) image later.
+      - name: Generate the version-pinned release Compose file
+        run: node scripts/generate-release-compose.mjs "${{ steps.version.outputs.version }}" release-assets/docker-compose.yml
+
+      - name: Attach the pinned Compose file to the GitHub Release, if one exists for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" release-assets/docker-compose.yml --clobber
+          else
+            echo "::warning::No GitHub Release exists yet for tag ${{ github.ref_name }}. The image was still published successfully; create the release and attach release-assets/docker-compose.yml manually (or re-run this workflow after creating it)."
+          fi

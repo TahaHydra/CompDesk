@@ -25,6 +25,7 @@ enum TicketStatus {
   PENDING_AGENT
   RESOLVED
   CLOSED
+  WITHDRAWN
 }
 
 enum Priority {
@@ -70,34 +71,62 @@ enum BuiltInTicketField {
   TAGS
 }
 
+enum AssignmentSource {
+  MANUAL
+  CLAIM
+  ESCALATION
+  AUTOMATION
+}
+
+enum AttachmentScanStatus {
+  NOT_CONFIGURED
+  CLEAN
+  INFECTED
+  ERROR
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
-  id                String    @id @default(uuid())
-  entraObjectId     String?   @unique @map("entra_object_id")
-  email             String    @unique
-  emailVerified     DateTime? @map("email_verified")
-  name              String
-  image             String?
-  passwordHash      String?   @map("password_hash")
-  role              Role      @default(USER)
-  isActive          Boolean   @default(true) @map("is_active")
-  preferredLanguage String    @default("en") @map("preferred_language")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  id                   String           @id @default(uuid())
+  entraObjectId        String?          @unique @map("entra_object_id")
+  email                String           @unique
+  normalizedEmail      String           @unique @default(dbgenerated()) @map("normalized_email")
+  emailVerified        DateTime?        @map("email_verified")
+  name                 String
+  image                String?
+  passwordHash         String?          @map("password_hash")
+  role                 Role             @default(USER)
+  isActive             Boolean          @default(true) @map("is_active")
+  isDemo               Boolean          @default(false) @map("is_demo")
+  sessionVersion       Int              @default(0) @map("session_version")
+  credentialsChangedAt DateTime?        @map("credentials_changed_at")
+  ticketPresence       TicketPresence[]
+  preferredLanguage    String           @default("en") @map("preferred_language")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  requestedTickets   Ticket[]        @relation("TicketRequester")
-  assignedTickets    Ticket[]        @relation("TicketAssignee")
-  escalatedByTickets Ticket[]        @relation("TicketEscalatedBy")
-  escalatedToTickets Ticket[]        @relation("TicketEscalatedTo")
-  watchedTickets     TicketWatcher[]
-  timelineEvents     TimelineEvent[]
-  groupMemberships   GroupMember[]
-  queueMemberships   QueueMember[]
-  auditLogs          AuditLog[]
-  sessions           Session[]
-  accounts           Account[]
+  requestedTickets     Ticket[]              @relation("TicketRequester")
+  ticketAssignments    TicketAssignee[]      @relation("AssignedUser")
+  assignmentsCreated   TicketAssignee[]      @relation("AssignmentActor")
+  escalatedByTickets   Ticket[]              @relation("TicketEscalatedBy")
+  escalatedToTickets   Ticket[]              @relation("TicketEscalatedTo")
+  watchedTickets       TicketWatcher[]
+  timelineEvents       TimelineEvent[]
+  groupMemberships     GroupMember[]
+  queueMemberships     QueueMember[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+  accounts             Account[]
+  uploadedAttachments  Attachment[]          @relation("AttachmentUploader")
+  temporaryAttachments TemporaryAttachment[]
 
   @@map("users")
 }
@@ -142,6 +171,20 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+model LoginThrottle {
+  id           String    @id @default(uuid())
+  keyHash      String    @unique @map("key_hash")
+  scope        String
+  failureCount Int       @default(0) @map("failure_count")
+  blockedUntil DateTime? @map("blocked_until")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("login_throttles")
 }
 
 // ── Groups (Entra Synced) ──────────────────────────────────────
@@ -283,19 +326,18 @@ model Ticket {
   queueId                 String       @map("queue_id")
   categoryId              String?      @map("category_id")
   requesterId             String       @map("requester_id")
-  assigneeId              String?      @map("assignee_id")
   resolvedTemplateId      String       @map("resolved_template_id")
   resolvedTemplateVersion Int          @map("resolved_template_version")
   formSchemaSnapshot      Json         @map("form_schema_snapshot")
   submittedFormValues     Json         @default("{}") @map("submitted_form_values")
   dueAt                   DateTime?    @map("due_at")
-  firstResponseAt         DateTime?    @map("first_response_at")
+  firstAssignedAt         DateTime?    @map("first_assigned_at")
+  firstPublicResponseAt   DateTime?    @map("first_response_at")
   resolvedAt              DateTime?    @map("resolved_at")
   closedAt                DateTime?    @map("closed_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
-  lockedBy                String?      @map("locked_by")
-  lockedAt                DateTime?    @map("locked_at")
+  version                 Int          @default(1)
 
   // Escalation
   escalationLevel Int       @default(0) @map("escalation_level")
@@ -307,13 +349,14 @@ model Ticket {
   category         Category?          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   resolvedTemplate TicketFormTemplate @relation(fields: [resolvedTemplateId], references: [id], onDelete: Restrict)
   requester        User               @relation("TicketRequester", fields: [requesterId], references: [id])
-  assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  assignments      TicketAssignee[]
   escalatedBy      User?              @relation("TicketEscalatedBy", fields: [escalatedById], references: [id])
   escalatedTo      User?              @relation("TicketEscalatedTo", fields: [escalatedToId], references: [id])
   tags             TicketTag[]
   watchers         TicketWatcher[]
   timeline         TimelineEvent[]
   attachments      Attachment[]
+  presence         TicketPresence[]
 
   @@unique([requesterId, idempotencyKey])
   @@index([status])
@@ -321,10 +364,29 @@ model Ticket {
   @@index([categoryId])
   @@index([resolvedTemplateId])
   @@index([requesterId])
-  @@index([assigneeId])
   @@index([createdAt])
   @@index([escalationLevel])
   @@map("tickets")
+}
+
+model TicketAssignee {
+  id           String           @id @default(uuid())
+  ticketId     String           @map("ticket_id")
+  userId       String           @map("user_id")
+  assignedById String           @map("assigned_by_id")
+  assignedAt   DateTime         @default(now()) @map("assigned_at")
+  source       AssignmentSource @default(MANUAL)
+
+  ticket     Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user       User   @relation("AssignedUser", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy User   @relation("AssignmentActor", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@unique([ticketId, userId])
+  @@index([ticketId])
+  @@index([userId])
+  @@index([userId, ticketId])
+  @@index([ticketId, assignedAt])
+  @@map("ticket_assignees")
 }
 
 model TicketWatcher {
@@ -339,16 +401,33 @@ model TicketWatcher {
   @@map("ticket_watchers")
 }
 
+model TicketPresence {
+  id         String   @id @default(uuid())
+  ticketId   String   @map("ticket_id")
+  userId     String   @map("user_id")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, userId])
+  @@index([ticketId, lastSeenAt])
+  @@map("ticket_presence")
+}
+
 // ── Timeline Events ────────────────────────────────────────────
 
 model TimelineEvent {
-  id        String            @id @default(uuid())
-  ticketId  String            @map("ticket_id")
-  userId    String            @map("user_id")
-  type      TimelineEventType
-  content   String?           @db.Text
-  metadata  Json?
-  createdAt DateTime          @default(now()) @map("created_at")
+  id           String            @id @default(uuid())
+  ticketId     String            @map("ticket_id")
+  userId       String            @map("user_id")
+  type         TimelineEventType
+  content      String?           @db.Text
+  metadata     Json?
+  createdAt    DateTime          @default(now()) @map("created_at")
+  deletedAt    DateTime?         @map("deleted_at")
+  deletedById  String?           @map("deleted_by_id")
+  deleteReason String?           @map("delete_reason")
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -360,17 +439,51 @@ model TimelineEvent {
 // ── Attachments ────────────────────────────────────────────────
 
 model Attachment {
-  id        String   @id @default(uuid())
-  ticketId  String   @map("ticket_id")
-  filename  String
-  mimetype  String
-  size      Int
-  path      String
-  createdAt DateTime @default(now()) @map("created_at")
+  id               String               @id @default(uuid())
+  ticketId         String               @map("ticket_id")
+  uploaderId       String?              @map("uploader_id")
+  filename         String
+  mimetype         String
+  detectedMimetype String               @map("detected_mimetype")
+  size             Int
+  path             String
+  sha256           String
+  scanStatus       AttachmentScanStatus @default(NOT_CONFIGURED) @map("scan_status")
+  scannedAt        DateTime?            @map("scanned_at")
+  blobRemovedAt    DateTime?            @map("blob_removed_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  deletedAt        DateTime?            @map("deleted_at")
+  deletedById      String?              @map("deleted_by_id")
+  deleteReason     String?              @map("delete_reason")
 
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploader User?  @relation("AttachmentUploader", fields: [uploaderId], references: [id], onDelete: SetNull)
 
+  @@index([ticketId, deletedAt])
+  @@index([scanStatus])
   @@map("attachments")
+}
+
+model TemporaryAttachment {
+  id               String               @id @default(uuid())
+  userId           String               @map("user_id")
+  filename         String
+  mimetype         String
+  detectedMimetype String               @map("detected_mimetype")
+  size             Int
+  path             String               @unique
+  sha256           String
+  scanStatus       AttachmentScanStatus @default(NOT_CONFIGURED) @map("scan_status")
+  scannedAt        DateTime?            @map("scanned_at")
+  blobRemovedAt    DateTime?            @map("blob_removed_at")
+  expiresAt        DateTime             @map("expires_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+  @@map("temporary_attachments")
 }
 
 // ── SLA Policies ───────────────────────────────────────────────
@@ -458,15 +571,42 @@ model CannedResponse {
 // ── Webhooks ───────────────────────────────────────────────────
 
 model WebhookConfig {
-  id        String   @id @default(uuid())
-  url       String
-  secret    String?
-  events    String[] // ["ticket.created", "ticket.resolved"]
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id           String    @id @default(uuid())
+  name         String    @default("Webhook")
+  url          String
+  secret       String?
+  events       String[] // ["ticket.created", "ticket.resolved"]
+  isActive     Boolean   @default(true) @map("is_active")
+  failureCount Int       @default(0) @map("failure_count")
+  disabledAt   DateTime? @map("disabled_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  deliveries WebhookDelivery[]
 
   @@map("webhook_configs")
+}
+
+model WebhookDelivery {
+  id             String                @id @default(uuid())
+  webhookId      String                @map("webhook_id")
+  event          String
+  body           String                @db.Text
+  status         WebhookDeliveryStatus @default(PENDING)
+  attemptCount   Int                   @default(0) @map("attempt_count")
+  nextAttemptAt  DateTime              @default(now()) @map("next_attempt_at")
+  lastAttemptAt  DateTime?             @map("last_attempt_at")
+  responseStatus Int?                  @map("response_status")
+  errorStage     String?               @map("error_stage")
+  deliveredAt    DateTime?             @map("delivered_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  webhook WebhookConfig @relation(fields: [webhookId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
 }
 
 // ── Audit Log ──────────────────────────────────────────────────
@@ -539,6 +679,7 @@ model ApiClient {
   keyHash         String    @unique @map("key_hash")
   scopes          String[]
   allowedQueueIds String[]  @default([]) @map("allowed_queue_ids")
+  allowAllQueues  Boolean   @default(false) @map("allow_all_queues")
   isActive        Boolean   @default(true) @map("is_active")
   lastUsedAt      DateTime? @map("last_used_at")
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -547,6 +688,21 @@ model ApiClient {
   @@index([isActive])
   @@map("api_clients")
 }
+
+// ── Installation state ────────────────────────────────────────
+
+model InstallationRecord {
+  id                String   @id @default("primary")
+  installedAt       DateTime @default(now()) @map("installed_at")
+  installedByEmail  String   @map("installed_by_email")
+  deploymentMode    String   @map("deployment_mode")
+  applicationUrl    String   @map("application_url")
+  demoDataInstalled Boolean  @default(false) @map("demo_data_installed")
+  setupVersion      Int      @default(1) @map("setup_version")
+
+  @@map("installation_records")
+}
+
 // ── App Settings ───────────────────────────────────────────────
 
 model AppSetting {
