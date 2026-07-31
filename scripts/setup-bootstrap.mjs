@@ -16,6 +16,7 @@ import {
     TOKEN_TTL_MS,
     buildDatabaseUrl,
     databaseCaPath,
+    deploymentNextSteps,
     encryptEnvelope,
     isSameOrigin,
     isStrongPassword,
@@ -39,6 +40,7 @@ const stateDirectory = path.resolve(process.env.COMPDESK_SETUP_STATE_DIR || path
 const statePath = path.join(stateDirectory, 'setup-state.json');
 const receiptPath = path.join(stateDirectory, 'installation.json');
 const uiPath = path.join(root, 'scripts', 'setup-ui.html');
+const installedUiPath = path.join(root, 'scripts', 'setup-installed.html');
 const envPath = path.resolve(process.env.COMPDESK_ENV_FILE || path.join(root, '.env'));
 const host = process.env.SETUP_ALLOW_REMOTE === 'true' ? (process.env.SETUP_HOST || '0.0.0.0') : '127.0.0.1';
 const port = Number.parseInt(process.env.SETUP_PORT || '3000', 10);
@@ -64,16 +66,40 @@ function json(response, status, payload, headers = {}) {
     response.end(body);
 }
 
-function html(response, body) {
-    response.writeHead(200, {
+function html(response, body, status = 200, csp = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'") {
+    response.writeHead(status, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'no-referrer',
         'X-Frame-Options': 'DENY',
-        'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+        'Content-Security-Policy': csp,
     });
     response.end(body);
+}
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+}
+
+function renderInstalledPage() {
+    let receipt = null;
+    try {
+        receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    } catch { /* render generic guidance below when the receipt cannot be read */ }
+    const template = fs.readFileSync(installedUiPath, 'utf8');
+    const deployment = receipt?.applicationUrl
+        ? deploymentNextSteps({ deploymentMode: receipt.deploymentMode, applicationUrl: receipt.applicationUrl })
+        : null;
+    const steps = deployment
+        ? deployment.commands.map((step) => `<li>${escapeHtml(step.description)}<pre><code>${escapeHtml(step.command)}</code></pre></li>`).join('')
+        : '<li>Start the application you configured during installation.</li>';
+    return template
+        .replace('{{SUMMARY}}', escapeHtml(deployment?.summary || 'CompDesk is installed and this setup server is permanently disabled.'))
+        .replace('{{INSTALLED_AT}}', escapeHtml(receipt?.installedAt || 'an earlier session'))
+        .replace('{{APPLICATION_URL}}', escapeHtml(receipt?.applicationUrl || 'the configured application URL'))
+        .replace('{{STEPS}}', steps)
+        .replace('{{LOGIN_URL}}', escapeHtml(deployment?.loginUrl || ''));
 }
 
 async function readBody(request, limit = 128 * 1024) {
@@ -528,7 +554,7 @@ async function install(input) {
         return {
             success: true,
             message: 'CompDesk installation completed. Bootstrap access is now permanently retired.',
-            loginUrl: `${config.identity.applicationUrl}/auth/signin`,
+            deployment: deploymentNextSteps({ deploymentMode: config.deploymentMode, applicationUrl: config.identity.applicationUrl }),
             ...(demoCredentials ? { demoCredentials } : {}),
         };
     } catch (error) {
@@ -547,7 +573,15 @@ async function install(input) {
 async function handle(request, response) {
     const requestUrl = new URL(request.url, setupOrigin);
     if (fs.existsSync(receiptPath)) {
-        json(response, requestUrl.pathname.startsWith('/setup') ? 410 : 404, { error: 'First-run setup is no longer available.' });
+        const status = requestUrl.pathname.startsWith('/setup') ? 410 : 404;
+        const isBrowserNavigation = request.method === 'GET'
+            && !requestUrl.pathname.startsWith('/setup/api/')
+            && String(request.headers.accept || '').includes('text/html');
+        if (isBrowserNavigation) {
+            html(response, renderInstalledPage(), status, "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+            return;
+        }
+        json(response, status, { error: 'First-run setup is no longer available.' });
         return;
     }
     if (requestUrl.pathname === '/api/health/live' && request.method === 'GET') {

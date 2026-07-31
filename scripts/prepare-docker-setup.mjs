@@ -1,38 +1,29 @@
-import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
-import { randomSecret, writeFileAtomic } from './setup-core.mjs';
+import { prepareDockerBootstrap } from './docker-project.mjs';
 
 const root = process.cwd();
 const stateDirectory = path.join(root, '.compdesk');
-const bootstrapPath = path.join(stateDirectory, 'docker-bootstrap.env');
-const installedPath = path.join(stateDirectory, 'installation.json');
+const rotateIncomplete = process.argv.includes('--rotate-incomplete');
+const result = prepareDockerBootstrap({ stateDirectory, rotateIncomplete });
 
-if (fs.existsSync(installedPath)) {
+if (result.action === 'already-installed') {
     console.error('CompDesk is already installed. Docker bootstrap credentials will not be regenerated.');
     process.exit(2);
 }
-if (fs.existsSync(bootstrapPath) && !process.argv.includes('--rotate-incomplete')) {
+if (result.action === 'refused-initialized-volume') {
+    console.error(`Refusing to generate new PostgreSQL bootstrap credentials: the "${result.volumeName}" Docker volume already holds an initialized PostgreSQL data directory, but ${result.bootstrapPath} is missing.`);
+    console.error('Minting a new random PostgreSQL username now would not match the role already stored in that volume, and PostgreSQL would repeatedly report "role ... does not exist".');
+    console.error('');
+    console.error('Recovery options:');
+    console.error('  1. Restore the original .compdesk/docker-bootstrap.env from a backup so the existing credentials are reused.');
+    console.error('  2. If the existing database is not needed, permanently discard it first: node scripts/docker-reset.mjs');
+    console.error('     Then re-run: npm run setup:docker:prepare');
+    process.exit(1);
+}
+if (result.action === 'preserved') {
     console.log('Existing incomplete Docker bootstrap configuration preserved.');
     console.log('Run: docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml up --build');
     process.exit(0);
 }
-
-const databaseUser = `compdesk_${crypto.randomBytes(5).toString('hex')}`;
-const databasePassword = randomSecret(36).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-const contents = [
-    '# Temporary credentials for the isolated Docker setup stack.',
-    '# Do not commit this file. Remove it after the production stack is running.',
-    'POSTGRES_DB=compdesk_db',
-    `POSTGRES_USER=${databaseUser}`,
-    `POSTGRES_PASSWORD=${databasePassword}`,
-    'SETUP_BIND_ADDRESS=127.0.0.1',
-    'SETUP_PORT=3000',
-    `SETUP_UID=${typeof process.getuid === 'function' ? process.getuid() : 1000}`,
-    `SETUP_GID=${typeof process.getgid === 'function' ? process.getgid() : 1000}`,
-    '',
-].join('\n');
-
-writeFileAtomic(bootstrapPath, contents, { mode: 0o600, backup: false });
 console.log('Generated private Docker bootstrap credentials without printing their values.');
 console.log('Run: docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml up --build');

@@ -32,6 +32,7 @@ COPY --from=builder /app/scripts/validate-runtime-env.mjs ./scripts/validate-run
 COPY --from=builder /app/scripts/setup-bootstrap.mjs ./scripts/setup-bootstrap.mjs
 COPY --from=builder /app/scripts/setup-core.mjs ./scripts/setup-core.mjs
 COPY --from=builder /app/scripts/setup-ui.html ./scripts/setup-ui.html
+COPY --from=builder /app/scripts/setup-installed.html ./scripts/setup-installed.html
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 RUN mkdir -p /app/storage/attachments \

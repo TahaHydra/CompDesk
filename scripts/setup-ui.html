@@ -185,19 +185,29 @@
         try{
             $('#install').disabled=true;
             const result=await api('/setup/api/install',{method:'POST',body:JSON.stringify(data())});
-            const loginUrl = new URL(result.loginUrl, location.origin);
-            if (!['http:', 'https:'].includes(loginUrl.protocol) || loginUrl.username || loginUrl.password) throw new Error('The setup server returned an invalid login URL.');
+            const deployment = result.deployment || {};
+            const loginUrl = deployment.loginUrl ? new URL(deployment.loginUrl, location.origin) : null;
+            if (loginUrl && (!['http:', 'https:'].includes(loginUrl.protocol) || loginUrl.username || loginUrl.password)) throw new Error('The setup server returned an invalid login URL.');
             const children = [element('h2', 'Installation complete'), element('div', result.message, 'notice success')];
             if (result.demoCredentials) {
                 const demo = element('div', undefined, 'notice');
                 demo.append(element('strong', 'Demo credentials (shown once)'), document.createElement('br'), document.createTextNode(`Email: ${result.demoCredentials.email}`), document.createElement('br'), document.createTextNode(`Password: ${result.demoCredentials.password}`));
                 children.push(demo);
             }
-            const linkParagraph = document.createElement('p');
-            const link = element('a', 'Open CompDesk sign in');
-            link.href = loginUrl.href;
-            linkParagraph.append(link);
-            children.push(linkParagraph, element('p', 'Restart the application to leave bootstrap mode.'));
+            if (deployment.summary) children.push(element('p', deployment.summary));
+            if (Array.isArray(deployment.commands) && deployment.commands.length) {
+                const stepsList = document.createElement('ol');
+                for (const step of deployment.commands) {
+                    const item = document.createElement('li');
+                    const pre = document.createElement('pre');
+                    pre.append(element('code', step.command));
+                    item.append(element('div', step.description), pre);
+                    stepsList.append(item);
+                }
+                children.push(stepsList);
+            }
+            if (loginUrl) children.push(element('p', `Once production is running, sign in at: ${loginUrl.href}`));
+            children.push(element('p', 'This setup server is now permanently disabled and cannot be reopened.'));
             form.replaceChildren(...children);
         }catch(error){
             $('#install').disabled=false;

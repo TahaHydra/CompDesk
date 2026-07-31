@@ -22,6 +22,7 @@
     "setup:bootstrap": "node scripts/launch.mjs --setup",
     "setup:docker:prepare": "node scripts/prepare-docker-setup.mjs",
     "setup:recover": "node scripts/setup-recovery.mjs",
+    "docker:reset": "node scripts/docker-reset.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
