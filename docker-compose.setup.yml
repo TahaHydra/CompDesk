@@ -32,10 +32,13 @@ services:
       retries: 20
 
   setup:
+    # The Dockerfile's separate `setup` build target was removed when the
+    # stages were merged into one final image (see Dockerfile) — the merged
+    # image is a superset of the old `setup` stage, so this now builds the
+    # default (only) stage.
     build:
       context: .
       dockerfile: Dockerfile
-      target: setup
     init: true
     user: '${SETUP_UID:-1000}:${SETUP_GID:-1000}'
     group_add:

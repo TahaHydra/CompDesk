@@ -19,6 +19,9 @@ RUN npm run build
 
 FROM base AS runtime-base
 ENV NODE_ENV=production
+LABEL org.opencontainers.image.title="CompDesk" \
+      org.opencontainers.image.description="Self-hosted helpdesk and ticketing platform." \
+      org.opencontainers.image.licenses="MIT"
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs \
     && rm -rf /usr/local/lib/node_modules/npm \
@@ -33,6 +36,10 @@ COPY --from=builder /app/scripts/setup-bootstrap.mjs ./scripts/setup-bootstrap.m
 COPY --from=builder /app/scripts/setup-core.mjs ./scripts/setup-core.mjs
 COPY --from=builder /app/scripts/setup-ui.html ./scripts/setup-ui.html
 COPY --from=builder /app/scripts/setup-installed.html ./scripts/setup-installed.html
+COPY --from=builder /app/scripts/orchestrator.mjs ./scripts/orchestrator.mjs
+COPY --from=builder /app/scripts/orchestrator-core.mjs ./scripts/orchestrator-core.mjs
+COPY --from=builder /app/scripts/config-init.mjs ./scripts/config-init.mjs
+COPY --from=builder /app/scripts/config-store.mjs ./scripts/config-store.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 RUN mkdir -p /app/storage/attachments \
@@ -41,15 +48,18 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# Ephemeral setup/migration target. It deliberately retains Prisma CLI tooling;
-# normal application containers use the smaller production-only runner below.
-FROM runtime-base AS setup
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+# One final runtime image serves initialization (config-init), first-run
+# setup, migrations, and production — Compose selects the role per service
+# via `command:`/`user:` overrides rather than a separate Dockerfile target.
+# It layers just the Prisma CLI (`prisma`) plus its own dependencies
+# (`@prisma/engines`, which holds both the Query Engine and Schema Engine
+# binaries needed by `prisma migrate deploy`) on top of the lean prod-only
+# node_modules above — never the full `deps` devDependency tree (eslint,
+# jest, playwright, typescript, tailwind, ...), which the old two-stage
+# split used to drag into every long-running production container.
+FROM runtime-base AS runner
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 USER nextjs
-CMD ["node", "scripts/setup-bootstrap.mjs"]
-
-FROM runtime-base AS runner
-USER nextjs
-CMD ["sh", "-c", "node scripts/validate-runtime-env.mjs && exec node server.js"]
+CMD ["node", "scripts/orchestrator.mjs"]

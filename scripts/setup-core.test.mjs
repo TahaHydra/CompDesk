@@ -168,3 +168,31 @@ test('uses same-origin comparison and constant-time token comparison', () => {
     assert.equal(core.timingSafeEqual('token', 'token'), true);
     assert.equal(core.timingSafeEqual('token', 'other'), false);
 });
+
+test('deploymentNextSteps: the orchestrator-managed unified stack needs no manual commands', () => {
+    const deployment = core.deploymentNextSteps({
+        deploymentMode: 'docker-compose',
+        applicationUrl: 'http://localhost:3000',
+        orchestratorManaged: true,
+    });
+    assert.deepEqual(deployment.commands, []);
+    assert.match(deployment.summary, /automatically switches from setup to production/i);
+    assert.doesNotMatch(deployment.summary, /docker compose/i);
+    assert.equal(deployment.loginUrl, 'http://localhost:3000/auth/signin');
+});
+
+test('deploymentNextSteps: the legacy standalone two-stack flow still shows the manual stop/start commands', () => {
+    const deployment = core.deploymentNextSteps({
+        deploymentMode: 'docker-compose',
+        applicationUrl: 'http://localhost:3000',
+        orchestratorManaged: false,
+    });
+    assert.equal(deployment.commands.length, 2);
+    assert.match(deployment.commands[0].command, /docker-compose\.setup\.yml down/);
+    assert.match(deployment.commands[1].command, /up -d --build/);
+});
+
+test('deploymentNextSteps: defaults to the legacy manual-command behavior when orchestratorManaged is omitted', () => {
+    const deployment = core.deploymentNextSteps({ deploymentMode: 'docker-compose', applicationUrl: 'http://localhost:3000' });
+    assert.equal(deployment.commands.length, 2);
+});

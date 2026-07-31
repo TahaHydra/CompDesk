@@ -35,27 +35,36 @@ describe('deployment engineering contracts', () => {
     });
 
     it('keeps migrations separate from normal multi-replica startup', () => {
-        for (const file of ['docker-compose.yml', 'docker-compose.external-db.yml']) {
-            const compose = source(file);
-            expect(compose).toContain('migrate:');
-            expect(compose).toContain('condition: service_completed_successfully');
-        }
+        // docker-compose.external-db.yml keeps its dedicated one-shot
+        // migrate service, gating the app on its success.
+        const externalComposeSource = source('docker-compose.external-db.yml');
+        expect(externalComposeSource).toContain('migrate:');
+        expect(externalComposeSource).toContain('condition: service_completed_successfully');
+
+        // The unified docker-compose.yml has no separate migrate service —
+        // there is only ever one `compdesk` replica, and the orchestrator
+        // (scripts/orchestrator.mjs / orchestrator-core.mjs) runs migrations
+        // once, in-process, before starting the server, gated behind
+        // config-init/db via the same condition mechanism.
+        const unifiedCompose = source('docker-compose.yml');
+        expect(unifiedCompose).not.toContain('migrate:');
+        expect(unifiedCompose).toContain('condition: service_completed_successfully');
+        expect(unifiedCompose).toContain('condition: service_healthy');
+        const orchestratorCore = source('scripts/orchestrator-core.mjs');
+        expect(orchestratorCore).toContain('runMigrations');
+        expect(orchestratorCore).toContain('startServer');
+
         const dockerfile = source('Dockerfile');
         expect(dockerfile.match(/^CMD .*$/m)?.[0]).not.toContain('prisma migrate');
         expect(dockerfile).toContain('npm ci --omit=dev --ignore-scripts');
-        expect(dockerfile).toContain('FROM runtime-base AS setup');
         expect(dockerfile).toContain('FROM runtime-base AS runner');
         expect(dockerfile).toContain('rm -rf /usr/local/lib/node_modules/npm');
         expect(dockerfile).toContain('rm -f /usr/local/bin/npm /usr/local/bin/npx');
-        for (const file of ['docker-compose.yml', 'docker-compose.external-db.yml', 'docker-compose.setup.yml']) {
-            expect(source(file)).toContain('target: setup');
-        }
         const setupCompose = source('docker-compose.setup.yml');
         expect(setupCompose).toContain('chown -R 1001:1001 /uploads /attachments');
         expect(setupCompose).toContain('chmod -R u+rwX,g+rwX,o-rwx');
         expect(setupCompose).toContain("group_add:\n      - '1001'");
-        const externalCompose = source('docker-compose.external-db.yml');
-        expect(externalCompose.match(/\.\/\.compdesk:\/app\/config:ro/g)).toHaveLength(2);
+        expect(externalComposeSource.match(/\.\/\.compdesk:\/app\/config:ro/g)).toHaveLength(2);
     });
 
     it('dry-runs the complete backup scope without exposing a database URL', () => {

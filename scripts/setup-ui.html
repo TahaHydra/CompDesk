@@ -180,6 +180,28 @@
     const testSmtp=async(mode)=>{try{const result=await api('/setup/api/smtp/test',{method:'POST',body:JSON.stringify({smtp:data().smtp,mode})});$('#smtpResult').className='notice success';$('#smtpResult').textContent=result.message;}catch(error){$('#smtpResult').className='notice error';$('#smtpResult').textContent=error instanceof Error ? error.message : 'SMTP test failed.';}};
     $('#testSmtp').onclick=()=>testSmtp('verify');
     $('#sendSmtp').onclick=()=>testSmtp('send');
+    const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+    // Bounded exponential backoff: never polls forever. Any successful
+    // response (not just mode:'production') is treated as "transitioned",
+    // since a non-setup 2xx/redirect from the same origin means the
+    // orchestrator has already handed the port to the production server.
+    const pollForTransition=async(loginUrl,statusNode)=>{
+        const deadline=Date.now()+120_000;
+        let delay=500;
+        while(Date.now()<deadline){
+            try{
+                const response=await fetch('/api/health/live',{cache:'no-store'});
+                if(response.ok){
+                    const body=await response.json().catch(()=>({}));
+                    if(body.mode!=='setup'){location.href=loginUrl.href;return;}
+                }
+            }catch{ /* setup listener may be mid-shutdown; keep polling */ }
+            statusNode.textContent=`Waiting for CompDesk to finish starting… (${Math.round((deadline-Date.now())/1000)}s)`;
+            await wait(delay);
+            delay=Math.min(delay*2,5000);
+        }
+        statusNode.textContent='CompDesk is taking longer than expected to start. Check the container logs, then reload this page.';
+    };
     $('#install').onclick=async()=>{
         if(!$('#confirmInstall').checked){message('Confirm the final review before installation.','error');return;}
         try{
@@ -188,11 +210,21 @@
             const deployment = result.deployment || {};
             const loginUrl = deployment.loginUrl ? new URL(deployment.loginUrl, location.origin) : null;
             if (loginUrl && (!['http:', 'https:'].includes(loginUrl.protocol) || loginUrl.username || loginUrl.password)) throw new Error('The setup server returned an invalid login URL.');
-            const children = [element('h2', 'Installation complete'), element('div', result.message, 'notice success')];
+            const autoTransition = Array.isArray(deployment.commands) && deployment.commands.length === 0 && Boolean(loginUrl);
+            const children = [element('h2', 'Installation complete'), element('div', autoTransition ? 'Installation complete. CompDesk is starting.' : result.message, 'notice success')];
             if (result.demoCredentials) {
                 const demo = element('div', undefined, 'notice');
                 demo.append(element('strong', 'Demo credentials (shown once)'), document.createElement('br'), document.createTextNode(`Email: ${result.demoCredentials.email}`), document.createElement('br'), document.createTextNode(`Password: ${result.demoCredentials.password}`));
                 children.push(demo);
+            }
+            if (autoTransition) {
+                const status = element('p', 'Waiting for CompDesk to finish starting…');
+                status.id = 'transitionStatus';
+                children.push(status);
+                children.push(element('p', 'This setup server is now permanently disabled and cannot be reopened.'));
+                form.replaceChildren(...children);
+                pollForTransition(loginUrl, status);
+                return;
             }
             if (deployment.summary) children.push(element('p', deployment.summary));
             if (Array.isArray(deployment.commands) && deployment.commands.length) {

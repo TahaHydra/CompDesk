@@ -251,9 +251,17 @@ describe('Phase 3 settings-key startup wiring', () => {
         expect(source('scripts/launch.mjs')).toContain("import('./setup-bootstrap.mjs')");
         expect(source('scripts/launch.mjs')).toContain('start-standalone.mjs');
         expect(source('scripts/start-standalone.mjs')).toContain('loadEnvConfig(root)');
-        const compose = source('docker-compose.yml');
+        // The unified docker-compose.yml no longer passes this key through
+        // Compose environment interpolation at all — it is generated during
+        // setup and stored in the compdesk_config volume (see
+        // scripts/setup-core.mjs renderEnvironment()), since it cannot be
+        // known at compose-authoring time. docker-compose.external-db.yml
+        // keeps the original interpolation-based contract, for deployments
+        // that run setup separately and supply a runtime environment file.
+        const compose = source('docker-compose.external-db.yml');
         expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:?APP_SETTINGS_ENCRYPTION_KEY is required}');
         expect(compose).toContain('APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS: ${APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS:-}');
+        expect(source('scripts/setup-core.mjs')).toContain('APP_SETTINGS_ENCRYPTION_KEY=${quoteEnvValue(config.settingsEncryptionKey)}');
     });
 
     it('generates a settings key once without printing or overwriting it', () => {

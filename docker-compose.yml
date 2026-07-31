@@ -1,88 +1,132 @@
+# Canonical, one-command public deployment. One prebuilt image is reused for
+# config-init, migrations, first-run setup, and production (see
+# scripts/orchestrator.mjs); no build, no npm, no second Compose invocation.
+#
+# Image version: COMPDESK_VERSION defaults to "0.0.0-local" — a placeholder
+# that is never a real published tag (see scripts/generate-release-compose.mjs
+# and .github/workflows/publish-image.yml, which only ever publish a strict
+# vMAJOR.MINOR.PATCH[-prerelease] tag). This exists purely so the local build
+# override (docker-compose.build.yml) works with zero manual environment
+# setup: `docker compose -f docker-compose.yml -f docker-compose.build.yml up
+# -d --build`. Running THIS file alone, unpinned, against a real registry
+# would try to pull "ghcr.io/tahahydra/compdesk:0.0.0-local" and fail with a
+# clear "manifest unknown" error — it is intentionally never silently
+# satisfied. A real deployment always sets COMPDESK_VERSION to a published
+# release (see docs/DEPLOY_DOCKER.md), or uses the version-pinned Compose
+# file scripts/generate-release-compose.mjs produces for each release, where
+# `docker compose up -d` works completely unpinned by design.
 name: compdesk
 
-x-app-environment: &app-environment
-  DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}?schema=public
-  AUTH_URL: ${AUTH_URL:?AUTH_URL is required}
-  AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
-  APP_SETTINGS_ENCRYPTION_KEY: ${APP_SETTINGS_ENCRYPTION_KEY:?APP_SETTINGS_ENCRYPTION_KEY is required}
-  APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS: ${APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS:-}
-  TRUST_PROXY: ${TRUST_PROXY:-false}
-  LOGIN_LOCAL_ENABLED: ${LOGIN_LOCAL_ENABLED:-true}
-  LOGIN_MICROSOFT_ENABLED: ${LOGIN_MICROSOFT_ENABLED:-false}
-  AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID:-}
-  AZURE_AD_CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET:-}
-  AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID:-}
-  SMTP_HOST: ${SMTP_HOST:-}
-  SMTP_PORT: ${SMTP_PORT:-587}
-  SMTP_SECURE: ${SMTP_SECURE:-false}
-  SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
-  SMTP_USER: ${SMTP_USER:-}
-  SMTP_PASS: ${SMTP_PASS:-}
-  SMTP_FROM: ${SMTP_FROM:-}
-  ATTACHMENT_STORAGE_DIR: /app/storage/attachments
-  UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-10}
-  ATTACHMENT_MAX_FILES_PER_TICKET: ${ATTACHMENT_MAX_FILES_PER_TICKET:-20}
-  ATTACHMENT_MAX_BYTES_PER_TICKET: ${ATTACHMENT_MAX_BYTES_PER_TICKET:-104857600}
-  ATTACHMENT_GLOBAL_MAX_BYTES: ${ATTACHMENT_GLOBAL_MAX_BYTES:-10737418240}
-  TEMP_ATTACHMENT_TTL_HOURS: ${TEMP_ATTACHMENT_TTL_HOURS:-24}
-  TEMP_ATTACHMENT_MAX_FILES_PER_USER: ${TEMP_ATTACHMENT_MAX_FILES_PER_USER:-20}
-  TEMP_ATTACHMENT_MAX_BYTES_PER_USER: ${TEMP_ATTACHMENT_MAX_BYTES_PER_USER:-104857600}
-  CLAMAV_HOST: ${CLAMAV_HOST:-}
-  CLAMAV_PORT: ${CLAMAV_PORT:-3310}
-  CLAMAV_TIMEOUT_MS: ${CLAMAV_TIMEOUT_MS:-10000}
-  LOG_LEVEL: ${LOG_LEVEL:-info}
-  NODE_ENV: production
-
 services:
+  # One-shot: fixes ownership on the persistent volumes, then generates (or
+  # validates) the PostgreSQL bootstrap secret pair in compdesk_config. Runs
+  # as root only for the chown step, same narrow precedent as the legacy
+  # docker-compose.setup.yml volume-init service.
+  config-init:
+    image: ${COMPDESK_IMAGE:-ghcr.io/tahahydra/compdesk}:${COMPDESK_VERSION:-0.0.0-local}
+    user: root
+    restart: 'no'
+    security_opt:
+      - no-new-privileges:true
+    command: ['node', 'scripts/config-init.mjs']
+    environment:
+      COMPDESK_CONFIG_DIR: /config
+      COMPDESK_PGDATA_CHECK_DIR: /pgdata-check
+      COMPDESK_RUNTIME_UID: '1001'
+      COMPDESK_RUNTIME_GID: '1001'
+      COMPDESK_CHOWN_PATHS: '/config:/app/public/uploads:/app/storage/attachments'
+    volumes:
+      - config:/config
+      - pgdata:/pgdata-check:ro
+      - uploads:/app/public/uploads
+      - attachments:/app/storage/attachments
+
   db:
     image: postgres:16-alpine
-    restart: unless-stopped
+    # Bounded, not `unless-stopped`: a permanently broken database (corrupt
+    # data, disk full) must eventually sit visibly "Exited" in `docker
+    # compose ps` rather than restart-loop forever hiding the failure. A
+    # graceful stop (`docker compose stop`/`down`) always exits 0, which this
+    # policy never restarts regardless of the count — only a nonzero exit
+    # (a real crash) is retried, up to 5 times, with Docker's own built-in
+    # backoff between attempts. Recovery once exhausted: fix the underlying
+    # problem (see docs/DEPLOY_DOCKER.md Troubleshooting), then
+    # `docker compose up -d`, which resets the attempt count.
+    restart: on-failure:5
+    security_opt:
+      - no-new-privileges:true
+    # The official postgres entrypoint runs its data-directory permission
+    # fixups as root before dropping privileges; CAP_CHOWN/CAP_FOWNER/
+    # CAP_DAC_OVERRIDE are required for that even when the caller is root,
+    # so this service is not compatible with `cap_drop: [ALL]` (verified:
+    # dropping ALL breaks the entrypoint's own chmod/chown of $PGDATA).
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ${POSTGRES_USER:-compdesk}
+      POSTGRES_DB: ${POSTGRES_DB:-compdesk}
+      POSTGRES_PASSWORD_FILE: /run/compdesk-config/secrets/postgres_password
+    depends_on:
+      config-init:
+        condition: service_completed_successfully
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - config:/run/compdesk-config:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 10s
+      retries: 30
+      start_period: 60s
+    stop_grace_period: 30s
 
-  migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: setup
-    restart: 'no'
-    depends_on:
-      db:
-        condition: service_healthy
-    environment: *app-environment
-    command:
-      - sh
-      - -c
-      - node scripts/validate-runtime-env.mjs && ./node_modules/.bin/prisma migrate deploy && node scripts/migrate-private-attachments.mjs
-    volumes:
-      - uploads:/app/public/uploads
-      - attachments:/app/storage/attachments
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
+  # The single public container: config-init already ran, db is healthy, so
+  # this starts the orchestrator, which serves first-run setup on port 3000
+  # and then transitions the same process to production automatically once
+  # setup completes — no manual Compose command in between.
+  compdesk:
+    image: ${COMPDESK_IMAGE:-ghcr.io/tahahydra/compdesk}:${COMPDESK_VERSION:-0.0.0-local}
+    # Bounded, not `unless-stopped`: the orchestrator's own FAILED state
+    # (missing/invalid config, a failed migration, an unverifiable
+    # installation receipt — see scripts/orchestrator.mjs) is a permanent
+    # condition a restart cannot fix, and must not be hidden behind an
+    # infinite restart loop. An unexpected production-runtime crash still
+    # gets bounded, automatic retries (the same policy can't tell these
+    # apart, since both are just "exited nonzero" to Docker — this is the
+    # deliberate, simple mechanism, not a custom supervisor). A graceful stop
+    # always exits 0 and is never retried, regardless of the count. Recovery
+    # once the 5 attempts are exhausted: `docker compose logs compdesk` for
+    # the concise FAILED reason, fix it, then `docker compose up -d`, which
+    # resets the attempt count.
+    restart: on-failure:5
     init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     depends_on:
+      config-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
+    environment:
+      COMPDESK_CONFIG_DIR: /config
+      COMPDESK_DB_HOST: db
+      COMPDESK_DB_PORT: '5432'
+      # Optional explicit browser-visible setup origin for reverse proxies or
+      # custom domains. Direct Docker access normally derives the exact origin
+      # from the request Host header, including a custom published APP_PORT.
+      SETUP_PUBLIC_ORIGIN: ${SETUP_PUBLIC_ORIGIN:-}
+      SETUP_TRUST_PROXY: ${SETUP_TRUST_PROXY:-false}
     ports:
       - '${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000'
-    environment: *app-environment
     volumes:
+      - config:/config
       - uploads:/app/public/uploads
       - attachments:/app/storage/attachments
     healthcheck:
@@ -90,12 +134,15 @@ services:
         - CMD
         - node
         - -e
-        - fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
-      interval: 30s
+        - fetch('http://127.0.0.1:3000/api/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
-    stop_grace_period: 30s
+      retries: 5
+      # Generous start_period: covers first-run setup wait time (a human
+      # completing the wizard) plus slower container scheduling/disk I/O on
+      # Windows Docker Desktop.
+      start_period: 120s
+    stop_grace_period: 40s
 
 volumes:
   pgdata:
@@ -105,3 +152,5 @@ volumes:
     name: ${UPLOADS_VOLUME_NAME:-compdesk_uploads}
   attachments:
     name: ${ATTACHMENTS_VOLUME_NAME:-compdesk_attachments}
+  config:
+    name: ${CONFIG_VOLUME_NAME:-compdesk_config}

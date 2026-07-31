@@ -15,26 +15,16 @@ Remote setup is disabled by default. If localhost access is impossible, expose s
 ## Docker Compose first run
 
 ```bash
-npm ci
-npm run setup:docker:prepare
-docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml up --build
+docker compose up -d
 ```
 
-The preparation command generates a random database account and password into an ignored, permission-restricted file without printing the values. The setup stack binds to `127.0.0.1` by default, keeps PostgreSQL on an internal network, and writes the completed configuration to `.compdesk/compdesk.env`.
+No `npm ci`, no host-side preparation step, and no second Compose command. A `config-init` service fixes volume ownership and generates a random database password into the `compdesk_config` volume without printing it, then the same `compdesk` container serves the wizard on `http://localhost:3000/setup` and automatically transitions itself to production once you finish — no `down`/`up` sequence, no rebuilt image, no manual restart. See [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md) for the full walkthrough, upgrade, backup, and troubleshooting guidance.
 
-After the wizard succeeds, stop the setup stack and start production services:
+Everything that used to live in `.compdesk/compdesk.env` (database URL, `AUTH_SECRET`, `APP_SETTINGS_ENCRYPTION_KEY`, and the rest) is written into the `compdesk_config` Docker volume instead of a host-mounted file; back it up the same way as the database (see [BACKUP_AND_RESTORE.md](BACKUP_AND_RESTORE.md)).
 
-```bash
-docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml down
-docker compose --env-file .compdesk/compdesk.env config
-docker compose --env-file .compdesk/compdesk.env up -d --build
-```
+If the `compdesk_pgdata` volume already holds an initialized database but `compdesk_config` has no matching secrets (for example, `compdesk_config` was deleted independently), `config-init` refuses to mint a new random database password and exits with a recovery message instead of silently generating credentials PostgreSQL will not recognize. Restore `compdesk_config` from backup, import an existing installation with `node scripts/import-legacy-deployment.mjs`, or discard the existing database on purpose with `node scripts/docker-reset.mjs` before re-running `docker compose up -d`.
 
-Do not add `-v` when stopping setup: the PostgreSQL volume contains the installed database. Archive `.compdesk/compdesk.env` in an encrypted backup; it contains database, authentication, and encryption secrets. The temporary `docker-bootstrap.env` may be securely removed only after production Compose starts successfully and the final configuration is backed up.
-
-The setup and production Compose files share one canonical `compdesk` project identity and the same `pgdata`, `uploads`, and `attachments` volume names, so production takes over exactly what setup created with no ownership warnings and no data loss.
-
-If `.compdesk/docker-bootstrap.env` is missing but the `pgdata` volume already holds an initialized PostgreSQL data directory (for example, the file was deleted or setup ran on a machine with a pre-existing volume), `npm run setup:docker:prepare` refuses to mint a new random database user and exits with a recovery message instead of silently generating credentials PostgreSQL will not recognize. Restore the original `docker-bootstrap.env` from backup, or discard the existing database on purpose with `node scripts/docker-reset.mjs` before re-running the preparation command.
+The previous two-stack flow (`docker-compose.setup.yml` + a separate production `docker-compose.yml`) is deprecated but still present for migration/rollback — see the "Migration from the two-stack deployment" section of [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md).
 
 ## Security behavior
 

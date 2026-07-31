@@ -1,0 +1,22 @@
+# Local development override: builds the image from source instead of
+# pulling a published one. No environment variable needs to be set first —
+# docker-compose.yml's COMPDESK_VERSION defaults to "0.0.0-local" (see its
+# header comment), so this one command is everything a local build needs:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Compose builds locally and tags the result ghcr.io/tahahydra/compdesk:0.0.0-local
+# — never pulled from a registry, since `build:` is present here. The public
+# docker-compose.yml never uses `build:` — only this override does.
+name: compdesk
+
+services:
+  config-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+  compdesk:
+    build:
+      context: .
+      dockerfile: Dockerfile
