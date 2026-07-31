@@ -1,6 +1,6 @@
 # Backup and restore
 
-A valid recovery set contains PostgreSQL, private attachments, uploaded branding/quick-link assets, the single runtime configuration file, any configured PostgreSQL custom CA, `AUTH_SECRET`, and both current/previous settings-encryption keys.
+A valid recovery set contains PostgreSQL, private attachments, uploaded branding/quick-link assets, the runtime configuration (the `compdesk_config` Docker volume for the unified Compose deployment, or the single runtime configuration file for standalone/legacy deployments), any configured PostgreSQL custom CA, `AUTH_SECRET`, and both current/previous settings-encryption keys.
 
 > The configuration backup can decrypt sessions and database secrets. Encrypt the entire backup, restrict access, and keep at least one separately administered copy. Never upload it to an issue or commit it to Git.
 
@@ -24,13 +24,33 @@ npm run backup:verify -- /absolute/path/to/backups/compdesk-YYYY-MM-DD...
 
 The script passes PostgreSQL credentials through `PG*` child-process environment variables rather than command-line arguments. Use `node scripts/backup.mjs --dry-run` to confirm scope without writing a backup or contacting PostgreSQL.
 
-## Docker Compose backup
+## Docker Compose backup (unified stack)
 
-Quiesce application writes or take a coordinated storage snapshot. Use the exact production environment file:
+Quiesce application writes or take a coordinated storage snapshot:
 
 ```bash
-docker compose --env-file .compdesk/compdesk.env exec -T db \
-  sh -c 'exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
+docker compose exec -T db \
+  sh -c ‘exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"’ \
+  > database.dump
+
+docker run --rm -v compdesk_attachments:/source:ro -v "$PWD":/backup alpine:3.22 \
+  tar -C /source -czf /backup/attachments.tar.gz .
+docker run --rm -v compdesk_uploads:/source:ro -v "$PWD":/backup alpine:3.22 \
+  tar -C /source -czf /backup/uploads.tar.gz .
+docker run --rm -v compdesk_config:/source:ro -v "$PWD":/backup alpine:3.22 \
+  tar -C /source -czf /backup/config.tar.gz .
+chmod 600 database.dump attachments.tar.gz uploads.tar.gz config.tar.gz
+```
+
+The `compdesk_config` archive replaces the old `compdesk.env`/`database-ca.pem` file backups for the unified stack — it contains the same secrets (database URL, `AUTH_SECRET`, `APP_SETTINGS_ENCRYPTION_KEY`, any custom PostgreSQL CA) plus the installation receipt. If volume names were customized, use the configured names.
+
+## Docker Compose backup (deprecated two-stack deployment)
+
+For an installation still running the legacy `docker-compose.legacy.yml`/`docker-compose.setup.yml` pair (not yet migrated — see [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md)), use the exact production environment file instead:
+
+```bash
+docker compose --env-file .compdesk/compdesk.env -f docker-compose.legacy.yml exec -T db \
+  sh -c ‘exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"’ \
   > database.dump
 
 docker run --rm -v compdesk_attachments:/source:ro -v "$PWD":/backup alpine:3.22 \
@@ -43,7 +63,7 @@ chmod 600 database.dump attachments.tar.gz uploads.tar.gz compdesk.env.backup
 if [ -f database-ca.pem.backup ]; then chmod 600 database-ca.pem.backup; fi
 ```
 
-If volume names were customized, use the configured names. For external PostgreSQL, use the database provider’s consistent snapshot procedure or `npm run backup` from a host that can reach it.
+For external PostgreSQL (either topology), use the database provider’s consistent snapshot procedure or `npm run backup` from a host that can reach it.
 
 ## Restore rehearsal
 

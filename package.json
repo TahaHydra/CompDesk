@@ -21,6 +21,7 @@
     "start:app": "npm run validate:env && node scripts/migrate-private-attachments.mjs && node scripts/start-standalone.mjs",
     "setup:bootstrap": "node scripts/launch.mjs --setup",
     "setup:docker:prepare": "node scripts/prepare-docker-setup.mjs",
+    "setup:docker:import": "node scripts/import-legacy-deployment.mjs",
     "setup:recover": "node scripts/setup-recovery.mjs",
     "docker:reset": "node scripts/docker-reset.mjs",
     "lint": "eslint . --max-warnings=0",

@@ -26,15 +26,13 @@ CompDesk must be served over HTTPS outside localhost. The production Compose top
 
 A fresh installation starts an isolated setup service before the main application. It generates a time-limited one-time token, binds to localhost by default, tests the selected PostgreSQL deployment, writes secrets atomically, runs migrations, creates the first Super Admin, and permanently disables setup after installation.
 
-Docker Compose is the recommended deployment:
+Docker Compose is the recommended deployment — one command, no Node.js or npm required:
 
 ```bash
-npm ci
-npm run setup:docker:prepare
-docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml up --build
+docker compose up -d
 ```
 
-Follow [First-run setup](docs/FIRST_RUN_SETUP.md) rather than adding database credentials or a fixed administrator password to source control. Demo data is optional, disabled by default, and uses generated credentials shown once.
+Open `http://localhost:3000/setup`, complete the wizard, and the same container automatically switches itself to production on the same port. Follow [First-run setup](docs/FIRST_RUN_SETUP.md) and [Docker deployment](docs/DEPLOY_DOCKER.md) rather than adding database credentials or a fixed administrator password to source control. Demo data is optional, disabled by default, and uses generated credentials shown once.
 
 For local development, follow [SETUP.md](SETUP.md).
 

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
     return NextResponse.json(
-        { status: 'live' },
+        { status: 'live', mode: 'production' },
         { headers: { 'Cache-Control': 'no-store' } }
     );
 }

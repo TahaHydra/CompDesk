@@ -32,6 +32,7 @@ import {
     validatePublicUrl,
     writeFileAtomic,
 } from './setup-core.mjs';
+import { readPostgresIdentity, readPostgresPassword } from './config-store.mjs';
 
 const { Client } = pg;
 const execFileAsync = promisify(execFile);
@@ -44,13 +45,57 @@ const installedUiPath = path.join(root, 'scripts', 'setup-installed.html');
 const envPath = path.resolve(process.env.COMPDESK_ENV_FILE || path.join(root, '.env'));
 const host = process.env.SETUP_ALLOW_REMOTE === 'true' ? (process.env.SETUP_HOST || '0.0.0.0') : '127.0.0.1';
 const port = Number.parseInt(process.env.SETUP_PORT || '3000', 10);
-const publicHost = host === '0.0.0.0' ? (process.env.SETUP_PUBLIC_HOST || 'localhost') : host;
-const setupOrigin = `http://${publicHost}:${port}`;
+const trustProxy = process.env.SETUP_TRUST_PROXY === 'true';
+
+function normalizePublicOrigin(value) {
+    if (!value) return null;
+    let parsed;
+    try {
+        parsed = new URL(String(value).trim());
+    } catch {
+        throw new Error('SETUP_PUBLIC_ORIGIN must be a valid absolute HTTP or HTTPS origin.');
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+        throw new Error('SETUP_PUBLIC_ORIGIN must contain only an HTTP or HTTPS origin, without credentials, path, query, or fragment.');
+    }
+    return parsed.origin;
+}
+
+const explicitSetupOrigin = normalizePublicOrigin(process.env.SETUP_PUBLIC_ORIGIN);
+
+function firstForwardedValue(value) {
+    return String(value || '').split(',')[0].trim();
+}
+
+function originFromRequest(request) {
+    if (explicitSetupOrigin) return explicitSetupOrigin;
+
+    const forwardedHost = trustProxy ? firstForwardedValue(request.headers['x-forwarded-host']) : '';
+    const forwardedProto = trustProxy ? firstForwardedValue(request.headers['x-forwarded-proto']) : '';
+    const authority = forwardedHost || String(request.headers.host || '').trim();
+    const protocol = forwardedProto || (request.socket.encrypted ? 'https' : 'http');
+
+    if (!authority || /[\r\n\s/@]/.test(authority) || !['http', 'https'].includes(protocol)) {
+        return null;
+    }
+    try {
+        const parsed = new URL(`${protocol}://${authority}`);
+        if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || !parsed.hostname) return null;
+        return parsed.origin;
+    } catch {
+        return null;
+    }
+}
+
+function requestHasExpectedOrigin(request, expectedOrigin) {
+    return Boolean(expectedOrigin) && isSameOrigin(request, expectedOrigin);
+}
 const bootstrapToken = randomSecret(32);
 const bootstrapExpiresAt = Date.now() + TOKEN_TTL_MS;
 const sessions = new Map();
 const attempts = new Map();
 let installRunning = false;
+let onInstalled = null;
 
 function json(response, status, payload, headers = {}) {
     const body = JSON.stringify(payload);
@@ -89,7 +134,7 @@ function renderInstalledPage() {
     } catch { /* render generic guidance below when the receipt cannot be read */ }
     const template = fs.readFileSync(installedUiPath, 'utf8');
     const deployment = receipt?.applicationUrl
-        ? deploymentNextSteps({ deploymentMode: receipt.deploymentMode, applicationUrl: receipt.applicationUrl })
+        ? deploymentNextSteps({ deploymentMode: receipt.deploymentMode, applicationUrl: receipt.applicationUrl, orchestratorManaged: process.env.COMPDESK_ORCHESTRATOR_MANAGED === 'true' })
         : null;
     const steps = deployment
         ? deployment.commands.map((step) => `<li>${escapeHtml(step.description)}<pre><code>${escapeHtml(step.command)}</code></pre></li>`).join('')
@@ -149,7 +194,8 @@ function requireMutation(request, response) {
         json(response, 401, { error: 'The setup session is missing or expired.' });
         return null;
     }
-    if (!isSameOrigin(request, setupOrigin) || !timingSafeEqual(request.headers['x-csrf-token'] || '', session.csrfToken)) {
+    const currentOrigin = originFromRequest(request);
+    if (currentOrigin !== session.origin || !requestHasExpectedOrigin(request, session.origin) || !timingSafeEqual(request.headers['x-csrf-token'] || '', session.csrfToken)) {
         json(response, 403, { error: 'Setup request origin or CSRF validation failed.' });
         return null;
     }
@@ -331,18 +377,49 @@ function smtpTransport(smtp) {
     });
 }
 
+// The unified single-container Docker deployment has no separate host-side
+// preparation step, so its bootstrap PostgreSQL credentials cannot arrive via
+// Compose environment interpolation (see scripts/config-store.mjs and
+// scripts/config-init.mjs): config-init writes them as files into the
+// compdesk_config volume this process shares. The legacy two-stack
+// docker-compose.setup.yml flow (COMPDESK_BOOTSTRAP_DB_* env vars, set by
+// prepare-docker-setup.mjs before `docker compose up`) is still honored
+// unchanged for anyone running it standalone during migration rollback.
+function fileBasedBootstrapDatabase() {
+    try {
+        const identity = readPostgresIdentity(stateDirectory);
+        const password = readPostgresPassword(stateDirectory);
+        if (!identity.user || !identity.db || !password) return null;
+        return {
+            provider: 'postgresql',
+            host: process.env.COMPDESK_BOOTSTRAP_DB_HOST || 'db',
+            port: Number.parseInt(process.env.COMPDESK_BOOTSTRAP_DB_PORT || '5432', 10),
+            database: identity.db,
+            username: identity.user,
+            password,
+            sslMode: 'disable',
+            ca: '',
+        };
+    } catch {
+        return null;
+    }
+}
+
 function resolveDatabase(database, deploymentMode) {
-    if (deploymentMode !== 'docker-compose' || !process.env.COMPDESK_BOOTSTRAP_DB_PASSWORD) return database;
-    return {
-        provider: 'postgresql',
-        host: process.env.COMPDESK_BOOTSTRAP_DB_HOST || 'db',
-        port: Number.parseInt(process.env.COMPDESK_BOOTSTRAP_DB_PORT || '5432', 10),
-        database: process.env.COMPDESK_BOOTSTRAP_DB_NAME || 'compdesk_db',
-        username: process.env.COMPDESK_BOOTSTRAP_DB_USER || '',
-        password: process.env.COMPDESK_BOOTSTRAP_DB_PASSWORD,
-        sslMode: 'disable',
-        ca: '',
-    };
+    if (deploymentMode !== 'docker-compose') return database;
+    if (process.env.COMPDESK_BOOTSTRAP_DB_PASSWORD) {
+        return {
+            provider: 'postgresql',
+            host: process.env.COMPDESK_BOOTSTRAP_DB_HOST || 'db',
+            port: Number.parseInt(process.env.COMPDESK_BOOTSTRAP_DB_PORT || '5432', 10),
+            database: process.env.COMPDESK_BOOTSTRAP_DB_NAME || 'compdesk_db',
+            username: process.env.COMPDESK_BOOTSTRAP_DB_USER || '',
+            password: process.env.COMPDESK_BOOTSTRAP_DB_PASSWORD,
+            sslMode: 'disable',
+            ca: '',
+        };
+    }
+    return fileBasedBootstrapDatabase() || database;
 }
 
 function validateInstall(input) {
@@ -554,7 +631,7 @@ async function install(input) {
         return {
             success: true,
             message: 'CompDesk installation completed. Bootstrap access is now permanently retired.',
-            deployment: deploymentNextSteps({ deploymentMode: config.deploymentMode, applicationUrl: config.identity.applicationUrl }),
+            deployment: deploymentNextSteps({ deploymentMode: config.deploymentMode, applicationUrl: config.identity.applicationUrl, orchestratorManaged: process.env.COMPDESK_ORCHESTRATOR_MANAGED === 'true' }),
             ...(demoCredentials ? { demoCredentials } : {}),
         };
     } catch (error) {
@@ -571,7 +648,7 @@ async function install(input) {
 }
 
 async function handle(request, response) {
-    const requestUrl = new URL(request.url, setupOrigin);
+    const requestUrl = new URL(request.url, 'http://localhost');
     if (fs.existsSync(receiptPath)) {
         const status = requestUrl.pathname.startsWith('/setup') ? 410 : 404;
         const isBrowserNavigation = request.method === 'GET'
@@ -602,7 +679,8 @@ async function handle(request, response) {
         return;
     }
     if (requestUrl.pathname === '/setup/api/session' && request.method === 'POST') {
-        if (!isSameOrigin(request, setupOrigin)) return json(response, 403, { error: 'Setup authentication requires the setup origin.' });
+        const requestOrigin = originFromRequest(request);
+        if (!requestHasExpectedOrigin(request, requestOrigin)) return json(response, 403, { error: 'Setup authentication requires the setup origin.' });
         if (isRateLimited(sourceIp(request))) return json(response, 429, { error: 'Too many setup authentication attempts. Try again later.' });
         if (Date.now() > bootstrapExpiresAt) return json(response, 410, { error: 'The bootstrap token expired. Restart setup locally to issue a new token.' });
         for (const [id, session] of sessions) if (session.expiresAt < Date.now()) sessions.delete(id);
@@ -611,7 +689,7 @@ async function handle(request, response) {
         if (!timingSafeEqual(body.token || '', bootstrapToken)) return json(response, 401, { error: 'Invalid bootstrap token.' });
         const sessionId = randomSecret(32);
         const csrfToken = randomSecret(24);
-        sessions.set(sessionId, { csrfToken, expiresAt: Date.now() + SESSION_TTL_MS });
+        sessions.set(sessionId, { csrfToken, origin: requestOrigin, expiresAt: Date.now() + SESSION_TTL_MS });
         return json(response, 200, { csrfToken, expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() }, {
             'Set-Cookie': `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}; HttpOnly; SameSite=Strict; Path=/setup; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
         });
@@ -623,7 +701,7 @@ async function handle(request, response) {
     }
     if (requestUrl.pathname === '/setup/api/system' && request.method === 'GET') {
         const system = await getSystemChecks();
-        const bootstrapDatabase = process.env.COMPDESK_BOOTSTRAP_DB_PASSWORD
+        const bootstrapDatabase = process.env.COMPDESK_BOOTSTRAP_DB_PASSWORD || fileBasedBootstrapDatabase()
             ? redactDatabaseInput(resolveDatabase({}, 'docker-compose'))
             : null;
         return json(response, 200, { ...system, bootstrapDatabase });
@@ -669,7 +747,10 @@ async function handle(request, response) {
     }
     if (requestUrl.pathname === '/setup/api/install' && request.method === 'POST') {
         const body = await readBody(request);
-        return json(response, 200, await install(body));
+        const result = await install(body);
+        json(response, 200, result);
+        if (typeof onInstalled === 'function') onInstalled(result);
+        return;
     }
     json(response, 404, { error: 'Setup endpoint not found.' });
 }
@@ -683,15 +764,32 @@ const server = http.createServer((request, response) => {
     });
 });
 
-server.listen(port, host, () => {
-    console.log('');
-    console.log('CompDesk first-run setup is active.');
-    console.log(`Open: ${setupOrigin}/setup`);
-    console.log(`One-time bootstrap token (expires in ${Math.floor(TOKEN_TTL_MS / 60000)} minutes): ${bootstrapToken}`);
-    if (host === '127.0.0.1') console.log('Remote setup is blocked. Set SETUP_ALLOW_REMOTE=true only when protected by a trusted network path.');
-    console.log('');
-});
+// Starts the setup HTTP listener. Exported so an orchestrator (see
+// scripts/orchestrator.mjs) can import this module without it auto-starting
+// (see the COMPDESK_ORCHESTRATOR_MANAGED guard below), then start it itself
+// with an onInstalled hook that lets the same process transition to
+// production in place instead of requiring a second Compose invocation.
+export function startSetupServer({ onInstalled: onInstalledHook } = {}) {
+    onInstalled = onInstalledHook || null;
+    server.listen(port, host, () => {
+        console.log('');
+        console.log('CompDesk first-run setup is active.');
+        if (explicitSetupOrigin) console.log(`Open: ${explicitSetupOrigin}/setup`);
+        else console.log('Open the published CompDesk address and append /setup (for example http://127.0.0.1:3000/setup).');
+        console.log(`One-time bootstrap token (expires in ${Math.floor(TOKEN_TTL_MS / 60000)} minutes): ${bootstrapToken}`);
+        if (host === '127.0.0.1') console.log('Remote setup is blocked. Set SETUP_ALLOW_REMOTE=true only when protected by a trusted network path.');
+        console.log('');
+    });
+    return server;
+}
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => server.close(() => process.exit(0)));
+// Standalone (non-Docker) use imports this module expecting it to start
+// itself immediately (scripts/launch.mjs, `npm run setup:bootstrap`). The
+// orchestrator sets COMPDESK_ORCHESTRATOR_MANAGED=true before importing this
+// module so it can call startSetupServer() explicitly instead.
+if (process.env.COMPDESK_ORCHESTRATOR_MANAGED !== 'true') {
+    startSetupServer();
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+        process.on(signal, () => server.close(() => process.exit(0)));
+    }
 }

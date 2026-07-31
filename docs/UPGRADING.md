@@ -10,6 +10,20 @@
 
 ## Upgrade sequence
 
+### Docker Compose (unified stack)
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Migrations run automatically, once, before the application starts serving
+traffic — there is no separate migration step to run by hand. See
+[DEPLOY_DOCKER.md](DEPLOY_DOCKER.md) for the full upgrade/troubleshooting
+guidance and what happens if a migration fails.
+
+### Standalone Node.js
+
 ```bash
 npm ci
 npm run db:generate
