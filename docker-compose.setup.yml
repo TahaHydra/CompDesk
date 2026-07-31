@@ -1,4 +1,7 @@
-name: compdesk-setup
+# Shares the canonical "compdesk" project identity and volume names with
+# docker-compose.yml so the production stack takes over the same pgdata,
+# uploads, and attachments volumes without Compose "wrong project" warnings.
+name: compdesk
 
 services:
   volume-init:
@@ -75,8 +78,8 @@ networks:
 
 volumes:
   pgdata:
-    name: compdesk_pgdata
+    name: ${POSTGRES_VOLUME_NAME:-compdesk_pgdata}
   uploads:
-    name: compdesk_uploads
+    name: ${UPLOADS_VOLUME_NAME:-compdesk_uploads}
   attachments:
-    name: compdesk_attachments
+    name: ${ATTACHMENTS_VOLUME_NAME:-compdesk_attachments}

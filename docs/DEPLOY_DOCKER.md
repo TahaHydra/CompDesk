@@ -40,6 +40,10 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 The development database binds only to `127.0.0.1`.
+
+### Resetting a development or test deployment
+
+`node scripts/docker-reset.mjs` permanently deletes the CompDesk PostgreSQL, uploads, and attachments volumes, any leftover containers/networks from either the current `compdesk` project or the legacy `compdesk-setup` project, and the generated `.compdesk/` configuration directory. It requires typed confirmation unless `--yes` is passed, never runs automatically, and is intended for development or test environments, not for resetting a production installation. A `docker:reset` npm script is available for convenience; the script itself only requires Node.js and Docker, not `npm install`.
 ## External PostgreSQL
 
 Run the setup wizard locally, select “Existing PostgreSQL with the app in Docker,” and write the restricted configuration to `.compdesk/compdesk.env`. The database must require authenticated encrypted transport appropriate to its network. When `verify-ca` or `verify-full` uses a private CA, setup writes `.compdesk/database-ca.pem` with restrictive permissions and places its `/app/config/database-ca.pem` path in `DATABASE_URL`; the external-database Compose file mounts that directory read-only into both the migration and application containers.

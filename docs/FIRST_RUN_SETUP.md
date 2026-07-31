@@ -32,6 +32,10 @@ docker compose --env-file .compdesk/compdesk.env up -d --build
 
 Do not add `-v` when stopping setup: the PostgreSQL volume contains the installed database. Archive `.compdesk/compdesk.env` in an encrypted backup; it contains database, authentication, and encryption secrets. The temporary `docker-bootstrap.env` may be securely removed only after production Compose starts successfully and the final configuration is backed up.
 
+The setup and production Compose files share one canonical `compdesk` project identity and the same `pgdata`, `uploads`, and `attachments` volume names, so production takes over exactly what setup created with no ownership warnings and no data loss.
+
+If `.compdesk/docker-bootstrap.env` is missing but the `pgdata` volume already holds an initialized PostgreSQL data directory (for example, the file was deleted or setup ran on a machine with a pre-existing volume), `npm run setup:docker:prepare` refuses to mint a new random database user and exits with a recovery message instead of silently generating credentials PostgreSQL will not recognize. Restore the original `docker-bootstrap.env` from backup, or discard the existing database on purpose with `node scripts/docker-reset.mjs` before re-running the preparation command.
+
 ## Security behavior
 
 - Setup listens on loopback unless remote mode is explicitly enabled.
