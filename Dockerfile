@@ -43,8 +43,8 @@ ENV HOSTNAME=0.0.0.0
 # Ephemeral setup/migration target. It deliberately retains Prisma CLI tooling;
 # normal application containers use the smaller production-only runner below.
 FROM runtime-base AS setup
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 USER nextjs
 CMD ["node", "scripts/setup-bootstrap.mjs"]
 
