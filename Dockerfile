@@ -44,8 +44,8 @@ ENV HOSTNAME=0.0.0.0
 # normal application containers use the smaller production-only runner below.
 FROM runtime-base AS setup
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-RUN chmod -R g+rwX /app/node_modules/@prisma /app/node_modules/prisma /app/node_modules/.prisma
 USER nextjs
 CMD ["node", "scripts/setup-bootstrap.mjs"]
 
