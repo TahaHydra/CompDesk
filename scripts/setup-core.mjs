@@ -246,6 +246,34 @@ export function saveNonSecretState(target, input) {
     return safe;
 }
 
+export function deploymentNextSteps({ deploymentMode, applicationUrl }) {
+    const loginUrl = `${applicationUrl}/auth/signin`;
+    if (deploymentMode === 'docker-compose') {
+        return {
+            summary: 'This installer is an ephemeral Docker Compose setup stack. Stop it, then start production so the application can bind the same port.',
+            commands: [
+                { description: 'Stop the setup stack', command: 'docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml down' },
+                { description: 'Start production', command: 'docker compose --env-file .compdesk/compdesk.env up -d --build' },
+            ],
+            loginUrl,
+        };
+    }
+    if (deploymentMode === 'docker-external-db') {
+        return {
+            summary: 'Start the production Docker Compose stack for your existing PostgreSQL server.',
+            commands: [
+                { description: 'Start production', command: 'docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml up -d --build' },
+            ],
+            loginUrl,
+        };
+    }
+    return {
+        summary: 'Stop this setup process, then restart the application to leave bootstrap mode.',
+        commands: [{ description: 'Start the installed application', command: 'npm start' }],
+        loginUrl,
+    };
+}
+
 export function isSameOrigin(request, expectedOrigin) {
     const origin = typeof request.headers.get === 'function'
         ? request.headers.get('origin')

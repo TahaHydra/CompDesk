@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>CompDesk is installed</title>
+    <style>
+        :root{font:16px/1.5 system-ui,sans-serif;color-scheme:light dark;--accent:#4f46e5}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0}.shell{max-width:720px;margin:auto;padding:3rem 1rem 5rem}.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:1.5rem;box-shadow:0 18px 40px #0005}h1{margin:.25rem 0 1rem}dl{display:grid;grid-template-columns:minmax(140px,1fr) 2fr;gap:.5rem;margin:1rem 0}dt{font-weight:700}ol{padding-left:1.25rem}li{margin-bottom:1rem}pre{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.6rem .8rem;overflow-x:auto;margin:.4rem 0 0}code{word-break:break-all}
+    </style>
+</head>
+<body>
+<main class="shell">
+    <header><strong>CompDesk</strong><h1>Installation already complete</h1></header>
+    <section class="card">
+        <p>{{SUMMARY}}</p>
+        <dl>
+            <dt>Installed</dt><dd>{{INSTALLED_AT}}</dd>
+            <dt>Application URL</dt><dd>{{APPLICATION_URL}}</dd>
+        </dl>
+        <ol>{{STEPS}}</ol>
+        <p>Once production is running, sign in at <code>{{LOGIN_URL}}</code>.</p>
+        <p>This first-run setup server is permanently disabled and cannot be reopened.</p>
+    </section>
+</main>
+</body>
+</html>

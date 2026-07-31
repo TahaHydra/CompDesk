@@ -113,3 +113,31 @@ test('completed setup endpoints return gone', async () => {
         fs.rmSync(stateDirectory, { recursive: true, force: true });
     }
 });
+
+test('reopening installed setup shows a friendly HTML page for browsers and plain JSON for API clients', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-installed-'));
+    fs.writeFileSync(path.join(stateDirectory, 'installation.json'), JSON.stringify({
+        installedAt: '2026-01-01T00:00:00.000Z',
+        applicationUrl: 'http://localhost:3000',
+        deploymentMode: 'docker-compose',
+    }), { mode: 0o600 });
+    const running = await startSetup(stateDirectory);
+    try {
+        const origin = `http://127.0.0.1:${running.port}`;
+        const browserRequest = await fetch(`${origin}/setup`, { headers: { Accept: 'text/html,application/xhtml+xml' } });
+        assert.equal(browserRequest.status, 410);
+        assert.match(browserRequest.headers.get('content-type') || '', /text\/html/);
+        const body = await browserRequest.text();
+        assert.doesNotMatch(body, /"error"/);
+        assert.match(body, /docker compose/);
+        assert.match(body, /docker-compose\.setup\.yml/);
+
+        const apiRequest = await fetch(`${origin}/setup`);
+        assert.equal(apiRequest.status, 410);
+        assert.equal(apiRequest.headers.get('content-type'), 'application/json; charset=utf-8');
+        assert.deepEqual(await apiRequest.json(), { error: 'First-run setup is no longer available.' });
+    } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
