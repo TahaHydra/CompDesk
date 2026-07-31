@@ -100,7 +100,7 @@ jobs:
           sbom: true
 
       - name: Scan the exact artifact that was just built and pushed, by its digest
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/tahahydra/compdesk@${{ steps.build.outputs.digest }}
           format: table
