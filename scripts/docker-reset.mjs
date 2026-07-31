@@ -1,6 +1,6 @@
 import path from 'node:path';
 import readline from 'node:readline/promises';
-import { executeDockerReset, planDockerReset } from './docker-project.mjs';
+import { RESET_CONFIRMATION_PHRASE, executeDockerReset, formatResetOutcome, planDockerReset } from './docker-project.mjs';
 
 const root = process.cwd();
 const stateDirectory = path.join(root, '.compdesk');
@@ -20,8 +20,8 @@ async function confirmedByUser() {
     }
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
-        const answer = await rl.question('Type "delete" to permanently remove these resources, or anything else to cancel: ');
-        return answer.trim().toLowerCase() === 'delete';
+        const answer = await rl.question(`Type "${RESET_CONFIRMATION_PHRASE}" (exact, case-sensitive) to permanently remove these resources, or anything else to cancel: `);
+        return answer.trim() === RESET_CONFIRMATION_PHRASE;
     } finally {
         rl.close();
     }
@@ -33,5 +33,9 @@ if (!(await confirmedByUser())) {
 }
 
 console.log('Removing CompDesk Docker resources...');
-executeDockerReset(plan, { log: console.log });
-console.log('Done. CompDesk containers, networks, volumes, and generated configuration have been removed.');
+const result = executeDockerReset(plan, { log: console.log });
+const outcome = formatResetOutcome(result, stateDirectory);
+for (const line of outcome.lines) {
+    (outcome.exitCode === 0 ? console.log : console.error)(line);
+}
+process.exit(outcome.exitCode);

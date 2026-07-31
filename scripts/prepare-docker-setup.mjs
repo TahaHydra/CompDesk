@@ -20,6 +20,14 @@ if (result.action === 'refused-initialized-volume') {
     console.error('     Then re-run: npm run setup:docker:prepare');
     process.exit(1);
 }
+if (result.action === 'refused-unknown-volume-state') {
+    console.error(`Refusing to generate new PostgreSQL bootstrap credentials: the state of Docker volume "${result.volumeName}" could not be determined.`);
+    console.error(result.inspection?.detail || 'Docker inspection failed for an unknown reason.');
+    console.error('');
+    console.error('This is a fail-closed safeguard: generating credentials while Docker state is unknown could silently orphan an existing database.');
+    console.error('Check that Docker is installed, the Docker daemon is running, and this user has permission to access it (for example, membership in the "docker" group), then re-run: npm run setup:docker:prepare');
+    process.exit(1);
+}
 if (result.action === 'preserved') {
     console.log('Existing incomplete Docker bootstrap configuration preserved.');
     console.log('Run: docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml up --build');
