@@ -1,5 +1,5 @@
 import { chownRecursiveSync, initializeConfig } from './config-store.mjs';
-
+import fs from 'node:fs';
 const configDir = process.env.COMPDESK_CONFIG_DIR || '/config';
 const pgdataCheckDirectory = process.env.COMPDESK_PGDATA_CHECK_DIR || '/pgdata-check';
 const runtimeUid = Number.parseInt(process.env.COMPDESK_RUNTIME_UID || '1001', 10);
@@ -15,7 +15,10 @@ const ownedPaths = (process.env.COMPDESK_CHOWN_PATHS || '')
 // secrets directory root-owned (config-init runs as root) and unreadable by
 // the compdesk container, which runs as the unprivileged runtime user.
 const result = initializeConfig({ configDir, pgdataCheckDirectory });
-
+// Docker creates the root of a fresh named volume with permissive default
+// directory permissions. The config volume contains credentials and runtime
+// secrets, so restrict its root before handing it to the unprivileged app.
+fs.chmodSync(configDir, 0o700);
 for (const target of ownedPaths) {
     chownRecursiveSync(target, runtimeUid, runtimeGid);
 }
