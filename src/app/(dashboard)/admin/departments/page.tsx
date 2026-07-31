@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/layout/page-header';
 import { useToast } from '@/components/ui/use-toast';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 
 interface Template { id: string; name: string; isSystemDefault: boolean; archivedAt: string | null }
 interface Administrator { id: string; name: string; email: string; role: string; isActive: boolean }
@@ -199,9 +200,13 @@ export default function AdminDepartmentsPage() {
                                         <Pencil className="mr-1 h-3.5 w-3.5" /> {isSuperAdmin ? 'Edit' : 'Assign template'}
                                     </Button>
                                     {isSuperAdmin && department._count.tickets === 0 && department._count.categories === 0 ? (
-                                        <Button size="sm" variant="destructive" onClick={() => window.confirm('Permanently delete this empty department?') && remove.mutate(department.id)}>
-                                            <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                                        </Button>
+                                        <ConfirmDestructiveAction
+                                            title="Delete department?"
+                                            description={<>The empty department <strong>{department.name}</strong> will be permanently deleted.</>}
+                                            pending={remove.isPending}
+                                            onConfirm={() => remove.mutate(department.id)}
+                                            trigger={<Button size="sm" variant="destructive"><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>}
+                                        />
                                     ) : null}
                                 </div>
                             </CardContent>

@@ -69,6 +69,10 @@ describe('application route and access contracts', () => {
             const route = appRoute(file, `${path.sep}app${path.sep}`);
             const source = readFileSync(file, 'utf8');
             if (route === '/api/auth/[...nextauth]') continue;
+            if (route === '/api/health/live' || route === '/api/health/ready') {
+                expect(source).toContain('Cache-Control');
+                continue;
+            }
             if (route === '/api/branding') {
                 expect(source).toContain('getPublicBranding');
                 continue;
@@ -86,11 +90,13 @@ describe('application route and access contracts', () => {
         const dashboardRoute = readFileSync(path.join(appRoot, 'api', 'dashboard', 'stats', 'route.ts'), 'utf8');
         const notificationRoute = readFileSync(path.join(appRoot, 'api', 'notifications', 'route.ts'), 'utf8');
         const ticketCreation = readFileSync(path.join(sourceRoot, 'lib', 'tickets', 'create-ticket.ts'), 'utf8');
-        expect(ticketRoute).toContain("role === 'ADMIN' || view === 'queue'");
+        expect(ticketRoute).toContain("role === 'AGENT' || role === 'ADMIN'");
+        expect(ticketRoute).toContain('buildTicketVisibilityWhere(userId, role, view, accessibleQueueIds)');
         expect(ticketRoute).toContain('getQueueInboxQueueIds(userId, role)');
         const ticketDetailRoute = readFileSync(path.join(appRoot, 'api', 'tickets', '[id]', 'route.ts'), 'utf8');
-        expect(ticketDetailRoute).toContain("'status', 'queueId', 'categoryId'");
-        expect(dashboardRoute).toContain("role === 'ADMIN'");
+        expect(ticketDetailRoute).toContain("'queueId', 'categoryId', 'priority'");
+        expect(ticketDetailRoute).toContain('canTransition(existingTicket.status, changes.status, session.user.role)');
+        expect(dashboardRoute).toContain("role !== 'SUPER_ADMIN'");
         expect(dashboardRoute).toContain('getQueueInboxQueueIds(userId, role)');
         expect(notificationRoute).toContain('getQueueInboxQueueIds(userId, role)');
         expect(ticketCreation).toContain('actor.role === Role.ADMIN');

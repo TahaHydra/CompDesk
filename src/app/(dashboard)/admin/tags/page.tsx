@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { Plus, Tag, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -91,9 +92,6 @@ export default function AdminTagsPage() {
 
     const removeTag = useMutation({
         mutationFn: async (id: string) => {
-            if (!confirm('Delete this tag? It will be removed from existing tickets.')) {
-                throw new Error('Cancelled');
-            }
             const res = await fetch(`/api/tags?id=${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed');
@@ -103,7 +101,6 @@ export default function AdminTagsPage() {
             toast({ title: 'Tag deleted' });
         },
         onError: (error: Error) => {
-            if (error.message === 'Cancelled') return;
             toast({ title: 'Error', description: error.message, variant: 'destructive' });
         },
     });
@@ -188,14 +185,17 @@ export default function AdminTagsPage() {
                                         >
                                             <Pencil className="h-4 w-4" />
                                         </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                            onClick={() => removeTag.mutate(tag.id)}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        <ConfirmDestructiveAction
+                                            title="Delete tag?"
+                                            description={<>The tag <strong>{tag.name}</strong> will be removed from every ticket that uses it.</>}
+                                            pending={removeTag.isPending}
+                                            onConfirm={() => removeTag.mutate(tag.id)}
+                                            trigger={
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" aria-label={`Delete ${tag.name}`}>
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            }
+                                        />
                                     </div>
                                 </CardContent>
                             </Card>

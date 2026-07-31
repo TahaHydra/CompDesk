@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import nextEnv from '@next/env';
 
 const { loadEnvConfig } = nextEnv;
@@ -7,6 +9,33 @@ const placeholderPattern = /(?:change-me|replace-with|your-secret|example-secret
 const authUrlValue = process.env.AUTH_URL?.trim() || process.env.NEXTAUTH_URL?.trim();
 const authSecret = process.env.AUTH_SECRET?.trim() || process.env.NEXTAUTH_SECRET?.trim();
 const errors = [];
+const databaseUrlValue = process.env.DATABASE_URL?.trim();
+
+if (!databaseUrlValue) {
+    errors.push('DATABASE_URL is required.');
+} else {
+    try {
+        const databaseUrl = new URL(databaseUrlValue);
+        if (!['postgresql:', 'postgres:'].includes(databaseUrl.protocol)) errors.push('DATABASE_URL must use PostgreSQL.');
+        const rootCertificate = databaseUrl.searchParams.get('sslrootcert');
+        const configuredCa = process.env.DATABASE_CA_FILE?.trim();
+        if (configuredCa && !rootCertificate) {
+            errors.push('DATABASE_URL must include sslrootcert when DATABASE_CA_FILE is configured so Prisma uses the custom CA.');
+        }
+        if (configuredCa && rootCertificate && path.resolve(configuredCa) !== path.resolve(rootCertificate)) {
+            errors.push('DATABASE_CA_FILE and DATABASE_URL sslrootcert must reference the same file.');
+        }
+        if (rootCertificate) {
+            try {
+                fs.accessSync(path.resolve(rootCertificate), fs.constants.R_OK);
+            } catch {
+                errors.push('The PostgreSQL custom CA file is missing or unreadable.');
+            }
+        }
+    } catch {
+        errors.push('DATABASE_URL must be a valid PostgreSQL URL.');
+    }
+}
 
 let authUrl;
 if (!authUrlValue) {

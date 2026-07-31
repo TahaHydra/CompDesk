@@ -5,14 +5,80 @@ export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-/** Sanitize rich text input (server-side) */
+const RAW_TEXT_ELEMENTS = new Set(['script', 'style', 'iframe', 'object', 'template']);
+
+function tagName(markup: string): { name: string; closing: boolean } | null {
+    let cursor = 0;
+    const closing = markup[cursor] === '/';
+    if (closing) cursor += 1;
+    const start = cursor;
+    const firstCode = markup.charCodeAt(cursor);
+    const startsWithLetter = (firstCode >= 65 && firstCode <= 90) || (firstCode >= 97 && firstCode <= 122);
+    if (!startsWithLetter) return null;
+    cursor += 1;
+    while (cursor < markup.length) {
+        const code = markup.charCodeAt(cursor);
+        const letter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+        const digit = code >= 48 && code <= 57;
+        if (!letter && !digit && markup[cursor] !== '-' && markup[cursor] !== ':') break;
+        cursor += 1;
+    }
+    return { name: markup.slice(start, cursor).toLowerCase(), closing };
+}
+
+/** Normalize untrusted legacy rich text to plain text before storing it. */
 export function sanitizeHtml(html: string): string {
-    // Basic sanitization - strip script tags and event handlers
-    return html
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/on\w+="[^"]*"/gi, '')
-        .replace(/on\w+='[^']*'/gi, '')
-        .replace(/javascript:/gi, '');
+    let output = '';
+    let cursor = 0;
+    let suppressedElement: string | null = null;
+
+    while (cursor < html.length) {
+        if (html[cursor] !== '<') {
+            if (!suppressedElement && html[cursor] !== '\0') output += html[cursor];
+            cursor += 1;
+            continue;
+        }
+
+        if (html.startsWith('<!--', cursor)) {
+            const commentEnd = html.indexOf('-->', cursor + 4);
+            if (commentEnd === -1) break;
+            cursor = commentEnd + 3;
+            continue;
+        }
+
+        let quote: '"' | "'" | null = null;
+        let tagEnd = cursor + 1;
+        for (; tagEnd < html.length; tagEnd += 1) {
+            const character = html[tagEnd];
+            if (quote) {
+                if (character === quote) quote = null;
+            } else if (character === '"' || character === "'") {
+                quote = character;
+            } else if (character === '>') {
+                break;
+            }
+        }
+        if (tagEnd >= html.length) {
+            if (!suppressedElement) output += '<';
+            cursor += 1;
+            continue;
+        }
+
+        const parsed = tagName(html.slice(cursor + 1, tagEnd));
+        if (!parsed) {
+            if (!suppressedElement) output += html.slice(cursor, tagEnd + 1);
+            cursor = tagEnd + 1;
+            continue;
+        }
+        if (suppressedElement) {
+            if (parsed.closing && parsed.name === suppressedElement) suppressedElement = null;
+        } else if (!parsed.closing && RAW_TEXT_ELEMENTS.has(parsed.name)) {
+            suppressedElement = parsed.name;
+        }
+        cursor = tagEnd + 1;
+    }
+
+    return output;
 }
 
 /** Generate ticket key like TCK-2026-000123 */

@@ -10,6 +10,7 @@ jest.mock('@/lib/prisma', () => ({
 
 import {
     canAccessTicket,
+    canDeleteTicket,
     canAdministerQueue,
     getAdministeredQueueIds,
     getQueueInboxQueueIds,
@@ -114,5 +115,35 @@ describe('permissions', () => {
         await expect(
             canAccessTicket('super-1', 'SUPER_ADMIN', { requesterId: 'user-2', queueId: 'queue-any' })
         ).resolves.toBe(true);
+    });
+    it('lets super administrators delete any ticket, including assigned tickets', () => {
+        expect(canDeleteTicket('super-1', 'SUPER_ADMIN', {
+            requesterId: 'user-1',
+            assignmentCount: 1,
+        })).toBe(true);
+    });
+
+    it('lets any requester withdraw their own unassigned ticket', () => {
+        for (const role of ['USER', 'AGENT', 'ADMIN'] as const) {
+            expect(canDeleteTicket('requester-1', role, {
+                requesterId: 'requester-1',
+                assignmentCount: 0,
+            })).toBe(true);
+        }
+    });
+
+    it('blocks non-super-admin deletion of assigned or other requesters tickets', () => {
+        expect(canDeleteTicket('user-1', 'USER', {
+            requesterId: 'user-1',
+            assignmentCount: 1,
+        })).toBe(false);
+        expect(canDeleteTicket('admin-1', 'ADMIN', {
+            requesterId: 'user-1',
+            assignmentCount: 0,
+        })).toBe(false);
+        expect(canDeleteTicket('agent-1', 'AGENT', {
+            requesterId: 'user-1',
+            assignmentCount: 0,
+        })).toBe(false);
     });
 });

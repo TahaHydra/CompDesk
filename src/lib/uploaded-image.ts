@@ -2,6 +2,11 @@ import crypto from 'crypto';
 import path from 'path';
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import sharp from 'sharp';
+import { isLocalStandaloneRuntime, resolveApplicationRoot } from '@/lib/runtime-paths';
+import { isUploadedImageUrl, type UploadImageFolder } from '@/lib/uploaded-image-url';
+
+export { isUploadedImageUrl } from '@/lib/uploaded-image-url';
+export type { UploadImageFolder } from '@/lib/uploaded-image-url';
 
 export const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
     'image/png': '.png',
@@ -18,8 +23,6 @@ const QUICK_LINK_ICON_MAX_INPUT_PIXELS = 20_000_000;
 const QUICK_LINK_ICON_MIN_EDGE = 16;
 const QUICK_LINK_ICON_MIN_ASPECT_RATIO = 0.5;
 const QUICK_LINK_ICON_MAX_ASPECT_RATIO = 2;
-
-export type UploadImageFolder = 'branding' | 'quick-links';
 
 export interface StoredImage {
     url: string;
@@ -46,10 +49,8 @@ export function detectImageMime(buffer: Buffer): string | null {
 
 export function resolveUploadRoots(cwd = process.cwd()): string[] {
     const runtimeRoot = path.resolve(cwd, 'public', 'uploads');
-    const isLocalStandalone = path.basename(cwd).toLowerCase() === 'standalone'
-        && path.basename(path.dirname(cwd)).toLowerCase() === '.next';
-    const persistentRoot = isLocalStandalone
-        ? path.resolve(cwd, '..', '..', 'public', 'uploads')
+    const persistentRoot = isLocalStandaloneRuntime(cwd)
+        ? path.resolve(resolveApplicationRoot(cwd), 'public', 'uploads')
         : runtimeRoot;
     return [...new Set([persistentRoot, runtimeRoot])];
 }
@@ -139,10 +140,6 @@ export async function storeOptimizedQuickLinkIcon(file: File): Promise<Optimized
     const filename = `${crypto.randomUUID()}.webp`;
     await writeImageCopies('quick-links', filename, output);
     return { ...optimized, url: `/uploads/quick-links/${filename}`, sourceSize: buffer.length };
-}
-
-export function isUploadedImageUrl(url: string, folder: UploadImageFolder): boolean {
-    return new RegExp(`^/uploads/${folder}/[0-9a-f-]{36}\.(?:png|jpg|webp|gif|ico)$`).test(url);
 }
 
 export async function removeUploadedImage(url: string, folder: UploadImageFolder): Promise<void> {

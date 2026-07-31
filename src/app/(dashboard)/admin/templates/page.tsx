@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { TemplateEditor } from '@/components/admin/template-editor';
 import type { TicketFormTemplateDefinition } from '@/lib/ticket-form/types';
 
@@ -102,7 +103,7 @@ export default function AdminTemplatesPage() {
                                 <Button size="sm" variant="outline" onClick={() => createTemplate.mutate({ sourceTemplateId: template.id, name: `${template.name} Copy`, description: template.description })}><Copy className="mr-1 h-3.5 w-3.5" /> Duplicate</Button>
                                 {!template.isSystemDefault && !template.archivedAt ? <Button size="sm" variant="outline" onClick={() => lifecycle.mutate({ template, action: 'archive' })}><Archive className="mr-1 h-3.5 w-3.5" /> Archive</Button> : null}
                                 {template.archivedAt ? <Button size="sm" variant="outline" onClick={() => lifecycle.mutate({ template, action: 'restore' })}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore</Button> : null}
-                                {canHardDelete ? <Button size="sm" variant="destructive" onClick={() => window.confirm('Permanently delete this unused template?') && lifecycle.mutate({ template, action: 'delete' })}><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button> : null}
+                                {canHardDelete ? <ConfirmDestructiveAction title="Delete template?" description={<>The unused template <strong>{template.name}</strong> will be permanently deleted.</>} pending={lifecycle.isPending} onConfirm={() => lifecycle.mutate({ template, action: 'delete' })} trigger={<Button size="sm" variant="destructive"><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>} /> : null}
                             </div>
                         </CardContent>
                     </Card>

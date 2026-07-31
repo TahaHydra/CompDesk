@@ -1,0 +1,322 @@
+import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+export const SETUP_VERSION = 1;
+export const SESSION_COOKIE = 'compdesk_setup_session';
+export const TOKEN_TTL_MS = 30 * 60 * 1000;
+export const SESSION_TTL_MS = 60 * 60 * 1000;
+
+export function randomSecret(bytes = 32) {
+    return crypto.randomBytes(bytes).toString('base64');
+}
+
+export function timingSafeEqual(left, right) {
+    const a = Buffer.from(String(left));
+    const b = Buffer.from(String(right));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export function normalizeEmail(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+export function isStrongPassword(value) {
+    const password = String(value || '');
+    return password.length >= 14
+        && /[a-z]/.test(password)
+        && /[A-Z]/.test(password)
+        && /\d/.test(password)
+        && /[^A-Za-z0-9]/.test(password);
+}
+
+export function validatePublicUrl(value) {
+    let parsed;
+    try {
+        parsed = new URL(String(value || '').trim());
+    } catch {
+        return { valid: false, error: 'Enter a valid absolute application URL.' };
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+        return { valid: false, error: 'The application URL must use HTTP or HTTPS and cannot contain credentials.' };
+    }
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+        return { valid: false, error: 'The application URL must contain only the public origin.' };
+    }
+    const local = new Set(['localhost', '127.0.0.1', '[::1]']).has(parsed.hostname);
+    if (!local && parsed.protocol !== 'https:') {
+        return { valid: false, error: 'Non-local deployments require HTTPS.' };
+    }
+    return { valid: true, origin: parsed.origin };
+}
+
+export function validateDatabaseInput(database) {
+    const errors = {};
+    if (database?.provider && database.provider !== 'postgresql') {
+        errors.provider = 'CompDesk currently supports PostgreSQL only.';
+    }
+    const host = String(database?.host || '').trim();
+    if (!host || host.length > 253 || /[\s/@]/.test(host)) errors.host = 'Enter a valid PostgreSQL hostname or IP address.';
+    const port = Number(database?.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) errors.port = 'Enter a valid TCP port.';
+    for (const key of ['database', 'username']) {
+        const value = String(database?.[key] || '').trim();
+        if (!value || value.length > 63 || !/^[A-Za-z0-9_.-]+$/.test(value)) errors[key] = `Enter a valid PostgreSQL ${key}.`;
+    }
+    if (!String(database?.password || '')) errors.password = 'A database password is required.';
+    if (!['disable', 'prefer', 'require', 'verify-ca', 'verify-full'].includes(database?.sslMode || 'prefer')) {
+        errors.sslMode = 'Select a supported PostgreSQL TLS mode.';
+    }
+    return errors;
+}
+
+export function buildDatabaseUrl(database, { sslRootCertPath } = {}) {
+    const protocol = 'postgresql:';
+    const url = new URL(`${protocol}//localhost/`);
+    url.hostname = database.host;
+    url.port = String(database.port);
+    url.username = database.username;
+    url.password = database.password;
+    url.pathname = `/${encodeURIComponent(database.database)}`;
+    url.searchParams.set('schema', 'public');
+    const sslMode = database.sslMode || 'prefer';
+    if (sslMode !== 'prefer') url.searchParams.set('sslmode', sslMode);
+    if (sslRootCertPath) url.searchParams.set('sslrootcert', path.resolve(sslRootCertPath));
+    return url.toString();
+}
+
+export function databaseCaPath(environmentPath) {
+    return path.join(path.dirname(path.resolve(environmentPath)), 'database-ca.pem');
+}
+
+export function redactDatabaseInput(database) {
+    return {
+        provider: 'postgresql',
+        host: String(database?.host || ''),
+        port: Number(database?.port || 5432),
+        database: String(database?.database || ''),
+        username: String(database?.username || ''),
+        sslMode: database?.sslMode || 'prefer',
+        hasCustomCa: Boolean(database?.ca),
+    };
+}
+
+export function encryptEnvelope(plaintext, base64Key) {
+    const key = Buffer.from(base64Key, 'base64');
+    if (key.length !== 32) throw new Error('The application settings encryption key must decode to exactly 32 bytes.');
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, nonce);
+    const ciphertext = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+    return `enc:v1:${nonce.toString('base64')}:${ciphertext.toString('base64')}:${cipher.getAuthTag().toString('base64')}`;
+}
+
+function quoteEnvValue(value) {
+    return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\r', '').replaceAll('\n', '\\n')}"`;
+}
+
+export function renderEnvironment(config) {
+    const lines = [
+        '# Generated by the CompDesk first-run installer.',
+        '# Keep this file private and include it in encrypted backups.',
+        `DATABASE_URL=${quoteEnvValue(config.databaseUrl)}`,
+        ...(config.databaseCaFile ? [`DATABASE_CA_FILE=${quoteEnvValue(config.databaseCaFile)}`] : []),
+        `AUTH_URL=${quoteEnvValue(config.applicationUrl)}`,
+        `AUTH_SECRET=${quoteEnvValue(config.authSecret)}`,
+        `APP_SETTINGS_ENCRYPTION_KEY=${quoteEnvValue(config.settingsEncryptionKey)}`,
+        `LOGIN_LOCAL_ENABLED=${config.localEnabled ? 'true' : 'false'}`,
+        `LOGIN_MICROSOFT_ENABLED=${config.microsoftEnabled ? 'true' : 'false'}`,
+        `TRUST_PROXY=${config.trustProxy ? 'true' : 'false'}`,
+        `ATTACHMENT_STORAGE_DIR=${quoteEnvValue(config.privateAttachmentDir)}`,
+        `UPLOAD_MAX_SIZE_MB=${String(config.uploadMaxSizeMb)}`,
+        `ATTACHMENT_MAX_FILES_PER_TICKET=${String(config.attachmentMaxFilesPerTicket)}`,
+        `ATTACHMENT_MAX_BYTES_PER_TICKET=${String(config.attachmentMaxMbPerTicket * 1024 * 1024)}`,
+        `ATTACHMENT_GLOBAL_MAX_BYTES=${String(config.attachmentGlobalMaxGb * 1024 * 1024 * 1024)}`,
+        `TEMP_ATTACHMENT_TTL_HOURS=${String(config.tempAttachmentTtlHours)}`,
+        `TEMP_ATTACHMENT_MAX_FILES_PER_USER=${String(config.tempAttachmentMaxFilesPerUser)}`,
+        `TEMP_ATTACHMENT_MAX_BYTES_PER_USER=${String(config.tempAttachmentMaxMbPerUser * 1024 * 1024)}`,
+    ];
+    if (config.clamavEnabled) {
+        lines.push(
+            `CLAMAV_HOST=${quoteEnvValue(config.clamavHost)}`,
+            `CLAMAV_PORT=${String(config.clamavPort)}`,
+            'CLAMAV_TIMEOUT_MS=10000'
+        );
+    }
+    if (config.dockerDatabase) {
+        lines.push(
+            `POSTGRES_DB=${quoteEnvValue(config.dockerDatabase.database)}`,
+            `POSTGRES_USER=${quoteEnvValue(config.dockerDatabase.username)}`,
+            `POSTGRES_PASSWORD=${quoteEnvValue(config.dockerDatabase.password)}`
+        );
+    }
+    if (config.microsoftEnabled) {
+        lines.push(
+            `AZURE_AD_TENANT_ID=${quoteEnvValue(config.tenantId)}`,
+            `AZURE_AD_CLIENT_ID=${quoteEnvValue(config.clientId)}`,
+            `AZURE_AD_CLIENT_SECRET=${quoteEnvValue(config.clientSecret)}`
+        );
+    }
+    return `${lines.join('\n')}\n`;
+}
+
+function restrictFilePermissions(target, mode) {
+    fs.chmodSync(target, mode);
+    if (process.platform !== 'win32') return;
+    const account = process.env.USERDOMAIN && process.env.USERNAME
+        ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}`
+        : process.env.USERNAME;
+    if (!account) throw new Error('Cannot determine the Windows account for configuration ACLs.');
+    const result = spawnSync('icacls.exe', [target, '/inheritance:r', '/grant:r', `${account}:(F)`, '*S-1-5-18:(F)'], {
+        windowsHide: true,
+        stdio: 'ignore',
+    });
+    if (result.status !== 0) throw new Error('Could not apply a restrictive Windows ACL to the configuration file.');
+}
+
+export function writeFileAtomic(target, contents, { mode = 0o600, backup = true } = {}) {
+    const absolute = path.resolve(target);
+    fs.mkdirSync(path.dirname(absolute), { recursive: true, mode: 0o700 });
+    const temporary = `${absolute}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(temporary, contents, { encoding: 'utf8', mode, flag: 'wx' });
+    restrictFilePermissions(temporary, mode);
+    let backupPath = null;
+    try {
+        if (backup && fs.existsSync(absolute)) {
+            backupPath = `${absolute}.backup-${new Date().toISOString().replaceAll(':', '-')}`;
+            fs.copyFileSync(absolute, backupPath, fs.constants.COPYFILE_EXCL);
+            restrictFilePermissions(backupPath, mode);
+        }
+        fs.renameSync(temporary, absolute);
+        restrictFilePermissions(absolute, mode);
+        return { path: absolute, backupPath };
+    } catch (error) {
+        try { fs.unlinkSync(temporary); } catch { /* best effort cleanup */ }
+        throw error;
+    }
+}
+
+export function saveNonSecretState(target, input) {
+    const safe = {
+        version: SETUP_VERSION,
+        updatedAt: new Date().toISOString(),
+        deploymentMode: input.deploymentMode,
+        database: redactDatabaseInput(input.database),
+        identity: {
+            applicationUrl: input.identity?.applicationUrl || '',
+            applicationName: input.identity?.applicationName || 'CompDesk',
+            supportEmail: input.identity?.supportEmail || '',
+            primaryColor: input.identity?.primaryColor || '#4f46e5',
+            accentColor: input.identity?.accentColor || '#8b5cf6',
+            reverseProxy: Boolean(input.identity?.reverseProxy),
+        },
+        authentication: {
+            localEnabled: Boolean(input.authentication?.localEnabled),
+            microsoftEnabled: Boolean(input.authentication?.microsoftEnabled),
+            adminEmail: normalizeEmail(input.authentication?.adminEmail),
+            adminName: input.authentication?.adminName || '',
+            tenantId: input.authentication?.tenantId || '',
+            clientId: input.authentication?.clientId || '',
+        },
+        storage: {
+            privateAttachmentDir: input.storage?.privateAttachmentDir || 'storage/attachments',
+            uploadMaxSizeMb: Number(input.storage?.uploadMaxSizeMb || 10),
+            attachmentMaxFilesPerTicket: Number(input.storage?.attachmentMaxFilesPerTicket || 20),
+            attachmentMaxMbPerTicket: Number(input.storage?.attachmentMaxMbPerTicket || 100),
+            attachmentGlobalMaxGb: Number(input.storage?.attachmentGlobalMaxGb || 10),
+            tempAttachmentTtlHours: Number(input.storage?.tempAttachmentTtlHours || 24),
+            tempAttachmentMaxFilesPerUser: Number(input.storage?.tempAttachmentMaxFilesPerUser || 20),
+            tempAttachmentMaxMbPerUser: Number(input.storage?.tempAttachmentMaxMbPerUser || 100),
+            clamavEnabled: Boolean(input.storage?.clamavEnabled),
+            clamavHost: input.storage?.clamavHost || '',
+            clamavPort: Number(input.storage?.clamavPort || 3310),
+        },
+        smtp: {
+            enabled: Boolean(input.smtp?.enabled),
+            host: input.smtp?.host || '',
+            port: Number(input.smtp?.port || 587),
+            username: input.smtp?.username || '',
+            from: input.smtp?.from || '',
+            secure: Boolean(input.smtp?.secure),
+            requireTls: input.smtp?.requireTls !== false,
+        },
+        installDemoData: Boolean(input.installDemoData),
+    };
+    writeFileAtomic(target, `${JSON.stringify(safe, null, 2)}\n`, { mode: 0o600, backup: false });
+    return safe;
+}
+
+export function deploymentNextSteps({ deploymentMode, applicationUrl, orchestratorManaged = false }) {
+    const loginUrl = `${applicationUrl}/auth/signin`;
+    if (deploymentMode === 'docker-compose' && orchestratorManaged) {
+        return {
+            summary: 'CompDesk is starting. This container automatically switches from setup to production on the same address — no additional command is required.',
+            commands: [],
+            loginUrl,
+        };
+    }
+    if (deploymentMode === 'docker-compose') {
+        return {
+            summary: 'This installer is an ephemeral Docker Compose setup stack. Stop it, then start production so the application can bind the same port.',
+            commands: [
+                { description: 'Stop the setup stack', command: 'docker compose --env-file .compdesk/docker-bootstrap.env -f docker-compose.setup.yml down' },
+                { description: 'Start production', command: 'docker compose --env-file .compdesk/compdesk.env up -d --build' },
+            ],
+            loginUrl,
+        };
+    }
+    if (deploymentMode === 'docker-external-db') {
+        return {
+            summary: 'Start the production Docker Compose stack for your existing PostgreSQL server.',
+            commands: [
+                { description: 'Start production', command: 'docker compose --env-file .compdesk/compdesk.env -f docker-compose.external-db.yml up -d --build' },
+            ],
+            loginUrl,
+        };
+    }
+    return {
+        summary: 'Stop this setup process, then restart the application to leave bootstrap mode.',
+        commands: [{ description: 'Start the installed application', command: 'npm start' }],
+        loginUrl,
+    };
+}
+
+export function isSameOrigin(request, expectedOrigin) {
+    const origin = typeof request.headers.get === 'function'
+        ? request.headers.get('origin')
+        : request.headers.origin;
+    if (!origin) return false;
+    try {
+        return new URL(origin).origin === expectedOrigin;
+    } catch {
+        return false;
+    }
+}
+
+export function parseCookies(header = '') {
+    return Object.fromEntries(
+        String(header).split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+            const index = part.indexOf('=');
+            return index < 0 ? [part, ''] : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+        })
+    );
+}
+
+export function sanitizeSetupError(error) {
+    const seen = new Set();
+    let current = error;
+    for (let depth = 0; current && depth < 6 && !seen.has(current); depth += 1) {
+        seen.add(current);
+        const code = String(current.code || current.errno || '').toUpperCase();
+        const message = String(current.message || '').toLowerCase();
+        if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return { stage: 'dns', message: 'The database hostname could not be resolved.' };
+        if (code === 'ECONNREFUSED') return { stage: 'tcp', message: 'The PostgreSQL server refused the TCP connection.' };
+        if (['ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code) || message.includes('timeout')) return { stage: 'timeout', message: 'The database connection timed out.' };
+        if (code.startsWith('ERR_TLS') || code.includes('CERT') || message.includes('certificate')) return { stage: 'tls', message: 'PostgreSQL TLS or certificate validation failed.' };
+        if (code === '28P01' || message.includes('password authentication failed')) return { stage: 'authentication', message: 'PostgreSQL rejected the supplied credentials.' };
+        if (code === '3D000') return { stage: 'database', message: 'The selected PostgreSQL database does not exist.' };
+        if (code === '42501') return { stage: 'permission', message: 'The PostgreSQL account lacks a required permission.' };
+        current = current.cause;
+    }
+    return { stage: 'connection', message: 'The PostgreSQL connection test failed. Review the server logs with the correlation ID.' };
+}
