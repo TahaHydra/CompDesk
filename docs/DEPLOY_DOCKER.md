@@ -111,6 +111,17 @@ CompDesk binds to `127.0.0.1:3000` by default (`APP_BIND_ADDRESS`/`APP_PORT` ove
 
 ## External PostgreSQL
 
+> **Known issue — do not use yet.** A live-deployment test against a real
+> external PostgreSQL server (reachable only via `DATABASE_URL`, not on the
+> Docker network as a service literally named `db`) found that the `app`
+> container never starts: `scripts/orchestrator.mjs` waits for TCP on
+> `COMPDESK_DB_HOST`/`COMPDESK_DB_PORT`, which default to `db:5432` and are
+> never set by `docker-compose.external-db.yml`. The `migrate` service in
+> this file bypasses the orchestrator (it runs `prisma migrate deploy`
+> directly), which is why migrations can appear to succeed while the `app`
+> service never becomes healthy. Track this as a release blocker before
+> advertising this topology as supported.
+
 If you don't want CompDesk to manage PostgreSQL, use the dedicated Compose file instead of the bundled-database one:
 
 ```bash
