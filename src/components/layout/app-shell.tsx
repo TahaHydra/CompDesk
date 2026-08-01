@@ -43,11 +43,14 @@ import {
     CheckCircle2,
     AlertTriangle,
     BookOpen,
+    Info,
 } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
+import Image from 'next/image';
 import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
+import { AboutDialog } from '@/components/layout/about-dialog';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
 import { installInteractionLockGuard } from '@/lib/browser-interaction';
@@ -94,9 +97,11 @@ const notificationIcon = (type: string) => {
 export default function AppShell({
     children,
     initialSession,
+    version,
 }: {
     children: React.ReactNode;
     initialSession: Session;
+    version: string;
 }) {
     const { data: clientSession, status } = useSession();
     const branding = useBranding();
@@ -113,6 +118,7 @@ export default function AppShell({
     const [mobileOpen, setMobileOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [notifOpen, setNotifOpen] = useState(false);
+    const [aboutOpen, setAboutOpen] = useState(false);
 
     const userRole = session.user.role;
     const isAdminUser = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
@@ -260,6 +266,28 @@ export default function AppShell({
                     )}
                 </ScrollArea>
 
+                {/* Attribution footer */}
+                <div className={cn('shrink-0 border-t px-3 py-3', collapsed ? 'flex justify-center' : 'space-y-1')}>
+                    {!collapsed && (
+                        <p className="text-[11px] leading-tight text-muted-foreground">
+                            CompDesk v{version}
+                            <br />
+                            {t('Open source')} · MIT
+                        </p>
+                    )}
+                    <a
+                        href="https://xhydra.fr"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-primary"
+                        aria-label={collapsed ? `${t('Built by xHydra')} — xhydra.fr` : undefined}
+                    >
+                        <Image src="/brand/xhydra-mark-black.png" alt="" aria-hidden="true" width={12} height={12} className="dark:hidden" />
+                        <Image src="/brand/xhydra-mark-white.png" alt="" aria-hidden="true" width={12} height={12} className="hidden dark:block" />
+                        {!collapsed && <span>{t('Built by xHydra')}</span>}
+                    </a>
+                </div>
+
                 {/* Collapse button — desktop only */}
                 <button
                     onClick={() => setCollapsed(!collapsed)}
@@ -377,6 +405,10 @@ export default function AppShell({
                                         <Shield className="mr-2 h-4 w-4" /> {t('Profile')}
                                     </Link>
                                 </DropdownMenuItem>
+                                <DropdownMenuItem className="cursor-pointer" onSelect={() => setAboutOpen(true)}>
+                                    <Info className="mr-2 h-4 w-4" /> {t('About')}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                     onSelect={(event) => {
                                         // Take signout off Radix's select/focus-return path and send
@@ -403,6 +435,7 @@ export default function AppShell({
                     </div>
                 </main>
             </div>
+            <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} version={version} />
         </div>
     );
 }
