@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { QueryProvider } from '@/components/providers/query-provider';
@@ -12,16 +12,56 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
     const branding = await getPublicBranding();
+    const title = `${branding.applicationName} — ${branding.subtitle}`;
+
+    // Reuses the application's own required public-origin variable rather than
+    // hard-coding a deployment URL; left unset (relative URLs) when absent.
+    const configuredOrigin = process.env.AUTH_URL || process.env.NEXTAUTH_URL || '';
+    let metadataBase: URL | undefined;
+    try {
+        metadataBase = configuredOrigin ? new URL(configuredOrigin) : undefined;
+    } catch {
+        metadataBase = undefined;
+    }
+
     return {
+        ...(metadataBase ? { metadataBase } : {}),
         title: {
-            default: `${branding.applicationName} — ${branding.subtitle}`,
+            default: title,
             template: `%s — ${branding.shortApplicationName}`,
         },
         applicationName: branding.applicationName,
         description: branding.description,
-        icons: { icon: branding.faviconUrl || '/favicon.ico' },
+        manifest: '/site.webmanifest',
+        icons: {
+            icon: branding.faviconUrl
+                ? [{ url: branding.faviconUrl }]
+                : [
+                    { url: '/favicon.ico' },
+                    { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+                    { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+                ],
+            apple: branding.faviconUrl || '/apple-touch-icon.png',
+        },
+        openGraph: {
+            type: 'website',
+            title,
+            description: branding.description,
+            siteName: branding.applicationName,
+            images: [{ url: '/og-image.png', width: 1200, height: 630 }],
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title,
+            description: branding.description,
+            images: ['/og-image.png'],
+        },
     };
 }
+
+export const viewport: Viewport = {
+    themeColor: '#4f46e5',
+};
 
 const themeInitScript = `
 (() => {

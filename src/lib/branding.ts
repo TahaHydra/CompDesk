@@ -25,7 +25,7 @@ export const DEFAULT_BRANDING: BrandingConfig = {
     applicationName: 'CompDesk',
     shortApplicationName: 'CompDesk',
     subtitle: 'Helpdesk',
-    description: 'A secure, customizable helpdesk and ticketing platform.',
+    description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',
     mainLogoUrl: '',
     compactLogoUrl: '',
     lightLogoUrl: '',
