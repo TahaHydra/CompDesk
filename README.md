@@ -1,6 +1,25 @@
+<p align="left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/xhydra-mark-white.png">
+    <img src="public/brand/xhydra-mark-black.png" alt="xHydra logo" width="48">
+  </picture>
+</p>
+
 # CompDesk
 
-CompDesk is an actively developed, self-hosted helpdesk for small organizations. Review the [production hardening guide](docs/PRODUCTION_HARDENING.md) before deployment.
+**Lightweight, privacy-first, self-hosted help desk and ticketing.**
+Built by [xHydra](https://xhydra.fr).
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/TahaHydra/CompDesk/actions/workflows/ci.yml/badge.svg)](https://github.com/TahaHydra/CompDesk/actions/workflows/ci.yml)
+[![Security](https://github.com/TahaHydra/CompDesk/actions/workflows/security.yml/badge.svg)](https://github.com/TahaHydra/CompDesk/actions/workflows/security.yml)
+[![Status: Public Beta](https://img.shields.io/badge/status-public%20beta-orange)](docs/PUBLIC_RELEASE_CHECKLIST.md)
+
+[xhydra.fr](https://xhydra.fr) · [github.com/TahaHydra](https://github.com/TahaHydra) · [github.com/TahaHydra/CompDesk](https://github.com/TahaHydra/CompDesk)
+
+> **Public beta.** CompDesk is under active development and is not yet claimed as mature, production-hardened software. See [Known limitations](#known-limitations) and the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before deploying it for real users.
+
+CompDesk is a self-hosted helpdesk for small organizations: department-scoped ticket routing, role-based access, attachments, search and filtering, and fully customizable organization branding — deployed with Docker in minutes, with no mandatory cloud account. Review the [production hardening guide](docs/PRODUCTION_HARDENING.md) before deployment.
 
 ## What it provides
 
@@ -35,6 +54,10 @@ docker compose up -d
 Open `http://localhost:3000/setup`, complete the wizard, and the same container automatically switches itself to production on the same port. Follow [First-run setup](docs/FIRST_RUN_SETUP.md) and [Docker deployment](docs/DEPLOY_DOCKER.md) rather than adding database credentials or a fixed administrator password to source control. Demo data is optional, disabled by default, and uses generated credentials shown once.
 
 For local development, follow [SETUP.md](SETUP.md).
+
+## Screenshots
+
+_Screenshots of the dashboard, ticket workflow, and admin branding settings will be added here once available._
 
 ## Architecture
 
@@ -120,4 +143,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.
 
 ## License
 
-CompDesk is licensed under the [MIT License](LICENSE).
+CompDesk is licensed under the [MIT License](LICENSE). See [NOTICE](NOTICE) for attribution.
+
+---
+
+CompDesk was created by [Taha Laachari](https://github.com/TahaHydra), an [xHydra](https://xhydra.fr) open-source project.
