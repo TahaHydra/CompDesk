@@ -35,9 +35,11 @@ CompDesk is a self-hosted helpdesk for small organizations: department-scoped ti
 
 - Ubuntu 22.04 or 24.04 and modern Debian-based Linux distributions.
 - Windows 10, Windows 11, Windows Server, and macOS for standalone development or deployment.
-- Docker Compose, standalone Node.js, or an application container connected to an external PostgreSQL server.
+- Docker Compose (bundled PostgreSQL) or standalone Node.js are the validated deployment paths for this beta.
 - PostgreSQL 16.x is the supported and CI-tested production database for this release; other database engines and PostgreSQL major versions are not claimed as tested.
 - Node.js 24 LTS is recommended; Node.js 22.12 or newer is supported.
+
+`docker-compose.external-db.yml` (an application container connecting to an external PostgreSQL server) exists in the repository but is **not currently validated** — a live-deployment test found its `app` container never reaches the database because the orchestrator's default database host (`db`) doesn't match an externally hosted PostgreSQL server. Do not use this topology until that is fixed; track it as a known issue rather than a supported beta feature.
 
 CompDesk must be served over HTTPS outside localhost. The production Compose topology keeps PostgreSQL private, runs migrations as a one-shot service, uses persistent volumes, and runs the application as a non-root user.
 
@@ -105,7 +107,7 @@ Read [SECURITY.md](SECURITY.md), the [threat model](docs/THREAT_MODEL.md), and [
 | --- | --- |
 | [First-run setup](docs/FIRST_RUN_SETUP.md) | Bootstrap token, wizard, recovery, and setup modes |
 | [Configuration](docs/CONFIGURATION.md) | Runtime variables and their actual behavior |
-| [Docker deployment](docs/DEPLOY_DOCKER.md) | Recommended deployment and external PostgreSQL topology |
+| [Docker deployment](docs/DEPLOY_DOCKER.md) | Recommended deployment (bundled PostgreSQL); external-PostgreSQL topology is documented but not yet validated |
 | [Ubuntu deployment](docs/DEPLOY_UBUNTU.md) | Docker and standalone Ubuntu paths |
 | [Windows deployment](docs/DEPLOY_WINDOWS.md) | Windows and PowerShell instructions |
 | [macOS development](docs/DEVELOPMENT_MACOS.md) | Local macOS workflow |
