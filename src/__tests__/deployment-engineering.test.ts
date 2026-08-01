@@ -63,7 +63,10 @@ describe('deployment engineering contracts', () => {
         const setupCompose = source('docker-compose.setup.yml');
         expect(setupCompose).toContain('chown -R 1001:1001 /uploads /attachments');
         expect(setupCompose).toContain('chmod -R u+rwX,g+rwX,o-rwx');
-        expect(setupCompose).toContain("group_add:\n      - '1001'");
+        // The repository's tracked files consistently use CRLF; normalize before
+        // matching an embedded-newline literal so the assertion doesn't depend
+        // on the checked-out line-ending convention.
+        expect(setupCompose.replace(/\r\n/g, '\n')).toContain("group_add:\n      - '1001'");
         expect(externalComposeSource.match(/\.\/\.compdesk:\/app\/config:ro/g)).toHaveLength(2);
     });
 
