@@ -595,7 +595,7 @@ async function main() {
     await seedHelpCenter();
     const brandingConfig = {
         applicationName: 'CompDesk', shortApplicationName: 'CompDesk', subtitle: 'Helpdesk',
-        description: 'A secure, customizable helpdesk and ticketing platform.',
+        description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',
         mainLogoUrl: '', compactLogoUrl: '', lightLogoUrl: '', darkLogoUrl: '', faviconUrl: '',
         primaryColor: '#4f46e5', accentColor: '#64748b', loginHeading: 'Welcome to CompDesk',
         loginDescription: 'Sign in to access your support workspace.', loginBackgroundImageUrl: '',
