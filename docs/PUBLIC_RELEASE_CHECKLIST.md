@@ -43,7 +43,7 @@ verified from a fresh clone of the GitHub remote.
 ## Recommended cleanup (neither beta nor stable-v1 blocking)
 
 - Reconcile `SETUP_PUBLIC_HOST` (used in `docs/FIRST_RUN_SETUP.md`) vs `SETUP_PUBLIC_ORIGIN` (used in `scripts/setup-bootstrap.mjs`) naming.
-- Add real screenshots to the README (placeholder section added in this branch).
+- ~~Add real screenshots to the README~~ — done 2026-08-03 (dashboard, branding settings in the README; setup wizard steps 3/5/7/10 in `docs/FIRST_RUN_SETUP.md`). The bootstrap-token screenshot was excluded because it showed a real (though one-time, likely already-expired) token value in plain text.
 - Add a GHCR/Docker badge to the README once a tag actually publishes an image.
 
 ## Remaining blockers and risks (carried forward, re-evaluated)
