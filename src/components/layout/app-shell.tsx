@@ -44,6 +44,7 @@ import {
     AlertTriangle,
     BookOpen,
     Info,
+    Github,
 } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import Image from 'next/image';
@@ -267,7 +268,7 @@ export default function AppShell({
                 </ScrollArea>
 
                 {/* Attribution footer */}
-                <div className={cn('shrink-0 border-t px-3 py-3', collapsed ? 'flex justify-center' : 'space-y-1')}>
+                <div className={cn('shrink-0 border-t px-3 py-3', collapsed ? 'flex flex-col items-center gap-2' : 'space-y-1')}>
                     {!collapsed && (
                         <p className="text-[11px] leading-tight text-muted-foreground">
                             CompDesk v{version}
@@ -275,17 +276,30 @@ export default function AppShell({
                             {t('Open source')} · MIT
                         </p>
                     )}
-                    <a
-                        href="https://xhydra.fr"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-primary"
-                        aria-label={collapsed ? `${t('Built by xHydra')} — xhydra.fr` : undefined}
-                    >
-                        <Image src="/brand/xhydra-mark-black.png" alt="" aria-hidden="true" width={12} height={12} className="dark:hidden" />
-                        <Image src="/brand/xhydra-mark-white.png" alt="" aria-hidden="true" width={12} height={12} className="hidden dark:block" />
-                        {!collapsed && <span>{t('Built by xHydra')}</span>}
-                    </a>
+                    <div className={cn('flex items-center text-[11px] font-medium text-muted-foreground', collapsed ? 'flex-col gap-2' : 'gap-1.5')}>
+                        <a
+                            href="https://xhydra.fr"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 transition-colors hover:text-primary"
+                            aria-label={collapsed ? `${t('Built by xHydra')} — xhydra.fr` : undefined}
+                        >
+                            <Image src="/brand/xhydra-mark-black.png" alt="" aria-hidden="true" width={12} height={12} className="dark:hidden" />
+                            <Image src="/brand/xhydra-mark-white.png" alt="" aria-hidden="true" width={12} height={12} className="hidden dark:block" />
+                            {!collapsed && <span>{t('Built by xHydra')}</span>}
+                        </a>
+                        {!collapsed && <span aria-hidden="true">·</span>}
+                        <a
+                            href="https://github.com/TahaHydra/CompDesk"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 transition-colors hover:text-primary"
+                            aria-label={collapsed ? 'GitHub — github.com/TahaHydra/CompDesk' : undefined}
+                        >
+                            <Github className="h-3 w-3 shrink-0" aria-hidden="true" />
+                            {!collapsed && <span>GitHub</span>}
+                        </a>
+                    </div>
                 </div>
 
                 {/* Collapse button — desktop only */}
