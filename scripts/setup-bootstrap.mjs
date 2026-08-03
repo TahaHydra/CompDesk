@@ -562,7 +562,7 @@ async function install(input) {
                 applicationName: config.identity.applicationName.trim(),
                 shortApplicationName: config.identity.applicationName.trim().slice(0, 24),
                 subtitle: 'Helpdesk',
-                description: 'A secure, customizable helpdesk and ticketing platform.',
+                description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',
                 mainLogoUrl: '', compactLogoUrl: '', lightLogoUrl: '', darkLogoUrl: '', faviconUrl: '',
                 primaryColor: config.identity.primaryColor,
                 accentColor: config.identity.accentColor,

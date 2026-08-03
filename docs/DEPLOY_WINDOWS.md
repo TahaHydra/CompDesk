@@ -19,7 +19,7 @@ restricted `.env` (and `database-ca.pem` when a private database CA is selected)
 runs migrations, and creates the first Super Admin:
 
 ```powershell
-git checkout v1.0.0-rc1
+git checkout v0.9.0-beta.1
 npm ci
 npm run verify
 npm run setup:bootstrap

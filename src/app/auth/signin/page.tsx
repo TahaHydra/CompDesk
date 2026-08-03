@@ -3,6 +3,7 @@
 import { Suspense, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { useBranding } from '@/components/providers/branding-provider';
@@ -147,6 +148,20 @@ function SignInForm() {
                         {branding.supportEmail ? <a className="hover:text-primary" href={`mailto:${branding.supportEmail}`}>{branding.supportEmail}</a> : null}
                     </p>
                 ) : null}
+
+                <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground/80">
+                    An open-source project by
+                    <a
+                        href="https://xhydra.fr"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-primary"
+                    >
+                        <Image src="/brand/xhydra-mark-black.png" alt="" aria-hidden="true" width={12} height={12} className="dark:hidden" />
+                        <Image src="/brand/xhydra-mark-white.png" alt="" aria-hidden="true" width={12} height={12} className="hidden dark:block" />
+                        xHydra
+                    </a>
+                </p>
             </CardContent>
         </Card>
     );
