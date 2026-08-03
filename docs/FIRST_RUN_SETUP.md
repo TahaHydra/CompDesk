@@ -26,6 +26,18 @@ If the `compdesk_pgdata` volume already holds an initialized database but `compd
 
 The previous two-stack flow (`docker-compose.setup.yml` + a separate production `docker-compose.yml`) is deprecated but still present for migration/rollback — see the "Migration from the two-stack deployment" section of [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md).
 
+## Wizard screenshots
+
+A few of the ten steps, for reference:
+
+| Step 3 — PostgreSQL | Step 5 — Administrator account |
+| --- | --- |
+| ![Setup step 3: PostgreSQL connection](screenshots/setup-step-3-postgresql.jpg) | ![Setup step 5: first Super Admin account](screenshots/setup-step-5-admin-account.jpg) |
+
+| Step 7 — SMTP (optional) | Step 10 — Review and install |
+| --- | --- |
+| ![Setup step 7: optional SMTP configuration](screenshots/setup-step-7-smtp.jpg) | ![Setup step 10: review and install, no secrets shown](screenshots/setup-step-10-review.jpg) |
+
 ## Security behavior
 
 - Setup listens on loopback unless remote mode is explicitly enabled.
