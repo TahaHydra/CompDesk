@@ -59,7 +59,11 @@ For local development, follow [SETUP.md](SETUP.md).
 
 ## Screenshots
 
-_Screenshots of the dashboard, ticket workflow, and admin branding settings will be added here once available._
+| Dashboard | Branding & settings |
+| --- | --- |
+| ![CompDesk admin dashboard](docs/screenshots/dashboard.jpg) | ![CompDesk branding settings](docs/screenshots/branding-settings.jpg) |
+
+More screenshots of the first-run setup wizard are in [First-run setup](docs/FIRST_RUN_SETUP.md).
 
 ## Architecture
 
