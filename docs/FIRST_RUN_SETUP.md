@@ -28,7 +28,14 @@ The previous two-stack flow (`docker-compose.setup.yml` + a separate production 
 
 ## Wizard screenshots
 
-A few of the ten steps, for reference:
+A few of the ten steps, for reference. The first shows the console next to the
+browser: the one-time bootstrap token is printed to the console (`docker
+compose logs compdesk`, or the standalone server's own console output), then
+typed into the "Bootstrap token" field to authorize the rest of the wizard.
+
+| Step 1 — Authorize setup (console + browser) | |
+| --- | --- |
+| ![Setup step 1: the one-time bootstrap token printed to the console, entered into the Authorize setup screen](screenshots/setup-step-1-authorize.jpg) | |
 
 | Step 3 — PostgreSQL | Step 5 — Administrator account |
 | --- | --- |
