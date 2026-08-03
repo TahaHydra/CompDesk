@@ -5,6 +5,7 @@ import { normalizeLanguage } from '@/lib/i18n';
 import AppShell from '@/components/layout/app-shell';
 import { AuthProvider } from '@/components/providers/auth-provider';
 import { LanguageProvider } from '@/components/providers/language-provider';
+import { APP_VERSION } from '@/lib/version';
 
 export default async function DashboardLayout({
     children,
@@ -26,7 +27,7 @@ export default async function DashboardLayout({
     return (
         <AuthProvider session={session}>
             <LanguageProvider initialLanguage={initialLanguage}>
-                <AppShell initialSession={session}>{children}</AppShell>
+                <AppShell initialSession={session} version={APP_VERSION}>{children}</AppShell>
             </LanguageProvider>
         </AuthProvider>
     );

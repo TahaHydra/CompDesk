@@ -1,6 +1,25 @@
+<p align="left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/xhydra-mark-white.png">
+    <img src="public/brand/xhydra-mark-black.png" alt="xHydra logo" width="48">
+  </picture>
+</p>
+
 # CompDesk
 
-CompDesk is an actively developed, self-hosted helpdesk for small organizations. Review the [production hardening guide](docs/PRODUCTION_HARDENING.md) before deployment.
+**Lightweight, privacy-first, self-hosted help desk and ticketing.**
+Built by [xHydra](https://xhydra.fr).
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/TahaHydra/CompDesk/actions/workflows/ci.yml/badge.svg)](https://github.com/TahaHydra/CompDesk/actions/workflows/ci.yml)
+[![Security](https://github.com/TahaHydra/CompDesk/actions/workflows/security.yml/badge.svg)](https://github.com/TahaHydra/CompDesk/actions/workflows/security.yml)
+[![Status: Public Beta](https://img.shields.io/badge/status-public%20beta-orange)](docs/PUBLIC_RELEASE_CHECKLIST.md)
+
+[xhydra.fr](https://xhydra.fr) · [github.com/TahaHydra](https://github.com/TahaHydra) · [github.com/TahaHydra/CompDesk](https://github.com/TahaHydra/CompDesk)
+
+> **Public beta.** CompDesk is under active development and is not yet claimed as mature, production-hardened software. See [Known limitations](#known-limitations) and the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before deploying it for real users.
+
+CompDesk is a self-hosted helpdesk for small organizations: department-scoped ticket routing, role-based access, attachments, search and filtering, and fully customizable organization branding — deployed with Docker in minutes, with no mandatory cloud account. Review the [production hardening guide](docs/PRODUCTION_HARDENING.md) before deployment.
 
 ## What it provides
 
@@ -16,9 +35,11 @@ CompDesk is an actively developed, self-hosted helpdesk for small organizations.
 
 - Ubuntu 22.04 or 24.04 and modern Debian-based Linux distributions.
 - Windows 10, Windows 11, Windows Server, and macOS for standalone development or deployment.
-- Docker Compose, standalone Node.js, or an application container connected to an external PostgreSQL server.
+- Docker Compose (bundled PostgreSQL) or standalone Node.js are the validated deployment paths for this beta.
 - PostgreSQL 16.x is the supported and CI-tested production database for this release; other database engines and PostgreSQL major versions are not claimed as tested.
 - Node.js 24 LTS is recommended; Node.js 22.12 or newer is supported.
+
+`docker-compose.external-db.yml` (an application container connecting to an external PostgreSQL server) exists in the repository but is **not currently validated** — a live-deployment test found its `app` container never reaches the database because the orchestrator's default database host (`db`) doesn't match an externally hosted PostgreSQL server. Do not use this topology until that is fixed; track it as a known issue rather than a supported beta feature.
 
 CompDesk must be served over HTTPS outside localhost. The production Compose topology keeps PostgreSQL private, runs migrations as a one-shot service, uses persistent volumes, and runs the application as a non-root user.
 
@@ -35,6 +56,10 @@ docker compose up -d
 Open `http://localhost:3000/setup`, complete the wizard, and the same container automatically switches itself to production on the same port. Follow [First-run setup](docs/FIRST_RUN_SETUP.md) and [Docker deployment](docs/DEPLOY_DOCKER.md) rather than adding database credentials or a fixed administrator password to source control. Demo data is optional, disabled by default, and uses generated credentials shown once.
 
 For local development, follow [SETUP.md](SETUP.md).
+
+## Screenshots
+
+_Screenshots of the dashboard, ticket workflow, and admin branding settings will be added here once available._
 
 ## Architecture
 
@@ -82,7 +107,7 @@ Read [SECURITY.md](SECURITY.md), the [threat model](docs/THREAT_MODEL.md), and [
 | --- | --- |
 | [First-run setup](docs/FIRST_RUN_SETUP.md) | Bootstrap token, wizard, recovery, and setup modes |
 | [Configuration](docs/CONFIGURATION.md) | Runtime variables and their actual behavior |
-| [Docker deployment](docs/DEPLOY_DOCKER.md) | Recommended deployment and external PostgreSQL topology |
+| [Docker deployment](docs/DEPLOY_DOCKER.md) | Recommended deployment (bundled PostgreSQL); external-PostgreSQL topology is documented but not yet validated |
 | [Ubuntu deployment](docs/DEPLOY_UBUNTU.md) | Docker and standalone Ubuntu paths |
 | [Windows deployment](docs/DEPLOY_WINDOWS.md) | Windows and PowerShell instructions |
 | [macOS development](docs/DEVELOPMENT_MACOS.md) | Local macOS workflow |
@@ -120,4 +145,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.
 
 ## License
 
-CompDesk is licensed under the [MIT License](LICENSE).
+CompDesk is licensed under the [MIT License](LICENSE). See [NOTICE](NOTICE) for attribution.
+
+---
+
+CompDesk was created by [Taha Laachari](https://github.com/TahaHydra), an [xHydra](https://xhydra.fr) open-source project.

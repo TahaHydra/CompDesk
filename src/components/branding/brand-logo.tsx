@@ -1,6 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
+import { useState } from 'react';
+import Image from 'next/image';
 import { Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBranding } from '@/components/providers/branding-provider';
@@ -13,6 +15,7 @@ export function BrandLogo({
     className?: string;
 }) {
     const branding = useBranding();
+    const [defaultIconFailed, setDefaultIconFailed] = useState(false);
     const fallback = compact ? branding.compactLogoUrl : branding.mainLogoUrl;
     const lightLogo = compact ? branding.compactLogoUrl : (branding.lightLogoUrl || fallback || branding.darkLogoUrl);
     const darkLogo = compact ? branding.compactLogoUrl : (branding.darkLogoUrl || fallback || branding.lightLogoUrl);
@@ -22,6 +25,24 @@ export function BrandLogo({
             <span className={cn('inline-flex items-center justify-center overflow-hidden', className)}>
                 {lightLogo ? <img src={lightLogo} alt={`${branding.applicationName} logo`} className="h-full w-full object-contain dark:hidden" /> : null}
                 {darkLogo ? <img src={darkLogo} alt={`${branding.applicationName} logo`} className="hidden h-full w-full object-contain dark:block" /> : null}
+            </span>
+        );
+    }
+
+    // Fresh installs with no tenant-uploaded logo fall back to the xHydra app
+    // icon (compact or full) rather than the generic shield; the shield
+    // remains the last resort if that asset itself fails to load.
+    if (!defaultIconFailed) {
+        return (
+            <span className={cn('inline-flex items-center justify-center overflow-hidden', className)}>
+                <Image
+                    src="/brand/xhydra-app-icon.png"
+                    alt={`${branding.applicationName} logo`}
+                    width={128}
+                    height={128}
+                    className="h-full w-full object-contain"
+                    onError={() => setDefaultIconFailed(true)}
+                />
             </span>
         );
     }
