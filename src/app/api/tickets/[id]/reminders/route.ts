@@ -20,7 +20,7 @@ const SETTING_KEYS = [
     'ticket_reminder_allow_agents',
     'ticket_reminder_allow_admins',
 ];
-const PENDING_RESERVATION_MS = 2 * 60 * 1000;
+const UNRESOLVED_CLEAR_DELAY_MS = 30 * 60 * 1000;
 
 class ReminderError extends Error {
     constructor(message: string, readonly status: number) {
@@ -79,8 +79,8 @@ async function loadReminderState(
             orderBy: { sentAt: 'desc' },
         }),
         client.ticketReminder.findFirst({
-            where: { ticketId: ticket.id, status: 'PENDING', createdAt: { gte: new Date(now.getTime() - PENDING_RESERVATION_MS) } },
-            select: { id: true },
+            where: { ticketId: ticket.id, status: { in: ['PENDING', 'DELIVERY_UNKNOWN'] } },
+            select: { id: true, status: true, createdAt: true },
             orderBy: { createdAt: 'desc' },
         }),
     ]);
@@ -94,7 +94,9 @@ async function loadReminderState(
     else if (ticket.status !== 'PENDING_USER') reason = 'Reminders can only be sent while a ticket is pending the requester.';
     else if (!ticket.requester.isActive) reason = 'The requester account is inactive.';
     else if (!emailSchema.safeParse(ticket.requester.email).success) reason = 'The requester does not have a valid email address.';
-    else if (pendingReminder) reason = 'Another reminder delivery is already in progress.';
+    else if (pendingReminder) reason = pendingReminder.status === 'DELIVERY_UNKNOWN'
+        ? 'A previous reminder has an uncertain delivery result. Automatic retries are blocked until a Super Admin reviews and clears it.'
+        : 'Another reminder delivery is already in progress. Automatic retries are blocked.';
     else if (reminderCount >= settings.maxPerCycle) reason = 'The reminder limit for this waiting cycle has been reached.';
     else if (nextAvailableAt && nextAvailableAt > now) reason = 'The reminder cooldown is still active.';
 
@@ -108,7 +110,10 @@ async function loadReminderState(
         lastReminderAt: lastReminder?.sentAt ?? null,
         nextAvailableAt,
         waitingSince: cycleStartedAt,
-        deliveryInProgress: Boolean(pendingReminder),
+        unresolvedReminder: pendingReminder ? {
+            ...pendingReminder,
+            clearableAt: new Date(pendingReminder.createdAt.getTime() + UNRESOLVED_CLEAR_DELAY_MS),
+        } : null,
         requester: { id: ticket.requester.id, name: ticket.requester.name },
     };
 }
@@ -160,10 +165,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             if (ticket.version !== parsed.data.expectedVersion) {
                 throw new ReminderError('Ticket changed since it was loaded. Refresh before sending a reminder.', 409);
             }
-            await tx.ticketReminder.updateMany({
-                where: { ticketId: ticket.id, status: 'PENDING', createdAt: { lt: new Date(Date.now() - PENDING_RESERVATION_MS) } },
-                data: { status: 'FAILED', failedAt: new Date() },
-            });
             const state = await loadReminderState(tx, ticket, session.user.role);
             if (!state.allowed) throw new ReminderError(state.reason ?? 'Reminder cannot be sent', 409);
             const reminder = await tx.ticketReminder.create({
@@ -172,6 +173,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             });
             return { reminder, ticket, state };
         });
+
+        const prepared = await prisma.ticketReminder.updateMany({
+            where: { id: reservation.reminder.id, status: 'PENDING' },
+            data: { status: 'DELIVERY_UNKNOWN' },
+        });
+        if (prepared.count !== 1) {
+            throw new ReminderError('The reminder could not be prepared safely. No email was sent.', 409);
+        }
 
         const delivered = await sendTicketReminderEmail(
             reservation.ticket.requester.email,
@@ -182,7 +191,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         );
         if (!delivered) {
             await prisma.ticketReminder.updateMany({
-                where: { id: reservation.reminder.id, status: 'PENDING' },
+                where: { id: reservation.reminder.id, status: 'DELIVERY_UNKNOWN' },
                 data: { status: 'FAILED', failedAt: new Date() },
             });
             throw new ReminderError('The reminder email could not be delivered. No reminder was recorded.', 502);
@@ -191,7 +200,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const sentAt = new Date();
         await prisma.$transaction(async (tx) => {
             const finalized = await tx.ticketReminder.updateMany({
-                where: { id: reservation.reminder.id, status: 'PENDING' },
+                where: { id: reservation.reminder.id, status: 'DELIVERY_UNKNOWN' },
                 data: { status: 'SENT', sentAt },
             });
             if (finalized.count !== 1) throw new Error('REMINDER_FINALIZATION_CONFLICT');
@@ -234,5 +243,53 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         if (error instanceof ReminderError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('Failed to send ticket reminder', { error });
         return NextResponse.json({ error: 'Failed to send ticket reminder' }, { status: 500 });
+    }
+}
+
+const clearSchema = z.object({ reminderId: z.string().uuid() }).strict();
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+    try {
+        const session = await auth();
+        if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        const parsed = clearSchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) return NextResponse.json({ error: 'A valid reminderId is required' }, { status: 400 });
+        const { id } = await params;
+
+        const cleared = await prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`;
+            const reminder = await tx.ticketReminder.findFirst({
+                where: {
+                    id: parsed.data.reminderId,
+                    ticketId: id,
+                    status: { in: ['PENDING', 'DELIVERY_UNKNOWN'] },
+                },
+                select: { id: true, status: true, createdAt: true },
+            });
+            if (!reminder) throw new ReminderError('Unresolved reminder not found', 404);
+            if (reminder.createdAt > new Date(Date.now() - UNRESOLVED_CLEAR_DELAY_MS)) {
+                throw new ReminderError('Wait 30 minutes before clearing an unresolved reminder so an active delivery cannot be interrupted.', 409);
+            }
+            const result = await tx.ticketReminder.updateMany({
+                where: { id: reminder.id, status: reminder.status },
+                data: { status: 'FAILED', failedAt: new Date() },
+            });
+            if (result.count !== 1) throw new ReminderError('Reminder state changed. Refresh before clearing it.', 409);
+            return reminder;
+        });
+
+        await auditLog({
+            userId: session.user.id,
+            action: 'ticket.reminder_delivery_cleared',
+            entity: 'ticket',
+            entityId: id,
+            metadata: { reminderId: cleared.id, previousStatus: cleared.status, resolvedAs: 'FAILED' },
+        });
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        if (error instanceof ReminderError) return NextResponse.json({ error: error.message }, { status: error.status });
+        logger.error('Failed to clear unresolved ticket reminder', { error });
+        return NextResponse.json({ error: 'Failed to clear unresolved reminder' }, { status: 500 });
     }
 }

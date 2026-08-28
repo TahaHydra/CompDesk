@@ -94,6 +94,7 @@ enum WebhookDeliveryStatus {
 
 enum TicketReminderStatus {
   PENDING
+  DELIVERY_UNKNOWN
   SENT
   FAILED
 }

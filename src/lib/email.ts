@@ -284,7 +284,7 @@ export async function sendTicketReminderEmail(
         to: requesterEmail,
         subject: `[${ticketKey}] Response requested: ${ticketTitle}`,
         text: `Hello ${requesterName}, your response is needed for ticket ${ticketKey}: ${ticketTitle}.${ticketUrl ? ` ${ticketUrl}` : ''}`,
-        html: brandedEmail(branding, 'Your response is needed', `
+        html: brandedEmail(branding, "We're waiting for your response", `
           <p style="color:#475569;">Hello ${escapeHtml(requesterName)},</p>
           <p style="color:#475569;">The support team is waiting for your response on ticket <strong>${escapeHtml(ticketKey)}</strong>.</p>
           <div style="background:white;padding:16px;border-radius:8px;border:1px solid #e2e8f0;"><p style="margin:0;color:#1e293b;"><strong>Title:</strong> ${escapeHtml(ticketTitle)}</p></div>

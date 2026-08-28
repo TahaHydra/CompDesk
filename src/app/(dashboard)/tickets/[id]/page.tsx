@@ -153,6 +153,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 lastReminderAt: string | null;
                 nextAvailableAt: string | null;
                 waitingSince: string;
+                unresolvedReminder: { id: string; status: 'PENDING' | 'DELIVERY_UNKNOWN'; createdAt: string; clearableAt: string } | null;
                 requester: { id: string; name: string };
             };
         },
@@ -339,6 +340,23 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         reminderRequestLock.current = true;
         sendReminder.mutate();
     };
+    const clearUnresolvedReminder = useMutation({
+        mutationFn: async (reminderId: string) => {
+            const response = await fetch(`/api/tickets/${id}/reminders`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reminderId }),
+            });
+            const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+            if (!response.ok) throw new Error(payload.error || 'Failed to clear unresolved reminder');
+            return payload;
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['ticket-reminders', id] });
+            toast({ title: 'Uncertain delivery cleared', description: 'A new reminder can be attempted after the normal policy checks.' });
+        },
+        onError: (error: Error) => toast({ title: 'Uncertain delivery was not cleared', description: error.message, variant: 'destructive' }),
+    });
 
     // File upload to existing ticket
     const uploadToTicket = useCallback(async (file: File) => {
@@ -745,6 +763,18 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         {reminderQuery.data?.lastReminderAt ? <p className="text-xs text-muted-foreground">Last reminder: {new Date(reminderQuery.data.lastReminderAt).toLocaleString()}</p> : null}
                                         {reminderQuery.isError ? <p role="alert" className="text-xs text-destructive">{reminderQuery.error instanceof Error ? reminderQuery.error.message : 'Reminder availability could not be loaded.'}</p> : null}
                                         {reminderQuery.data?.reason ? <p className="text-xs text-muted-foreground">{reminderQuery.data.reason}{reminderQuery.data.nextAvailableAt && new Date(reminderQuery.data.nextAvailableAt) > new Date() ? ` Try again after ${new Date(reminderQuery.data.nextAvailableAt).toLocaleString()}.` : ''}</p> : null}
+                                        {session?.user?.role === 'SUPER_ADMIN' && reminderQuery.data?.unresolvedReminder ? (
+                                            <ConfirmDestructiveAction
+                                                title="Clear uncertain reminder delivery?"
+                                                description="Only continue after checking the mail provider or server logs. The email may already have reached the requester; clearing this state permits a later reminder and could otherwise create a duplicate."
+                                                confirmLabel="Mark as failed"
+                                                pending={clearUnresolvedReminder.isPending}
+                                                disabled={new Date(reminderQuery.data.unresolvedReminder.clearableAt) > new Date()}
+                                                onConfirm={() => clearUnresolvedReminder.mutate(reminderQuery.data.unresolvedReminder!.id)}
+                                                trigger={<Button type="button" variant="outline" size="sm" className="w-full text-destructive">Review and clear uncertain delivery</Button>}
+                                            />
+                                        ) : null}
+                                        {session?.user?.role === 'SUPER_ADMIN' && reminderQuery.data?.unresolvedReminder && new Date(reminderQuery.data.unresolvedReminder.clearableAt) > new Date() ? <p className="text-xs text-muted-foreground">For safety, this state can be cleared after {new Date(reminderQuery.data.unresolvedReminder.clearableAt).toLocaleString()}.</p> : null}
                                         <Dialog open={reminderOpen} onOpenChange={setReminderOpen}>
                                             <DialogTrigger asChild>
                                                 <Button type="button" variant="outline" size="sm" className="w-full gap-2" disabled={reminderQuery.isLoading || reminderQuery.isError || !reminderQuery.data?.allowed || sendReminder.isPending}><BellRing className="h-3.5 w-3.5" />Remind requester</Button>

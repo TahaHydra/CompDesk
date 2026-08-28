@@ -22,7 +22,7 @@ jest.mock('@/lib/audit', () => ({ auditLog: mockAuditLog }));
 jest.mock('@/lib/logger', () => ({ __esModule: true, default: { error: jest.fn() } }));
 
 import { NextRequest } from 'next/server';
-import { GET, POST } from '@/app/api/tickets/[id]/reminders/route';
+import { DELETE, GET, POST } from '@/app/api/tickets/[id]/reminders/route';
 import { parseTicketReminderSettings, roleCanSendTicketReminder } from '@/lib/ticket-reminders';
 
 const ticketId = '550e8400-e29b-41d4-a716-446655440000';
@@ -126,7 +126,7 @@ describe('ticket reminders', () => {
         expect(response.status).toBe(502);
         expect(mockPrisma.ticketReminder.create).toHaveBeenCalledTimes(1);
         expect(mockPrisma.ticketReminder.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-            where: { id: 'reminder-id', status: 'PENDING' },
+            where: { id: 'reminder-id', status: 'DELIVERY_UNKNOWN' },
             data: expect.objectContaining({ status: 'FAILED' }),
         }));
         expect(mockPrisma.timelineEvent.create).not.toHaveBeenCalled();
@@ -141,5 +141,71 @@ describe('ticket reminders', () => {
         }), { params: Promise.resolve({ id: ticketId }) });
         expect(response.status).toBe(409);
         expect(mockSendReminderEmail).not.toHaveBeenCalled();
+    });
+
+    it('blocks a second email when SMTP succeeds but database finalization fails', async () => {
+        let transactionNumber = 0;
+        mockPrisma.$transaction.mockImplementation((callback: (tx: typeof mockPrisma) => unknown) => {
+            transactionNumber += 1;
+            if (transactionNumber === 2) throw new Error('database unavailable after SMTP acceptance');
+            return callback(mockPrisma);
+        });
+        const firstResponse = await POST(new NextRequest(`http://localhost/api/tickets/${ticketId}/reminders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expectedVersion: ticket.version }),
+        }), { params: Promise.resolve({ id: ticketId }) });
+        expect(firstResponse.status).toBe(500);
+        expect(mockSendReminderEmail).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.ticketReminder.updateMany).toHaveBeenCalledWith({
+            where: { id: 'reminder-id', status: 'PENDING' },
+            data: { status: 'DELIVERY_UNKNOWN' },
+        });
+
+        mockPrisma.timelineEvent.findFirst
+            .mockResolvedValueOnce({ createdAt: pendingSince })
+            .mockResolvedValueOnce({ createdAt: requesterReply });
+        mockPrisma.ticketReminder.findFirst
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'reminder-id', status: 'DELIVERY_UNKNOWN', createdAt: new Date() });
+        const secondResponse = await POST(new NextRequest(`http://localhost/api/tickets/${ticketId}/reminders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expectedVersion: ticket.version }),
+        }), { params: Promise.resolve({ id: ticketId }) });
+        expect(secondResponse.status).toBe(409);
+        expect(mockSendReminderEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows only a Super Admin to explicitly clear an uncertain delivery', async () => {
+        const request = () => new NextRequest(`http://localhost/api/tickets/${ticketId}/reminders`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reminderId: '550e8400-e29b-41d4-a716-446655440001' }),
+        });
+        expect((await DELETE(request(), { params: Promise.resolve({ id: ticketId }) })).status).toBe(403);
+
+        mockAuth.mockResolvedValue({ user: { id: 'super-id', role: 'SUPER_ADMIN' } });
+        mockPrisma.ticketReminder.findFirst.mockResolvedValue({
+            id: '550e8400-e29b-41d4-a716-446655440001',
+            status: 'DELIVERY_UNKNOWN',
+            createdAt: new Date(),
+        });
+        expect((await DELETE(request(), { params: Promise.resolve({ id: ticketId }) })).status).toBe(409);
+
+        mockPrisma.ticketReminder.findFirst.mockResolvedValue({
+            id: '550e8400-e29b-41d4-a716-446655440001',
+            status: 'DELIVERY_UNKNOWN',
+            createdAt: new Date(Date.now() - 31 * 60 * 1000),
+        });
+        const response = await DELETE(request(), { params: Promise.resolve({ id: ticketId }) });
+        expect(response.status).toBe(200);
+        expect(mockPrisma.ticketReminder.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+            data: expect.objectContaining({ status: 'FAILED' }),
+        }));
+        expect(mockAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'ticket.reminder_delivery_cleared',
+            userId: 'super-id',
+        }));
     });
 });
