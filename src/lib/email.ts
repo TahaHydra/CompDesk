@@ -266,3 +266,28 @@ export async function sendNewTicketForDepartmentEmail(
           <p style="color:#64748b;font-size:12px;margin-top:16px;">Sign in to ${escapeHtml(branding.applicationName)} to claim this ticket.</p>`),
     });
 }
+
+export async function sendTicketReminderEmail(
+    requesterEmail: string,
+    requesterName: string,
+    ticketId: string,
+    ticketKey: string,
+    ticketTitle: string
+) {
+    const branding = await getBrandingConfig();
+    const baseUrl = (process.env.AUTH_URL || process.env.NEXTAUTH_URL || '').replace(/\/$/, '');
+    const ticketUrl = baseUrl ? `${baseUrl}/tickets/${encodeURIComponent(ticketId)}` : '';
+    const action = ticketUrl
+        ? `<p style="margin-top:20px;"><a href="${escapeHtml(ticketUrl)}" style="display:inline-block;background:${branding.primaryColor};color:white;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600;">View ticket and reply</a></p>`
+        : `<p style="color:#64748b;font-size:12px;margin-top:16px;">Sign in to ${escapeHtml(branding.applicationName)} to view the ticket and reply.</p>`;
+    return sendEmail({
+        to: requesterEmail,
+        subject: `[${ticketKey}] Response requested: ${ticketTitle}`,
+        text: `Hello ${requesterName}, your response is needed for ticket ${ticketKey}: ${ticketTitle}.${ticketUrl ? ` ${ticketUrl}` : ''}`,
+        html: brandedEmail(branding, 'Your response is needed', `
+          <p style="color:#475569;">Hello ${escapeHtml(requesterName)},</p>
+          <p style="color:#475569;">The support team is waiting for your response on ticket <strong>${escapeHtml(ticketKey)}</strong>.</p>
+          <div style="background:white;padding:16px;border-radius:8px;border:1px solid #e2e8f0;"><p style="margin:0;color:#1e293b;"><strong>Title:</strong> ${escapeHtml(ticketTitle)}</p></div>
+          ${action}`),
+    });
+}

@@ -18,6 +18,8 @@ const ALLOWED_KEYS = new Set([
     'dashboard_links', 'login_local_enabled',
     'feature_attachments_enabled', 'feature_dashboard_links_enabled', 'feature_external_api_enabled',
     'feature_webhooks_enabled',
+    'ticket_reminders_enabled', 'ticket_reminder_cooldown_hours', 'ticket_reminder_max_per_cycle',
+    'ticket_reminder_allow_agents', 'ticket_reminder_allow_admins',
 ]);
 
 function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Record<string, string>): Record<string, string> {
@@ -42,6 +44,11 @@ function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Rec
         smtp_password_migration_required: dbSettings.smtp_password && !isEncryptedSettingSecret(dbSettings.smtp_password) ? 'true' : 'false',
         smtp_encryption_key_configured: hasSettingsEncryptionKey() ? 'true' : 'false',
         smtp_require_tls: dbSettings.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? ((dbSettings.smtp_secure ?? process.env.SMTP_SECURE) === 'true' ? 'false' : 'true'),
+        ticket_reminders_enabled: dbSettings.ticket_reminders_enabled ?? 'false',
+        ticket_reminder_cooldown_hours: dbSettings.ticket_reminder_cooldown_hours ?? '24',
+        ticket_reminder_max_per_cycle: dbSettings.ticket_reminder_max_per_cycle ?? '3',
+        ticket_reminder_allow_agents: dbSettings.ticket_reminder_allow_agents ?? 'true',
+        ticket_reminder_allow_admins: dbSettings.ticket_reminder_allow_admins ?? 'true',
     };
 }
 
@@ -137,7 +144,7 @@ export async function PATCH(request: Request) {
             const requireTLS = (smtpEntries.get('smtp_require_tls') ?? existing.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? 'true') === 'true';
             validateSmtpSecurityCombination({ port, secure, requireTLS });
         }
-        const enablingEmail = normalizedEntries.some(([key, value]) => key.startsWith('email_on_') && value === 'true');
+        const enablingEmail = normalizedEntries.some(([key, value]) => (key.startsWith('email_on_') || key === 'ticket_reminders_enabled') && value === 'true');
         if (enablingEmail) {
             const existingFrom = await prisma.appSetting.findUnique({ where: { key: 'smtp_from' }, select: { value: true } });
             const submittedFrom = normalizedEntries.find(([key]) => key === 'smtp_from')?.[1];

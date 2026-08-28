@@ -50,6 +50,7 @@ enum TimelineEventType {
   PRIORITY_CHANGE
   CREATED
   ESCALATED
+  REMINDER_SENT
 }
 
 enum FormFieldType {
@@ -91,6 +92,12 @@ enum WebhookDeliveryStatus {
   FAILED
 }
 
+enum TicketReminderStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 // ── Users ──────────────────────────────────────────────────────
 
 model User {
@@ -127,6 +134,8 @@ model User {
   accounts             Account[]
   uploadedAttachments  Attachment[]          @relation("AttachmentUploader")
   temporaryAttachments TemporaryAttachment[]
+  ticketRemindersSent   TicketReminder[]        @relation("ReminderSender")
+  ticketRemindersReceived TicketReminder[]      @relation("ReminderRecipient")
 
   @@map("users")
 }
@@ -357,6 +366,7 @@ model Ticket {
   timeline         TimelineEvent[]
   attachments      Attachment[]
   presence         TicketPresence[]
+  reminders        TicketReminder[]
 
   @@unique([requesterId, idempotencyKey])
   @@index([status])
@@ -434,6 +444,26 @@ model TimelineEvent {
 
   @@index([ticketId, createdAt])
   @@map("timeline_events")
+}
+
+model TicketReminder {
+  id          String               @id @default(uuid())
+  ticketId    String               @map("ticket_id")
+  sentById    String               @map("sent_by_id")
+  recipientId String               @map("recipient_id")
+  status      TicketReminderStatus @default(PENDING)
+  createdAt   DateTime             @default(now()) @map("created_at")
+  sentAt      DateTime?            @map("sent_at")
+  failedAt    DateTime?            @map("failed_at")
+
+  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sentBy    User   @relation("ReminderSender", fields: [sentById], references: [id], onDelete: Restrict)
+  recipient User   @relation("ReminderRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, status, sentAt])
+  @@index([ticketId, status, createdAt])
+  @@index([recipientId, sentAt])
+  @@map("ticket_reminders")
 }
 
 // ── Attachments ────────────────────────────────────────────────

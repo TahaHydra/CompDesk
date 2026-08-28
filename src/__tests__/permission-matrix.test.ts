@@ -19,7 +19,7 @@ describe('central role permission matrix', () => {
         const permissions = source('src/lib/permissions.ts');
         expect(permissions).toContain("if (role === 'SUPER_ADMIN') return null");
         expect(permissions).toContain("if (role === 'ADMIN')");
-        expect(permissions).toContain('getAdministeredQueueIds(userId)');
+        expect(permissions).toContain('getAdministeredQueueIds(userId, client)');
         expect(permissions).toContain("if (role === 'USER') return ticket.requesterId === userId");
         expect(permissions).toContain("if (role === 'SUPER_ADMIN') return true");
     });

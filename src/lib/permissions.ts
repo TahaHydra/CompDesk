@@ -1,5 +1,7 @@
-import type { Role } from '@prisma/client';
+import { Prisma, type Role } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+
+type PermissionClient = Pick<Prisma.TransactionClient, 'queueGroup' | 'queueMember'>;
 
 export function isAdminRole(role: Role): boolean {
     return role === 'ADMIN' || role === 'SUPER_ADMIN';
@@ -13,16 +15,16 @@ export function isAgentRole(role: Role): boolean {
     return role === 'AGENT' || isAdminRole(role);
 }
 
-export async function getAgentAccessibleQueueIds(userId: string): Promise<string[]> {
+export async function getAgentAccessibleQueueIds(userId: string, client: PermissionClient = prisma): Promise<string[]> {
     const [groupQueues, directQueues] = await Promise.all([
-        prisma.queueGroup.findMany({
+        client.queueGroup.findMany({
             where: {
                 group: { members: { some: { userId } } },
                 role: 'agent',
             },
             select: { queueId: true },
         }),
-        prisma.queueMember.findMany({
+        client.queueMember.findMany({
             where: { userId, role: 'agent' },
             select: { queueId: true },
         }),
@@ -36,16 +38,16 @@ export async function getAgentAccessibleQueueIds(userId: string): Promise<string
     ];
 }
 
-export async function getAdministeredQueueIds(userId: string): Promise<string[]> {
+export async function getAdministeredQueueIds(userId: string, client: PermissionClient = prisma): Promise<string[]> {
     const [groupQueues, directQueues] = await Promise.all([
-        prisma.queueGroup.findMany({
+        client.queueGroup.findMany({
             where: {
                 group: { members: { some: { userId } } },
                 role: 'admin',
             },
             select: { queueId: true },
         }),
-        prisma.queueMember.findMany({
+        client.queueMember.findMany({
             where: { userId, role: 'admin' },
             select: { queueId: true },
         }),
@@ -65,46 +67,47 @@ export async function getAdministeredQueueIds(userId: string): Promise<string[]>
  * see the departments they administer plus any where they are also agents,
  * and agents see their assigned departments.
  */
-export async function getQueueInboxQueueIds(userId: string, role: Role): Promise<string[] | null> {
+export async function getQueueInboxQueueIds(userId: string, role: Role, client: PermissionClient = prisma): Promise<string[] | null> {
     if (role === 'SUPER_ADMIN') return null;
     if (role === 'ADMIN') {
         const [administered, assigned] = await Promise.all([
-            getAdministeredQueueIds(userId),
-            getAgentAccessibleQueueIds(userId),
+            getAdministeredQueueIds(userId, client),
+            getAgentAccessibleQueueIds(userId, client),
         ]);
         return [...new Set([...administered, ...assigned])];
     }
-    if (role === 'AGENT') return getAgentAccessibleQueueIds(userId);
+    if (role === 'AGENT') return getAgentAccessibleQueueIds(userId, client);
     return [];
 }
 
-export async function canAdministerQueue(userId: string, role: Role, queueId: string): Promise<boolean> {
+export async function canAdministerQueue(userId: string, role: Role, queueId: string, client: PermissionClient = prisma): Promise<boolean> {
     if (role === 'SUPER_ADMIN') return true;
     if (role !== 'ADMIN') return false;
-    const queueIds = await getAdministeredQueueIds(userId);
+    const queueIds = await getAdministeredQueueIds(userId, client);
     return queueIds.includes(queueId);
 }
-export async function canAccessQueue(userId: string, role: Role, queueId: string): Promise<boolean> {
+export async function canAccessQueue(userId: string, role: Role, queueId: string, client: PermissionClient = prisma): Promise<boolean> {
     if (role === 'SUPER_ADMIN') return true;
     if (role === 'ADMIN') {
-        const queueIds = await getQueueInboxQueueIds(userId, role);
+        const queueIds = await getQueueInboxQueueIds(userId, role, client);
         return Boolean(queueIds?.includes(queueId));
     }
     if (role !== 'AGENT') return false;
 
-    const queueIds = await getAgentAccessibleQueueIds(userId);
+    const queueIds = await getAgentAccessibleQueueIds(userId, client);
     return queueIds.includes(queueId);
 }
 
 export async function canAccessTicket(
     userId: string,
     role: Role,
-    ticket: { requesterId: string; queueId: string }
+    ticket: { requesterId: string; queueId: string },
+    client: PermissionClient = prisma
 ): Promise<boolean> {
     if (role === 'SUPER_ADMIN') return true;
-    if (role === 'ADMIN') return canAccessQueue(userId, role, ticket.queueId);
+    if (role === 'ADMIN') return canAccessQueue(userId, role, ticket.queueId, client);
     if (role === 'USER') return ticket.requesterId === userId;
-    if (role === 'AGENT') return canAccessQueue(userId, role, ticket.queueId);
+    if (role === 'AGENT') return canAccessQueue(userId, role, ticket.queueId, client);
     return false;
 }
 /**
