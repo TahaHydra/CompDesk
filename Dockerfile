@@ -1,4 +1,5 @@
 FROM node:24-alpine AS base
+RUN apk upgrade --no-cache
 WORKDIR /app
 
 FROM base AS deps
