@@ -117,7 +117,7 @@
     "jest": "29.7.0",
     "postcss": "8.5.26",
     "prisma": "6.19.3",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "^4.3.3",
     "ts-jest": "29.4.12",
     "tsx": "4.23.1",
     "typescript": "^5.7.3"
