@@ -1,5 +1,5 @@
 ALTER TYPE "TimelineEventType" ADD VALUE 'REMINDER_SENT';
-CREATE TYPE "TicketReminderStatus" AS ENUM ('PENDING', 'SENT', 'FAILED');
+CREATE TYPE "TicketReminderStatus" AS ENUM ('PENDING', 'DELIVERY_UNKNOWN', 'SENT', 'FAILED');
 
 CREATE TABLE "ticket_reminders" (
     "id" TEXT NOT NULL,
