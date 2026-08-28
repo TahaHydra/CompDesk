@@ -6,6 +6,8 @@ describe('settings validation', () => {
         expect(normalizeSettingValue('smtp_port', '0465')).toBe('465');
         expect(normalizeSettingValue('smtp_from', 'CompDesk <support@example.com>')).toBe('CompDesk <support@example.com>');
         expect(normalizeSettingValue('smtp_secure', 'true')).toBe('true');
+        expect(normalizeSettingValue('ticket_reminder_cooldown_hours', '024')).toBe('24');
+        expect(normalizeSettingValue('ticket_reminder_max_per_cycle', '3')).toBe('3');
     });
 
     it.each([
@@ -16,6 +18,10 @@ describe('settings validation', () => {
         ['smtp_secure', 'yes'],
         ['email_on_ticket_created', '1'],
         ['azure_ad_client_secret', 'secret\nINJECTED=true'],
+        ['ticket_reminder_cooldown_hours', '0'],
+        ['ticket_reminder_cooldown_hours', '2.5'],
+        ['ticket_reminder_max_per_cycle', '11'],
+        ['ticket_reminders_enabled', 'yes'],
     ])('rejects an invalid %s value', (key, value) => {
         expect(() => normalizeSettingValue(key, value)).toThrow(SettingsValidationError);
     });

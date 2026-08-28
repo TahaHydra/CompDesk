@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook, BellRing } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
@@ -153,6 +153,75 @@ function EmailTogglesTab() {
                         </div>
                     );
                 })}
+            </CardContent>
+        </Card>
+    );
+}
+
+function TicketReminderSettingsTab() {
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const { data: settings } = useQuery<SettingsMap>({
+        queryKey: ['settings'],
+        queryFn: loadSettings,
+        throwOnError: true,
+    });
+    const [form, setForm] = useState({
+        ticket_reminders_enabled: 'false',
+        ticket_reminder_cooldown_hours: '24',
+        ticket_reminder_max_per_cycle: '3',
+        ticket_reminder_allow_agents: 'true',
+        ticket_reminder_allow_admins: 'true',
+    });
+
+    useEffect(() => {
+        if (!settings) return;
+        setForm({
+            ticket_reminders_enabled: settings.ticket_reminders_enabled ?? 'false',
+            ticket_reminder_cooldown_hours: settings.ticket_reminder_cooldown_hours ?? '24',
+            ticket_reminder_max_per_cycle: settings.ticket_reminder_max_per_cycle ?? '3',
+            ticket_reminder_allow_agents: settings.ticket_reminder_allow_agents ?? 'true',
+            ticket_reminder_allow_admins: settings.ticket_reminder_allow_admins ?? 'true',
+        });
+    }, [settings]);
+
+    const cooldown = Number(form.ticket_reminder_cooldown_hours);
+    const maximum = Number(form.ticket_reminder_max_per_cycle);
+    const valid = Number.isInteger(cooldown) && cooldown >= 1 && cooldown <= 720
+        && Number.isInteger(maximum) && maximum >= 1 && maximum <= 10;
+    const saveMutation = useMutation({
+        mutationFn: () => updateSettings(form),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            toast({ title: 'Ticket reminder settings saved' });
+        },
+        onError: (error: Error) => toast({ title: 'Reminder settings could not be saved', description: error.message, variant: 'destructive' }),
+    });
+
+    return (
+        <Card className="border-0 shadow-sm">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base"><BellRing className="h-4 w-4" /> Ticket Reminders</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+                <p className="text-sm text-muted-foreground">Staff can manually email the requester only while a ticket is Pending User. Cooldown and cycle limits are enforced by the server.</p>
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                    <div><p className="font-medium">Enable manual ticket reminders</p><p className="text-xs text-muted-foreground">This does not schedule or automatically send reminders.</p></div>
+                    <Switch checked={form.ticket_reminders_enabled === 'true'} onCheckedChange={(checked) => setForm({ ...form, ticket_reminders_enabled: String(checked) })} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2"><Label htmlFor="reminder-cooldown">Cooldown (hours)</Label><Input id="reminder-cooldown" type="number" min={1} max={720} step={1} value={form.ticket_reminder_cooldown_hours} onChange={(event) => setForm({ ...form, ticket_reminder_cooldown_hours: event.target.value })} aria-invalid={!Number.isInteger(cooldown) || cooldown < 1 || cooldown > 720} /><p className="text-xs text-muted-foreground">Between 1 and 720 hours. Default: 24.</p></div>
+                    <div className="space-y-2"><Label htmlFor="reminder-maximum">Maximum per waiting cycle</Label><Input id="reminder-maximum" type="number" min={1} max={10} step={1} value={form.ticket_reminder_max_per_cycle} onChange={(event) => setForm({ ...form, ticket_reminder_max_per_cycle: event.target.value })} aria-invalid={!Number.isInteger(maximum) || maximum < 1 || maximum > 10} /><p className="text-xs text-muted-foreground">Between 1 and 10. A requester reply starts a new cycle.</p></div>
+                </div>
+                <div className="space-y-3">
+                    <p className="text-sm font-medium">Roles allowed to send reminders</p>
+                    <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">Agents</p><p className="text-xs text-muted-foreground">Only for tickets in departments they can access.</p></div><Switch checked={form.ticket_reminder_allow_agents === 'true'} onCheckedChange={(checked) => setForm({ ...form, ticket_reminder_allow_agents: String(checked) })} /></div>
+                    <div className="flex items-center justify-between rounded-lg border p-3"><div><p className="text-sm font-medium">Administrators</p><p className="text-xs text-muted-foreground">Only for tickets in departments they can access or administer.</p></div><Switch checked={form.ticket_reminder_allow_admins === 'true'} onCheckedChange={(checked) => setForm({ ...form, ticket_reminder_allow_admins: String(checked) })} /></div>
+                    <p className="text-xs text-muted-foreground">Super administrators are always permitted, subject to ticket state, cooldown, limit, requester, and SMTP checks.</p>
+                </div>
+                {!settings?.smtp_from && form.ticket_reminders_enabled === 'true' ? <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Configure a valid SMTP From address before enabling reminders.</div> : null}
+                {!valid ? <p role="alert" className="text-sm text-destructive">Enter a valid whole-number cooldown and reminder maximum.</p> : null}
+                <Button onClick={() => saveMutation.mutate()} disabled={!settings || !valid || saveMutation.isPending}><Save className="mr-2 h-4 w-4" />{saveMutation.isPending ? 'Saving…' : 'Save Reminder Settings'}</Button>
             </CardContent>
         </Card>
     );
@@ -837,6 +906,7 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="branding" className="gap-1 min-w-max"><Palette className="h-3.5 w-3.5" /> Branding</TabsTrigger>
                     <TabsTrigger value="smtp" className="gap-1 min-w-max"><Mail className="h-3.5 w-3.5" /> SMTP</TabsTrigger>
                     <TabsTrigger value="emails" className="gap-1 min-w-max"><Send className="h-3.5 w-3.5" /> Email Notifications</TabsTrigger>
+                    <TabsTrigger value="reminders" className="gap-1 min-w-max"><BellRing className="h-3.5 w-3.5" /> Ticket Reminders</TabsTrigger>
                     <TabsTrigger value="entra" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> Entra ID</TabsTrigger>
                     <TabsTrigger value="links" className="gap-1 min-w-max"><LinkIcon className="h-3.5 w-3.5" /> Quick Links</TabsTrigger>
                     <TabsTrigger value="security" className="gap-1 min-w-max"><Lock className="h-3.5 w-3.5" /> Security</TabsTrigger>
@@ -847,6 +917,7 @@ export default function AdminSettingsPage() {
                 <TabsContent value="branding"><BrandingSettings /></TabsContent>
                 <TabsContent value="smtp"><SmtpSettingsTab /></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
+                <TabsContent value="reminders"><TicketReminderSettingsTab /></TabsContent>
                 <TabsContent value="entra"><EntraSettingsTab /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
                 <TabsContent value="security"><SecuritySettingsTab /></TabsContent>

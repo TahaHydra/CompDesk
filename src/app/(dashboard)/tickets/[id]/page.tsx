@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
@@ -20,7 +20,7 @@ import {
     ArrowLeft, MessageSquare, User, AlertTriangle,
     Send, Eye, Shield, XCircle, ArrowUpCircle,
     Paperclip, Download, FileIcon, Trash2, Upload,
-    Hand, Pencil, X, Check, ChevronDown,
+    Hand, Pencil, X, Check, ChevronDown, BellRing,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -32,6 +32,14 @@ function formatFileSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatElapsed(value: string | Date) {
+    const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3_600_000));
+    if (hours < 1) return 'less than an hour';
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'}`;
+    const days = Math.floor(hours / 24);
+    return `${days} day${days === 1 ? '' : 's'}`;
 }
 
 
@@ -78,8 +86,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [editingEventId, setEditingEventId] = useState<string | null>(null);
     const [editContent, setEditContent] = useState('');
     const [timelineOpen, setTimelineOpen] = useState(false);
+    const [reminderOpen, setReminderOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const assignmentRequestLock = useRef(false);
+    const reminderRequestLock = useRef(false);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
     const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
@@ -125,6 +135,29 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             return res.json();
         },
         enabled: isAgent && !!ticket?.queueId,
+    });
+
+    const reminderQuery = useQuery({
+        queryKey: ['ticket-reminders', id],
+        queryFn: async () => {
+            const response = await fetch(`/api/tickets/${id}/reminders`);
+            const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+            if (!response.ok) throw new Error(payload.error || 'Failed to load reminder availability');
+            return payload as {
+                allowed: boolean;
+                reason: string | null;
+                enabled: boolean;
+                reminderCount: number;
+                maxPerCycle: number;
+                cooldownHours: number;
+                lastReminderAt: string | null;
+                nextAvailableAt: string | null;
+                waitingSince: string;
+                requester: { id: string; name: string };
+            };
+        },
+        enabled: Boolean(isAgent && ticket?.status === 'PENDING_USER'),
+        refetchInterval: 60_000,
     });
 
     const updateTicket = useMutation({
@@ -279,6 +312,34 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         onError: (e: Error) => toast({ title: 'Escalation failed', description: e.message, variant: 'destructive' }),
     });
 
+    const sendReminder = useMutation({
+        mutationFn: async () => {
+            const response = await fetch(`/api/tickets/${id}/reminders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ expectedVersion: ticket.version }),
+            });
+            const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
+            if (!response.ok) throw new Error(payload.error || 'Failed to send reminder');
+            return payload;
+        },
+        onSuccess: async () => {
+            setReminderOpen(false);
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['ticket-reminders', id] }),
+                queryClient.invalidateQueries({ queryKey: ['ticket', id] }),
+            ]);
+            toast({ title: 'Reminder sent', description: `The requester was emailed about ${ticket.key}.` });
+        },
+        onError: (error: Error) => toast({ title: 'Reminder was not sent', description: error.message, variant: 'destructive' }),
+        onSettled: () => { reminderRequestLock.current = false; },
+    });
+    const confirmReminder = () => {
+        if (reminderRequestLock.current) return;
+        reminderRequestLock.current = true;
+        sendReminder.mutate();
+    };
+
     // File upload to existing ticket
     const uploadToTicket = useCallback(async (file: File) => {
         const fd = new FormData();
@@ -417,6 +478,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         )}
                         {event.type === 'PRIORITY_CHANGE' && (
                             <Badge variant="secondary" className="text-xs">Priority</Badge>
+                        )}
+                        {event.type === 'REMINDER_SENT' && (
+                            <Badge variant="secondary" className="gap-1 text-xs"><BellRing className="h-3 w-3" /> Reminder Sent</Badge>
                         )}
                         {isEdited && (
                             <span className="text-xs text-muted-foreground italic">(edited)</span>
@@ -669,6 +733,39 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
+                                {ticket.status === 'PENDING_USER' ? (
+                                    <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+                                        <div className="flex items-start gap-2">
+                                            <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium">Waiting for requester</p>
+                                                {reminderQuery.data ? <p className="text-xs text-muted-foreground">Waiting for {formatElapsed(reminderQuery.data.waitingSince)} · {reminderQuery.data.reminderCount}/{reminderQuery.data.maxPerCycle} reminders this cycle</p> : null}
+                                            </div>
+                                        </div>
+                                        {reminderQuery.data?.lastReminderAt ? <p className="text-xs text-muted-foreground">Last reminder: {new Date(reminderQuery.data.lastReminderAt).toLocaleString()}</p> : null}
+                                        {reminderQuery.isError ? <p role="alert" className="text-xs text-destructive">{reminderQuery.error instanceof Error ? reminderQuery.error.message : 'Reminder availability could not be loaded.'}</p> : null}
+                                        {reminderQuery.data?.reason ? <p className="text-xs text-muted-foreground">{reminderQuery.data.reason}{reminderQuery.data.nextAvailableAt && new Date(reminderQuery.data.nextAvailableAt) > new Date() ? ` Try again after ${new Date(reminderQuery.data.nextAvailableAt).toLocaleString()}.` : ''}</p> : null}
+                                        <Dialog open={reminderOpen} onOpenChange={setReminderOpen}>
+                                            <DialogTrigger asChild>
+                                                <Button type="button" variant="outline" size="sm" className="w-full gap-2" disabled={reminderQuery.isLoading || reminderQuery.isError || !reminderQuery.data?.allowed || sendReminder.isPending}><BellRing className="h-3.5 w-3.5" />Remind requester</Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Send reminder to requester?</DialogTitle>
+                                                    <DialogDescription>This sends one branded email to {reminderQuery.data?.requester.name ?? ticket.requester?.name} for {ticket.key}: {ticket.title}. It will be recorded in the ticket timeline and audit log.</DialogDescription>
+                                                </DialogHeader>
+                                                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                                                    <p>Reminders in this waiting cycle: <strong>{reminderQuery.data?.reminderCount ?? 0} of {reminderQuery.data?.maxPerCycle ?? 0}</strong></p>
+                                                    <p className="mt-1 text-xs text-muted-foreground">After sending, the {reminderQuery.data?.cooldownHours ?? 24}-hour cooldown applies. A requester reply resets the cycle.</p>
+                                                </div>
+                                                <DialogFooter>
+                                                    <Button type="button" variant="outline" onClick={() => setReminderOpen(false)} disabled={sendReminder.isPending}>Cancel</Button>
+                                                    <Button type="button" onClick={confirmReminder} disabled={sendReminder.isPending}>{sendReminder.isPending ? 'Sending…' : 'Yes, send reminder'}</Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
+                                    </div>
+                                ) : null}
                                 <div className="space-y-2">
                                     <label className="text-xs font-medium text-muted-foreground">Status</label>
                                     <Select

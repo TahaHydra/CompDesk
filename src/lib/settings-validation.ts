@@ -14,7 +14,15 @@ const booleanKeys = new Set([
     'feature_dashboard_links_enabled',
     'feature_external_api_enabled',
     'feature_webhooks_enabled',
+    'ticket_reminders_enabled',
+    'ticket_reminder_allow_agents',
+    'ticket_reminder_allow_admins',
 ]);
+
+const reminderIntegerLimits: Record<string, { min: number; max: number; label: string }> = {
+    ticket_reminder_cooldown_hours: { min: 1, max: 720, label: 'Reminder cooldown' },
+    ticket_reminder_max_per_cycle: { min: 1, max: 10, label: 'Reminder maximum' },
+};
 
 const smtpHostSchema = z.string().trim().min(1, 'SMTP host is required').max(253, 'SMTP host is too long')
     .refine((value) => !/\s|:\/\//.test(value), 'Enter a host name only, without a URL scheme or spaces');
@@ -36,6 +44,14 @@ export function normalizeSettingValue(key: string, rawValue: unknown): string {
 
     if (booleanKeys.has(key)) {
         parsed = z.enum(['true', 'false']).safeParse(value);
+    } else if (key in reminderIntegerLimits) {
+        const limit = reminderIntegerLimits[key];
+        const number = z.coerce.number().int(`${limit.label} must be a whole number`)
+            .min(limit.min, `${limit.label} must be at least ${limit.min}`)
+            .max(limit.max, `${limit.label} must be at most ${limit.max}`)
+            .safeParse(value);
+        if (number.success) return String(number.data);
+        parsed = number;
     } else if (key === 'smtp_host') {
         parsed = smtpHostSchema.safeParse(value);
     } else if (key === 'smtp_port') {
