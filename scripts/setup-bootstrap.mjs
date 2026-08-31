@@ -14,6 +14,8 @@ import {
     SESSION_COOKIE,
     SESSION_TTL_MS,
     TOKEN_TTL_MS,
+    EXPIRED_BOOTSTRAP_TOKEN_ERROR,
+    INVALID_BOOTSTRAP_TOKEN_ERROR,
     buildDatabaseUrl,
     databaseCaPath,
     deploymentNextSteps,
@@ -33,6 +35,12 @@ import {
     writeFileAtomic,
 } from './setup-core.mjs';
 import { readPostgresIdentity, readPostgresPassword } from './config-store.mjs';
+import {
+    formatSetupBanner,
+    resolveSetupBrowserUrl,
+    setupRecoveryGuidance,
+    shouldUseSetupColors,
+} from './setup-terminal.mjs';
 
 const { Client } = pg;
 const execFileAsync = promisify(execFile);
@@ -682,11 +690,11 @@ async function handle(request, response) {
         const requestOrigin = originFromRequest(request);
         if (!requestHasExpectedOrigin(request, requestOrigin)) return json(response, 403, { error: 'Setup authentication requires the setup origin.' });
         if (isRateLimited(sourceIp(request))) return json(response, 429, { error: 'Too many setup authentication attempts. Try again later.' });
-        if (Date.now() > bootstrapExpiresAt) return json(response, 410, { error: 'The bootstrap token expired. Restart setup locally to issue a new token.' });
+        if (Date.now() > bootstrapExpiresAt) return json(response, 410, { error: EXPIRED_BOOTSTRAP_TOKEN_ERROR });
         for (const [id, session] of sessions) if (session.expiresAt < Date.now()) sessions.delete(id);
         if (sessions.size > 0) return json(response, 409, { error: 'Another setup session is already active.' });
         const body = await readBody(request);
-        if (!timingSafeEqual(body.token || '', bootstrapToken)) return json(response, 401, { error: 'Invalid bootstrap token.' });
+        if (!timingSafeEqual(body.token || '', bootstrapToken)) return json(response, 401, { error: INVALID_BOOTSTRAP_TOKEN_ERROR });
         const sessionId = randomSecret(32);
         const csrfToken = randomSecret(24);
         sessions.set(sessionId, { csrfToken, origin: requestOrigin, expiresAt: Date.now() + SESSION_TTL_MS });
@@ -773,10 +781,17 @@ export function startSetupServer({ onInstalled: onInstalledHook } = {}) {
     onInstalled = onInstalledHook || null;
     server.listen(port, host, () => {
         console.log('');
-        console.log('CompDesk first-run setup is active.');
-        if (explicitSetupOrigin) console.log(`Open: ${explicitSetupOrigin}/setup`);
-        else console.log('Open the published CompDesk address and append /setup (for example http://127.0.0.1:3000/setup).');
-        console.log(`One-time bootstrap token (expires in ${Math.floor(TOKEN_TTL_MS / 60000)} minutes): ${bootstrapToken}`);
+        console.log(formatSetupBanner({
+            token: bootstrapToken,
+            setupUrl: resolveSetupBrowserUrl({
+                explicitOrigin: explicitSetupOrigin,
+                publishedPort: process.env.COMPDESK_PUBLISHED_PORT,
+                listenerPort: port,
+            }),
+            ttlMinutes: Math.floor(TOKEN_TTL_MS / 60000),
+            color: shouldUseSetupColors(),
+        }));
+        console.log(setupRecoveryGuidance());
         if (host === '127.0.0.1') console.log('Remote setup is blocked. Set SETUP_ALLOW_REMOTE=true only when protected by a trusted network path.');
         console.log('');
     });

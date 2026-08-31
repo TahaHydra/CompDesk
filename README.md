@@ -53,7 +53,13 @@ Docker Compose is the recommended deployment — one command, no Node.js or npm 
 docker compose up -d
 ```
 
-Open `http://localhost:3000/setup`, complete the wizard, and the same container automatically switches itself to production on the same port. Follow [First-run setup](docs/FIRST_RUN_SETUP.md) and [Docker deployment](docs/DEPLOY_DOCKER.md) rather than adding database credentials or a fixed administrator password to source control. Demo data is optional, disabled by default, and uses generated credentials shown once.
+Read the clearly boxed one-time token, then open the wizard:
+
+```bash
+docker compose logs --tail=50 compdesk
+```
+
+Open `http://localhost:3000/setup`, complete the wizard, and the same container automatically switches itself to production on the same port. The token exists only in the trusted setup process/log output and expires after 30 minutes; it is never sent to the setup page automatically. Follow [First-run setup](docs/FIRST_RUN_SETUP.md) and [Docker deployment](docs/DEPLOY_DOCKER.md) for remote-server SSH tunneling, source builds, recovery, and HTTPS reverse-proxy guidance. Demo data is optional, disabled by default, and uses generated credentials shown once.
 
 For local development, follow [SETUP.md](SETUP.md).
 
