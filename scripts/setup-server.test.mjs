@@ -73,6 +73,9 @@ test('setup server blocks the application and protects the one active session', 
         assert.match(setupHtml, /Where do I find the setup token\?/);
         assert.match(setupHtml, /docker compose logs --tail=50 compdesk/);
         assert.match(setupHtml, /docker-compose\.build\.yml/);
+        assert.match(setupHtml, /Token expired\?/);
+        assert.match(setupHtml, /docker compose restart compdesk/);
+        assert.match(setupHtml, /no browser-accessible reset endpoint is used/);
         assert.equal(setupHtml.includes(running.token), false, 'the setup page must never receive the bootstrap token');
         assert.match(running.output(), /CompDesk first-run setup is active/);
         assert.match(running.output(), /Token expires in 30 minutes/);
