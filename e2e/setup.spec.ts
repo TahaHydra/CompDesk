@@ -131,7 +131,13 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     await page.goto(`${setupOrigin}/dashboard`);
     await expect(page).toHaveURL(`${setupOrigin}/setup`);
     await expect(page.getByRole('heading', { name: 'First-run setup' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Where do I find the setup token?' })).toBeVisible();
+    await expect(page.getByText('docker compose logs --tail=50 compdesk', { exact: true })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(bootstrapToken);
 
+    await page.getByLabel('Bootstrap token').fill('invalid-setup-token');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('alert')).toContainText('The setup token is invalid or has expired.');
     await page.getByLabel('Bootstrap token').fill(bootstrapToken);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('heading', { name: '1. Welcome and system check' })).toBeVisible();

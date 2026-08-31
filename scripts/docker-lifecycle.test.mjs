@@ -128,6 +128,11 @@ async function completeSetupOverHttp(appOrigin, env) {
         return match ? match[1] : null;
     }, { timeoutMs: 60000, label: 'bootstrap token in compdesk logs' });
 
+    const bootstrapLogs = compose(['logs', '--no-color', 'compdesk'], env);
+    assert.match(bootstrapLogs.stdout, /CompDesk first-run setup is active/);
+    assert.match(bootstrapLogs.stdout, /Token expires in 30 minutes/);
+    assert.equal(bootstrapLogs.stdout.split(bootstrapToken).length - 1, 1, 'the bootstrap token should appear exactly once');
+
     const session = await fetch(`${appOrigin}/setup/api/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Origin: setupOrigin },

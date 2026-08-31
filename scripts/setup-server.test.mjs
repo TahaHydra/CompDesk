@@ -51,7 +51,7 @@ async function startSetup(stateDirectory, envOverrides = {}) {
             }
         }, 25);
     });
-    return { child, port, token };
+    return { child, port, token, output: () => output };
 }
 
 async function stop(child) {
@@ -68,6 +68,19 @@ test('setup server blocks the application and protects the one active session', 
     const running = await startSetup(stateDirectory);
     const origin = `http://127.0.0.1:${running.port}`;
     try {
+        const setupPage = await fetch(`${origin}/setup`);
+        const setupHtml = await setupPage.text();
+        assert.match(setupHtml, /Where do I find the setup token\?/);
+        assert.match(setupHtml, /docker compose logs --tail=50 compdesk/);
+        assert.match(setupHtml, /docker-compose\.build\.yml/);
+        assert.match(setupHtml, /Token expired\?/);
+        assert.match(setupHtml, /docker compose restart compdesk/);
+        assert.match(setupHtml, /no browser-accessible reset endpoint is used/);
+        assert.equal(setupHtml.includes(running.token), false, 'the setup page must never receive the bootstrap token');
+        assert.match(running.output(), /CompDesk first-run setup is active/);
+        assert.match(running.output(), /Token expires in 30 minutes/);
+        assert.equal(running.output().split(running.token).length - 1, 1, 'bootstrap output must contain the token exactly once');
+
         const normal = await fetch(`${origin}/dashboard`, { redirect: 'manual' });
         assert.equal(normal.status, 302);
         assert.equal(normal.headers.get('location'), '/setup');
@@ -78,6 +91,14 @@ test('setup server blocks the application and protects the one active session', 
             body: JSON.stringify({ token: running.token }),
         });
         assert.equal(wrongOrigin.status, 403);
+
+        const invalidToken = await fetch(`${origin}/setup/api/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: origin },
+            body: JSON.stringify({ token: 'not-the-generated-token' }),
+        });
+        assert.equal(invalidToken.status, 401);
+        assert.match((await invalidToken.json()).error, /invalid or has expired.*container or setup-process logs/i);
 
         const authenticated = await fetch(`${origin}/setup/api/session`, {
             method: 'POST',

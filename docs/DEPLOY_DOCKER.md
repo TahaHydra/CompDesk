@@ -6,7 +6,7 @@ CompDesk's public deployment is one command:
 docker compose up -d
 ```
 
-Then open `http://localhost:3000/setup` in a browser. Complete the wizard, and the same container automatically switches itself from first-run setup to production — no second command, no manual restart, and (once a release image is published) no Node.js, npm, Git, or local build.
+Then read the clearly boxed bootstrap token from `docker compose logs compdesk` and open `http://localhost:3000/setup` in a browser. Complete the wizard, and the same container automatically switches itself from first-run setup to production — no second command, no manual restart, and (once a release image is published) no Node.js, npm, Git, or local build.
 
 ## What you need
 
@@ -28,12 +28,21 @@ There are two ways to get the Compose file, and they behave differently on purpo
    ```bash
    docker compose up -d
    ```
-3. Open `http://localhost:3000/setup`. Enter the one-time bootstrap token, which is printed once to the container's log:
+3. Read the one-time bootstrap token from the compact box printed once in the container log:
 
    ```bash
-   docker compose logs compdesk
+   docker compose logs --tail=50 compdesk
    ```
-4. Complete all ten steps of the wizard. When you submit the final step you'll see **"Installation complete. CompDesk is starting."** The page polls automatically and redirects itself to the sign-in page once production is ready — usually a few seconds. Nothing further to run.
+4. Open `http://localhost:3000/setup`, paste the token, and complete all ten steps. When you submit the final step you'll see **"Installation complete. CompDesk is starting."** The page polls automatically and redirects itself to the sign-in page once production is ready — usually a few seconds. Nothing further to run.
+
+The token expires after 30 minutes and exists only in the running setup process. If it expires, restart the uninstalled application container and read the newly generated token:
+
+```bash
+docker compose restart compdesk
+docker compose logs --tail=50 compdesk
+```
+
+Restarting cannot create multiple simultaneously valid tokens: stopping the setup process invalidates its in-memory token before the replacement process starts.
 
 If instead you're working from a `git clone` (for example, to test a change before a release exists), pin a real published version the same way:
 
@@ -51,6 +60,32 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 This never pulls from a registry (the `build:` override always wins), and tags the local result `ghcr.io/tahahydra/compdesk:0.0.0-local`.
+
+For this source-build form, retrieve the setup token with the matching Compose files:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml logs --tail=50 compdesk
+```
+
+## Opening setup locally or on a remote server
+
+The canonical stack publishes `${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}`. With defaults:
+
+- **Docker on your local machine:** open `http://localhost:3000/setup`.
+- **Remote Linux server reached over SSH:** keep the safe loopback default and create a tunnel:
+
+  ```bash
+  ssh -L 3000:127.0.0.1:3000 user@server
+  ```
+
+  Keep that SSH session open, then open `http://localhost:3000/setup` on your own computer. Replace both `3000` values consistently if you configured another `APP_PORT`.
+- **Intentional private-LAN access:** after applying appropriate host firewall rules, you may publish on all interfaces for that LAN session:
+
+  ```bash
+  APP_BIND_ADDRESS=0.0.0.0 docker compose up -d
+  ```
+
+  This is not a recommendation for direct Internet exposure. Public deployments must stay behind an HTTPS reverse proxy using the reviewed configuration described below.
 
 ## What happens automatically (setup → production transition)
 
@@ -107,7 +142,7 @@ Docker Desktop for Mac. Behavior is identical to Linux; only local development (
 
 ## Reverse proxy and TLS
 
-CompDesk binds to `127.0.0.1:3000` by default (`APP_BIND_ADDRESS`/`APP_PORT` override the host binding). Put Nginx or Caddy in front for HTTPS; reviewed examples are in `deploy/nginx/compdesk.conf` and `deploy/caddy/Caddyfile`. Set `Trust a configured reverse proxy` in the setup wizard (or `TRUST_PROXY=true` if you edit the generated configuration directly) only when that proxy is the sole path to the loopback-bound application and it overwrites forwarding headers.
+CompDesk binds to `127.0.0.1:3000` by default (`APP_BIND_ADDRESS`/`APP_PORT` override the host binding). Put Nginx or Caddy in front for HTTPS; reviewed examples are in `deploy/nginx/compdesk.conf` and `deploy/caddy/Caddyfile`. When setup itself is reached through that proxy, set `SETUP_PUBLIC_ORIGIN` to its exact HTTPS origin. Set `SETUP_TRUST_PROXY=true` only when the trusted proxy is the sole path to the loopback-bound application and overwrites forwarded host/protocol headers. Separately, select **Trust a configured reverse proxy** in the wizard for the installed runtime. Do not enable either trust setting merely because a proxy exists somewhere upstream.
 
 ## External PostgreSQL
 
@@ -169,7 +204,7 @@ Two different things are called "rollback" here, and they have different safety 
 ## Troubleshooting
 
 - **`docker compose up` tries to pull `ghcr.io/tahahydra/compdesk:0.0.0-local` and fails** — this is the source tree's intentional local-only placeholder (see [above](#getting-docker-composeyml-release-asset-vs-source-tree)). Either download a release asset instead, or set `COMPDESK_VERSION` in `.env` to a real published version, or add `-f docker-compose.build.yml --build` to build locally.
-- **The bootstrap token isn't visible** — `docker compose logs compdesk`; it's printed once when the setup server starts and expires after 30 minutes. Restarting the `compdesk` container before installation completes issues a fresh token.
+- **Where is my setup token?** — for a release deployment run `docker compose logs --tail=50 compdesk`. For an image built from this repository run `docker compose -f docker-compose.yml -f docker-compose.build.yml logs --tail=50 compdesk`. The token is printed once and expires after 30 minutes. If it expired, run `docker compose restart compdesk` and then the appropriate logs command again; restarting the uninstalled setup process invalidates the old token and issues one replacement.
 - **`config-init` exits with "refusing to generate new PostgreSQL credentials"** — the `compdesk_pgdata` volume already holds an initialized database but `compdesk_config` has no matching secrets (for example, `compdesk_config` was deleted or is from a different environment). Restore `compdesk_config` from a backup, import an existing installation with `scripts/import-legacy-deployment.mjs`, or discard the data on purpose with `node scripts/docker-reset.mjs` if it isn't needed.
 - **The container never becomes healthy after an upgrade** — check `docker compose logs compdesk` for a migration failure; a failed migration blocks the container from starting the application on purpose. Restore from backup rather than retrying repeatedly against the same broken migration.
 - **`docker compose ps` shows `db` or `compdesk` as `Exited`, and it stays that way** — this is deliberate: both services use a bounded restart policy (`on-failure:5`), not an unconditional one, so a permanent problem (broken configuration, a failing migration, a corrupt database) surfaces clearly instead of restart-looping forever and hiding the real error. To recover: `docker compose logs <service>` for the concise failure reason, fix the underlying problem, then `docker compose up -d`, which resets the attempt count and tries again. A container that merely crashed once from a transient issue restarts automatically on its own within those 5 attempts — you only need to act when it settles into `Exited`.
