@@ -123,6 +123,9 @@ services:
       # from the request Host header, including a custom published APP_PORT.
       SETUP_PUBLIC_ORIGIN: ${SETUP_PUBLIC_ORIGIN:-}
       SETUP_TRUST_PROXY: ${SETUP_TRUST_PROXY:-false}
+      # Lets first-run logs show the browser-visible port even though the
+      # setup listener always remains on container port 3000.
+      COMPDESK_PUBLISHED_PORT: ${APP_PORT:-3000}
     ports:
       - '${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000'
     volumes:

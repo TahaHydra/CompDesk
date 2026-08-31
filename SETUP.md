@@ -2,6 +2,8 @@
 
 This is the canonical development setup for Windows, macOS, and Linux. Docker runs PostgreSQL only; Next.js runs directly with Node.js for fast reloads.
 
+To test the public first-run container experience instead of the development runtime, use the source-build Compose command and token instructions in [Docker deployment](docs/DEPLOY_DOCKER.md#local-development-build). Do not mix that full-container stack with the database-only development steps below.
+
 ## Requirements
 
 - Node.js 24 LTS (recommended). Node.js 22.12 or newer is also supported.

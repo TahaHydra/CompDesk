@@ -7,6 +7,7 @@
     <title>CompDesk first-run setup</title>
     <style>
         :root{font:16px/1.5 system-ui,sans-serif;color-scheme:light dark;--accent:#4f46e5}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#e2e8f0}.shell{max-width:960px;margin:auto;padding:2rem 1rem 5rem}header{margin-bottom:1.5rem}.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:1.25rem;box-shadow:0 18px 40px #0005}.progress{height:.5rem;background:#334155;border-radius:1rem;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);transition:width .2s}h1{margin:.25rem 0}h2{margin-top:0}fieldset{border:0;padding:0;margin:1rem 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}label{display:grid;gap:.35rem;font-weight:600}label.full,.full{grid-column:1/-1}input,select,textarea,button{font:inherit}input,select,textarea{width:100%;padding:.7rem;border-radius:8px;border:1px solid #64748b;background:#0f172a;color:inherit}input[type=checkbox],input[type=radio]{width:auto}.choice{display:flex;align-items:flex-start;gap:.6rem}.actions{display:flex;justify-content:space-between;gap:1rem;margin-top:1.25rem}button{border:0;border-radius:8px;padding:.7rem 1rem;font-weight:700;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a5b4fc;outline-offset:2px}.primary{background:var(--accent);color:#fff}.secondary{background:#334155;color:#fff}.danger{color:#fecaca}.notice{padding:.75rem;border:1px solid #475569;border-radius:8px;background:#1e293b;margin:.75rem 0;white-space:pre-line}.error{border-color:#ef4444;color:#fecaca}.success{border-color:#22c55e;color:#bbf7d0}code{word-break:break-all}.hidden{display:none!important}dl{display:grid;grid-template-columns:minmax(160px,1fr) 2fr;gap:.5rem}dt{font-weight:700}@media(max-width:650px){fieldset{grid-template-columns:1fr}.actions{position:sticky;bottom:0;background:#111827;padding-top:1rem}dl{grid-template-columns:1fr}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+        .token-help{margin-top:1rem;padding:1rem;border:1px solid #475569;border-radius:10px;background:#0f172a}.token-help h3{margin:.25rem 0 .5rem}.command-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.5rem;margin:.75rem 0}.command-row p{grid-column:1/-1;margin:0;font-size:.875rem;color:#cbd5e1}.command-row pre{margin:0;overflow-x:auto;border:1px solid #334155;border-radius:8px;background:#020617;padding:.65rem}.command-row code{word-break:normal;white-space:pre}.copy-command{padding:.6rem .75rem;background:#334155;color:#fff}.copy-status{min-height:1.5rem;margin:.25rem 0 0;color:#bbf7d0;font-size:.875rem}@media(max-width:650px){.command-row{grid-template-columns:1fr}.copy-command{justify-self:start}}
     </style>
 </head>
 <body>
@@ -16,6 +17,14 @@
         <h2>Authorize setup</h2>
         <p>Enter the one-time token printed in the server console. It is never stored in this page URL.</p>
         <label>Bootstrap token<input id="token" type="password" autocomplete="off" required></label>
+        <aside class="token-help" aria-labelledby="tokenHelpTitle">
+            <h3 id="tokenHelpTitle">Where do I find the setup token?</h3>
+            <p>It is printed only in the trusted CompDesk process or container logs. The browser never receives it automatically.</p>
+            <div class="command-row"><p>Release Docker Compose</p><pre><code id="releaseLogCommand">docker compose logs --tail=50 compdesk</code></pre><button type="button" class="copy-command" data-copy-target="releaseLogCommand">Copy</button></div>
+            <div class="command-row"><p>Docker Compose built from this source repository</p><pre><code id="sourceLogCommand">docker compose -f docker-compose.yml -f docker-compose.build.yml logs --tail=50 compdesk</code></pre><button type="button" class="copy-command" data-copy-target="sourceLogCommand">Copy</button></div>
+            <p>The token is used only to authorize first-time setup and expires after 30 minutes. If it expired, restart the CompDesk container or local setup process to generate one new token, then check the logs again.</p>
+            <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
+        </aside>
         <div class="actions"><span></span><button class="primary" id="authorize">Continue</button></div>
     </section>
     <form class="card hidden" id="wizard">
@@ -122,6 +131,8 @@
         installDemoData:checked('installDemoData')
     });
     const message = (text, kind = '') => { const node=$('#message'); node.textContent=text; node.className=`notice ${kind}`; };
+    const copyText=async(text)=>{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return;}const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();const copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('Copy is unavailable. Select the command manually.');};
+    document.querySelectorAll('[data-copy-target]').forEach((button)=>{button.onclick=async()=>{const target=document.getElementById(button.dataset.copyTarget);try{await copyText(target.textContent);$('#copyStatus').textContent='Command copied.';}catch(error){$('#copyStatus').textContent=error instanceof Error?error.message:'Copy failed. Select the command manually.';}};});
     const render = () => {
         sections.forEach((section,index)=>section.classList.toggle('hidden',index!==step));
         $('#progress').style.width=`${(step+1)*10}%`; $('#stepLabel').textContent=`Step ${step+1} of 10`;
@@ -162,6 +173,7 @@
             if (previous) previous.remove();
             const errorNode = element('div', error instanceof Error ? error.message : 'Setup authorization failed.', 'notice error');
             errorNode.id = 'loginError';
+            errorNode.setAttribute('role', 'alert');
             $('#login').append(errorNode);
         }
     };
