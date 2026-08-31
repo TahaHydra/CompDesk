@@ -54,10 +54,14 @@ test('the canonical docker-compose.yml is image-based, pins an explicit version 
             ATTACHMENTS_VOLUME_NAME: 'compdesk_config_test_attachments',
             CONFIG_VOLUME_NAME: 'compdesk_config_test_config',
             COMPDESK_VERSION: '1.0.0',
+            APP_PORT: '4310',
         }, file);
         assert.equal(config.name, 'compdesk');
         assert.deepEqual(Object.keys(config.services).sort(), ['compdesk', 'config-init', 'db']);
         assert.equal(config.volumes.config.name, 'compdesk_config_test_config');
+        assert.equal(config.services.compdesk.environment.COMPDESK_PUBLISHED_PORT, '4310');
+        assert.equal(config.services.compdesk.ports[0].published, '4310');
+        assert.equal(config.services.compdesk.ports[0].host_ip, '127.0.0.1');
         for (const service of ['config-init', 'compdesk']) {
             assert.match(config.services[service].image, /^ghcr\.io\/tahahydra\/compdesk:1\.0\.0$/);
             assert.equal(config.services[service].build, undefined, `${service} must not define build: in the public compose file`);

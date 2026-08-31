@@ -6,17 +6,25 @@ CompDesk uses an isolated Node.js bootstrap server before the normal Next.js/Pri
 
 1. Install Node.js 22.12 or later and run `npm ci` and `npm run build`.
 2. Start `npm start`. When required runtime configuration or an installation record is absent, only the setup server and minimal health endpoints start.
-3. On the same machine, open the localhost URL printed to the console and enter the separately printed one-time token. The token expires after 30 minutes.
+3. On the same machine, open the localhost URL printed in the compact console box and enter the separately printed one-time token. The token expires after 30 minutes.
 4. Complete all ten steps. Normal application routes remain blocked until migrations, the first Super Admin, settings, and the installation record are committed.
 5. Stop and restart `npm start`, then open the displayed sign-in URL.
 
-Remote setup is disabled by default. If localhost access is impossible, expose setup only through a protected trusted network path, set `SETUP_ALLOW_REMOTE=true`, set `SETUP_PUBLIC_HOST` to the exact browser hostname, and retain token authentication. Never publish the setup listener directly to the Internet.
+Remote setup is disabled by default. Prefer an SSH tunnel to the loopback listener. If setup must run behind a trusted reverse proxy, expose it only through that protected path, set `SETUP_ALLOW_REMOTE=true`, set `SETUP_PUBLIC_ORIGIN` to the exact browser-visible HTTP(S) origin, and enable `SETUP_TRUST_PROXY=true` only when that proxy overwrites the forwarded host and protocol. Never publish the setup listener directly to the Internet.
 
 ## Docker Compose first run
 
 ```bash
 docker compose up -d
 ```
+
+Read the boxed token and open the wizard:
+
+```bash
+docker compose logs --tail=50 compdesk
+```
+
+Then open `http://localhost:3000/setup`. On a remote server, keep the default loopback binding and use `ssh -L 3000:127.0.0.1:3000 user@server`, then open the same localhost URL on your computer. The detailed release, source-build, custom-port, LAN, and reverse-proxy instructions are canonical in [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md).
 
 No `npm ci`, no host-side preparation step, and no second Compose command. A `config-init` service fixes volume ownership and generates a random database password into the `compdesk_config` volume without printing it, then the same `compdesk` container serves the wizard on `http://localhost:3000/setup` and automatically transitions itself to production once you finish — no `down`/`up` sequence, no rebuilt image, no manual restart. See [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md) for the full walkthrough, upgrade, backup, and troubleshooting guidance.
 
@@ -28,14 +36,7 @@ The previous two-stack flow (`docker-compose.setup.yml` + a separate production 
 
 ## Wizard screenshots
 
-A few of the ten steps, for reference. The first shows the console next to the
-browser: the one-time bootstrap token is printed to the console (`docker
-compose logs compdesk`, or the standalone server's own console output), then
-typed into the "Bootstrap token" field to authorize the rest of the wizard.
-
-| Step 1 — Authorize setup (console + browser) | |
-| --- | --- |
-| ![Setup step 1: the one-time bootstrap token printed to the console, entered into the Authorize setup screen](screenshots/setup-step-1-authorize.jpg) | |
+A few non-secret wizard steps are shown below. The authorization screen itself explains how to retrieve the token from trusted logs without embedding any real token in these public examples.
 
 | Step 3 — PostgreSQL | Step 5 — Administrator account |
 | --- | --- |
@@ -48,7 +49,7 @@ typed into the "Bootstrap token" field to authorize the rest of the wizard.
 ## Security behavior
 
 - Setup listens on loopback unless remote mode is explicitly enabled.
-- A random bootstrap token is printed once, expires, is rate-limited, and authorizes only one active session.
+- A random bootstrap token is held only in setup-process memory, printed once to trusted process/container output, expires after 30 minutes, is rate-limited, and authorizes only one active session.
 - Mutations require an HttpOnly SameSite setup session, exact same origin, and a separate CSRF token.
 - Resumable server state contains no database, administrator, SMTP, or Entra passwords.
 - Secrets use atomic file replacement, restrictive permissions, and a backup of any existing configuration.
@@ -62,6 +63,15 @@ typed into the "Bootstrap token" field to authorize the rest of the wizard.
 ## Interrupted setup and local recovery
 
 Non-secret choices are saved in `.compdesk/setup-state.json`. Restarting the setup server issues a new one-time token and resumes those choices. Passwords must be re-entered.
+
+For Docker, restart only the uninstalled application container and read its logs:
+
+```bash
+docker compose restart compdesk
+docker compose logs --tail=50 compdesk
+```
+
+For a local standalone process, stop it with Ctrl+C and start `npm start` again. A restart destroys the old in-memory token before generating one replacement; no token is persisted or exposed to the browser.
 
 To archive an incomplete state and restart locally:
 

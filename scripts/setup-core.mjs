@@ -7,6 +7,8 @@ export const SETUP_VERSION = 1;
 export const SESSION_COOKIE = 'compdesk_setup_session';
 export const TOKEN_TTL_MS = 30 * 60 * 1000;
 export const SESSION_TTL_MS = 60 * 60 * 1000;
+export const INVALID_BOOTSTRAP_TOKEN_ERROR = 'The setup token is invalid or has expired. Check the CompDesk container or setup-process logs for the setup instructions.';
+export const EXPIRED_BOOTSTRAP_TOKEN_ERROR = 'The setup token has expired. Restart the CompDesk container or local setup process, then check its logs for the newly generated token.';
 
 export function randomSecret(bytes = 32) {
     return crypto.randomBytes(bytes).toString('base64');

@@ -12,6 +12,14 @@ test('generates independent high-entropy secrets', () => {
     assert.notEqual(first, second);
 });
 
+test('keeps bootstrap-token expiry and recovery guidance explicit without exposing a token', () => {
+    assert.equal(core.TOKEN_TTL_MS, 30 * 60 * 1000);
+    assert.match(core.INVALID_BOOTSTRAP_TOKEN_ERROR, /invalid or has expired/i);
+    assert.match(core.INVALID_BOOTSTRAP_TOKEN_ERROR, /container or setup-process logs/i);
+    assert.match(core.EXPIRED_BOOTSTRAP_TOKEN_ERROR, /restart the CompDesk container or local setup process/i);
+    assert.doesNotMatch(`${core.INVALID_BOOTSTRAP_TOKEN_ERROR} ${core.EXPIRED_BOOTSTRAP_TOKEN_ERROR}`, /[A-Za-z0-9+/]{40,}={0,2}/);
+});
+
 test('requires PostgreSQL and validates connection fields', () => {
     assert.equal(core.validateDatabaseInput({
         provider: 'mysql', host: 'localhost', port: 3306, database: 'compdesk',
