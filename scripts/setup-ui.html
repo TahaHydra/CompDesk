@@ -22,7 +22,11 @@
             <p>It is printed only in the trusted CompDesk process or container logs. The browser never receives it automatically.</p>
             <div class="command-row"><p>Release Docker Compose</p><pre><code id="releaseLogCommand">docker compose logs --tail=50 compdesk</code></pre><button type="button" class="copy-command" data-copy-target="releaseLogCommand">Copy</button></div>
             <div class="command-row"><p>Docker Compose built from this source repository</p><pre><code id="sourceLogCommand">docker compose -f docker-compose.yml -f docker-compose.build.yml logs --tail=50 compdesk</code></pre><button type="button" class="copy-command" data-copy-target="sourceLogCommand">Copy</button></div>
-            <p>The token is used only to authorize first-time setup and expires after 30 minutes. If it expired, restart the CompDesk container or local setup process to generate one new token, then check the logs again.</p>
+            <p>The token is used only to authorize first-time setup and expires after 30 minutes.</p>
+            <h4>Token expired?</h4>
+            <p>Restart the uninstalled CompDesk container and read its logs. This invalidates the old in-memory token and generates exactly one replacement; no browser-accessible reset endpoint is used.</p>
+            <div class="command-row"><pre><code id="expiredTokenCommand">docker compose restart compdesk
+docker compose logs --tail=50 compdesk</code></pre><button type="button" class="copy-command" data-copy-target="expiredTokenCommand">Copy</button></div>
             <p id="copyStatus" class="copy-status" role="status" aria-live="polite"></p>
         </aside>
         <div class="actions"><span></span><button class="primary" id="authorize">Continue</button></div>
