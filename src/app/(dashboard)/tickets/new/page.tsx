@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { DynamicTicketForm } from '@/components/ticket-form/dynamic-ticket-form';
 import { useLanguage } from '@/components/providers/language-provider';
+import { createBrowserUuid } from '@/lib/browser-uuid';
 import { isFieldConditionVisible } from '@/lib/ticket-form/conditions';
 import type { TicketFormFieldDefinition, TicketFormTemplateDefinition, TemplateResolutionSource } from '@/lib/ticket-form/types';
 
@@ -50,7 +51,7 @@ export default function NewTicketPage() {
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { t } = useLanguage();
-    const idempotencyKey = useRef(crypto.randomUUID());
+    const [idempotencyKey] = useState(createBrowserUuid);
     const previousFields = useRef<TicketFormFieldDefinition[]>([]);
     const routingApplied = useRef(false);
     const categoryApplied = useRef(false);
@@ -145,7 +146,7 @@ export default function NewTicketPage() {
         mutationFn: async () => {
             const response = await fetch('/api/tickets', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idempotencyKey: idempotencyKey.current, queueId, categoryId: categoryId || undefined, values }),
+                body: JSON.stringify({ idempotencyKey, queueId, categoryId: categoryId || undefined, values }),
             });
             const payload = await response.json();
             if (!response.ok) {
