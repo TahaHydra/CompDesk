@@ -67,11 +67,15 @@ For local development, follow [SETUP.md](SETUP.md).
 
 ## Screenshots
 
-| Dashboard | Branding & settings |
-| --- | --- |
-| ![CompDesk admin dashboard](docs/screenshots/dashboard.jpg) | ![CompDesk branding settings](docs/screenshots/branding-settings.jpg) |
+### Dashboard
 
-More screenshots of the first-run setup wizard are in [First-run setup](docs/FIRST_RUN_SETUP.md).
+![CompDesk dashboard](docs/screenshots/demo-dashboard.png)
+
+| Department Inbox | Help Center |
+| --- | --- |
+| ![CompDesk Department Inbox](docs/screenshots/department-inbox.png) | ![CompDesk Help Center](docs/screenshots/help-center.png) |
+
+More screenshots and setup examples are available in the [documentation](docs/).
 
 ## Architecture
 
