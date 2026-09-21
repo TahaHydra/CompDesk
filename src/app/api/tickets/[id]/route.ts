@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe } from '@/lib/api-dto';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe, projectTicketFormForRole } from '@/lib/api-dto';
 import { updateTicketSchema } from '@/lib/validations';
 import { canTransition, isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
@@ -13,6 +13,7 @@ import { fieldsVisibleToRoleFromSnapshot, parseTicketFormSchemaSnapshot } from '
 import { authenticatedAttachmentUrl } from '@/lib/attachment-storage';
 import { restartedSlaDueAt, statusTimestampChanges } from '@/lib/tickets/lifecycle';
 import { isAttachmentDownloadable } from '@/lib/attachment-security';
+import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipients';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -292,14 +293,12 @@ export async function PATCH(
         }
 
         if (timelineEvents.length > 0) {
-            const watchers = await prisma.ticketWatcher.findMany({ where: { ticketId: id, userId: { not: session.user.id } }, include: { user: { select: { id: true, email: true } } } });
-            const recipients = [{ id: updatedTicket.requester.id, email: updatedTicket.requester.email }, ...updatedTicket.assignments.map((assignment) => ({ id: assignment.user.id, email: assignment.user.email })), ...watchers.map((watcher) => watcher.user)];
-            const emails = [...new Set(recipients.filter((recipient) => recipient.id !== session.user.id).map((recipient) => recipient.email).filter(Boolean))];
+            const emails = await ticketNotificationRecipients(id, session.user.id);
             if (emails.length > 0) void sendTicketUpdatedEmail(emails, updatedTicket.key, updatedTicket.title, 'Ticket Updated', timelineEvents.map((event) => event.content).join(', '));
         }
         if (changes.status === 'RESOLVED') fireWebhook('ticket.resolved', { ticketId: id, key: updatedTicket.key, title: updatedTicket.title });
         void auditLog({ userId: session.user.id, action: 'ticket.updated', entity: 'ticket', entityId: id, metadata: { changes, tagIds: uniqueTagIds, expectedVersion, resultingVersion: updatedTicket.version, sla: slaAudit } });
-        return NextResponse.json(assertApiResponseSafe(updatedTicket));
+        return NextResponse.json(assertApiResponseSafe(projectTicketFormForRole(updatedTicket, session.user.role)));
     } catch (error) {
         logger.error('Failed to update ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

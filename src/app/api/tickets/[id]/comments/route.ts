@@ -7,6 +7,7 @@ import { sendNewCommentEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessTicket } from '@/lib/permissions';
+import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipients';
 
 // POST /api/tickets/[id]/comments
 export async function POST(
@@ -73,17 +74,7 @@ export async function POST(
 
         // Notify watchers (not for internal notes)
         if (!isInternal) {
-            const watchers = await prisma.ticketWatcher.findMany({
-                where: { ticketId: id, userId: { not: session.user.id } },
-                include: { user: { select: { email: true } } },
-            });
-            const watcherEmails = watchers.map((watcher) => watcher.user.email).filter(Boolean);
-            const assigneeEmails = ticket.assignments
-                .filter((assignment) => assignment.user.id !== session.user.id)
-                .map((assignment) => assignment.user.email)
-                .filter(Boolean);
-            const requesterEmails = ticket.requester.id === session.user.id ? [] : [ticket.requester.email];
-            const emails = [...new Set([...watcherEmails, ...assigneeEmails, ...requesterEmails])];
+            const emails = await ticketNotificationRecipients(id, session.user.id);
             if (emails.length > 0) {
                 void sendNewCommentEmail(emails, ticket.key, ticket.title, content.substring(0, 200));
             }

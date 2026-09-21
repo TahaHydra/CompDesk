@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -75,6 +75,7 @@ export function HelpCenterManager() {
     const [collectionDraft, setCollectionDraft] = useState<CollectionDraft>(emptyCollection());
     const [articleDraft, setArticleDraft] = useState<ArticleDraft>(emptyArticle());
     const [collectionFilter, setCollectionFilter] = useState('all');
+    const openedArticleId = useRef<string | null>(null);
 
     const collectionsQuery = useQuery({
         queryKey: ['help-admin-collections'],
@@ -90,9 +91,11 @@ export function HelpCenterManager() {
 
     useEffect(() => {
         const articleId = searchParams.get('article');
-        if (!articleId || !articles.length || articleDialog) return;
+        if (!articleId) { openedArticleId.current = null; return; }
+        if (!articles.length || articleDialog || openedArticleId.current === articleId) return;
         const article = articles.find((item) => item.id === articleId);
         if (article) {
+            openedArticleId.current = articleId;
             setArticleDraft({
                 id: article.id, collectionId: article.collectionId, slug: article.slug, titleEn: article.titleEn, titleFr: article.titleFr,
                 summaryEn: article.summaryEn, summaryFr: article.summaryFr, contentEn: article.contentEn, contentFr: article.contentFr,

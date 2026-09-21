@@ -3,16 +3,17 @@ import { dirname } from 'node:path';
 import { mkdir, readFile, rename, stat } from 'fs/promises';
 import { Prisma, Role, type User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT } from '@/lib/api-dto';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, projectTicketFormForRole } from '@/lib/api-dto';
 import { auditLog } from '@/lib/audit';
 import { sendNewTicketForDepartmentEmail, sendTicketCreatedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
-import { canAccessQueue } from '@/lib/permissions';
+import { canAccessQueue, canAccessTicket } from '@/lib/permissions';
 import { generateTicketKey } from '@/lib/utils';
 import type { CreateTicketInput } from '@/lib/validations';
 import {
     buildTicketFormSchemaSnapshot,
     resolveTicketFormTemplate,
+    TemplateResolutionError,
 } from '@/lib/ticket-form/service';
 import {
     TicketFormValidationError,
@@ -34,7 +35,7 @@ export interface CreateTicketOptions {
     actor: TicketCreationActor;
     requester: Pick<User, 'id' | 'email' | 'role'>;
     input: CreateTicketInput;
-    apiClient?: { id: string; name: string };
+    apiClient?: { id: string; name: string; allowedQueueIds: string[]; allowAllQueues: boolean };
 }
 
 interface PreparedAttachment {
@@ -183,6 +184,16 @@ function replaceUploadedUrls(
 
 export async function createTicketFromResolvedTemplate(options: CreateTicketOptions) {
     const { actor, requester, input, source, apiClient } = options;
+    const replay = async <T extends { queueId: string; requesterId: string; formSchemaSnapshot?: unknown; submittedFormValues?: unknown }>(existing: T) => {
+        if (existing.queueId !== input.queueId) {
+            throw new TemplateResolutionError('IDEMPOTENCY_CONFLICT', 'This idempotency key belongs to a different department. Use a new key.', 409);
+        }
+        const allowed = source === 'web'
+            ? await canAccessTicket(actor.id, actor.role, existing)
+            : Boolean(apiClient && (apiClient.allowAllQueues || apiClient.allowedQueueIds.includes(existing.queueId)));
+        if (!allowed) throw new TemplateResolutionError('FORBIDDEN_QUEUE', 'You do not have access to this department', 403);
+        return { ticket: projectTicketFormForRole(existing, requester.role), replayed: true };
+    };
     if (source === 'web') {
         if ((actor.role === Role.AGENT || actor.role === Role.ADMIN)
             && !(await canAccessQueue(actor.id, actor.role, input.queueId))) {
@@ -202,7 +213,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
             where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
             include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
         });
-        if (existing) return { ticket: existing, replayed: true };
+        if (existing) return replay(existing);
     }
 
     const resolved = await resolveTicketFormTemplate(input.queueId, input.categoryId, requester.role);
@@ -333,7 +344,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                 where: { requesterId: requester.id, idempotencyKey: input.idempotencyKey },
                 include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
             });
-            if (existing) return { ticket: existing, replayed: true };
+            if (existing) return replay(existing);
         }
         throw error;
     }
@@ -365,5 +376,5 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         templateVersion: resolved.template.version,
         source,
     });
-    return { ticket, replayed: false };
+    return { ticket: projectTicketFormForRole(ticket, requester.role), replayed: false };
 }

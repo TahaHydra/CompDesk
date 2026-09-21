@@ -189,7 +189,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: comment, isInternal }),
             });
-            if (!res.ok) throw new Error('Failed to add comment');
+            if (!res.ok) {
+                const payload = await res.json().catch(() => null);
+                throw new Error(payload?.error || 'Failed to add comment');
+            }
             return res.json();
         },
         onSuccess: () => {
@@ -197,6 +200,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
             toast({ title: isInternal ? 'Internal note added' : 'Comment added' });
         },
+        onError: (error: Error) => toast({ title: 'Reply could not be sent', description: error.message, variant: 'destructive' }),
     });
 
     const editComment = useMutation({
@@ -609,6 +613,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             variant={isInternal ? 'default' : 'outline'}
                                             size="sm"
                                             onClick={() => setIsInternal(!isInternal)}
+                                            disabled={addComment.isPending}
                                             className={isInternal ? 'bg-amber-500 hover:bg-amber-600' : ''}
                                         >
                                             <Eye className="h-3.5 w-3.5 mr-1" />
@@ -619,6 +624,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 <Textarea
                                     placeholder={isInternal ? 'Write an internal note... (Paste screenshots with Ctrl+V)' : 'Write a reply... (Paste screenshots with Ctrl+V)'}
                                     value={comment}
+                                    disabled={addComment.isPending}
                                     onChange={(e) => setComment(e.target.value)}
                                     onPaste={handleCommentPaste}
                                     rows={3}
