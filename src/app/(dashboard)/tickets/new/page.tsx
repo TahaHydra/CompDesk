@@ -13,13 +13,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { DynamicTicketForm } from '@/components/ticket-form/dynamic-ticket-form';
 import { useLanguage } from '@/components/providers/language-provider';
-import { isFieldConditionVisible } from '@/lib/ticket-form/conditions';
+import { createBrowserUuid } from '@/lib/browser-uuid';
+import { missingRequiredTicketFields, ticketFormSubmissionValues } from '@/lib/ticket-form/client-submission';
+import type { Role } from '@prisma/client';
 import type { TicketFormFieldDefinition, TicketFormTemplateDefinition, TemplateResolutionSource } from '@/lib/ticket-form/types';
 
 interface Department { id: string; name: string; description?: string | null }
 interface Category { id: string; name: string; description?: string | null }
 interface TagOption { id: string; name: string; color?: string }
 interface ResolvedResponse {
+    role: Role;
     template: TicketFormTemplateDefinition;
     fields: TicketFormFieldDefinition[];
     source: TemplateResolutionSource;
@@ -50,7 +53,7 @@ export default function NewTicketPage() {
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { t } = useLanguage();
-    const idempotencyKey = useRef(crypto.randomUUID());
+    const [idempotencyKey] = useState(createBrowserUuid);
     const previousFields = useRef<TicketFormFieldDefinition[]>([]);
     const routingApplied = useRef(false);
     const categoryApplied = useRef(false);
@@ -122,14 +125,13 @@ export default function NewTicketPage() {
 
     const visibleRequiredErrors = useMemo(() => {
         const next: Record<string, string> = {};
-        for (const field of templateQuery.data?.fields ?? []) {
-            if (!field.required || !isFieldConditionVisible(field.conditionalRules, values)) continue;
-            const value = values[field.fieldKey];
-            const missing = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0) || (field.type === 'CHECKBOX' && value !== true);
-            if (missing) next[field.fieldKey] = t('{field} is required', { field: field.label });
+        const resolved = templateQuery.data;
+        if (!resolved) return next;
+        for (const field of missingRequiredTicketFields(resolved.fields, values, resolved.role)) {
+            next[field.fieldKey] = t('{field} is required', { field: field.label });
         }
         return next;
-    }, [t, templateQuery.data?.fields, values]);
+    }, [t, templateQuery.data, values]);
 
     const confirmRoutingChange = () => !hasMeaningfulValues(values) || window.confirm(t('Changing the department or category can change the ticket form. Compatible values will be kept, but other entered values may be removed. Continue?'));
     const changeDepartment = (nextQueueId: string) => {
@@ -143,9 +145,12 @@ export default function NewTicketPage() {
 
     const createTicket = useMutation({
         mutationFn: async () => {
+            const resolved = templateQuery.data;
+            if (!resolved) throw new Error('The ticket form is not loaded');
+            const submittedValues = ticketFormSubmissionValues(resolved.fields, values, resolved.role);
             const response = await fetch('/api/tickets', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idempotencyKey: idempotencyKey.current, queueId, categoryId: categoryId || undefined, values }),
+                body: JSON.stringify({ idempotencyKey, queueId, categoryId: categoryId || undefined, values: submittedValues }),
             });
             const payload = await response.json();
             if (!response.ok) {
@@ -202,7 +207,7 @@ export default function NewTicketPage() {
                     <CardContent className="space-y-6">
                         {templateQuery.isLoading ? <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />{t('Loading ticket form…')}</div> : null}
                         {templateQuery.isError ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{templateQuery.error.message}</div> : null}
-                        {templateQuery.data ? <DynamicTicketForm fields={templateQuery.data.fields} values={values} errors={errors} tags={tagsQuery.data ?? []} disabled={createTicket.isPending} onUploadingChange={setFilesUploading} onChange={(key, value) => { setValues((current) => ({ ...current, [key]: value })); setErrors((current) => { const next = { ...current }; delete next[key]; return next; }); }} /> : null}
+                        {templateQuery.data ? <DynamicTicketForm fields={templateQuery.data.fields} values={values} role={templateQuery.data.role} errors={errors} tags={tagsQuery.data ?? []} disabled={createTicket.isPending} onUploadingChange={setFilesUploading} onChange={(key, value) => { setValues((current) => ({ ...current, [key]: value })); setErrors((current) => { const next = { ...current }; delete next[key]; return next; }); }} /> : null}
                         <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-end"><Button asChild variant="outline"><Link href="/tickets">{t('Cancel')}</Link></Button><Button onClick={submit} disabled={!templateQuery.data || createTicket.isPending || filesUploading}>{createTicket.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}{t('Submit Ticket')}</Button></div>
                     </CardContent>
                 </Card>

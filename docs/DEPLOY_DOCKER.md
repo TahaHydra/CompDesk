@@ -1,12 +1,14 @@
 # Docker Compose deployment
 
-CompDesk's public deployment is one command:
+After downloading the version-pinned `docker-compose.yml` asset from the
+[GitHub Release](https://github.com/TahaHydra/CompDesk/releases) you intend to
+install, start the deployment from that file's directory:
 
 ```bash
 docker compose up -d
 ```
 
-Then read the clearly boxed bootstrap token from `docker compose logs compdesk` and open `http://localhost:3000/setup` in a browser. Complete the wizard, and the same container automatically switches itself from first-run setup to production — no second command, no manual restart, and (once a release image is published) no Node.js, npm, Git, or local build.
+Then read the clearly boxed bootstrap token from `docker compose logs compdesk` and open `http://localhost:3000/setup` in a browser. Complete the wizard, and the same container automatically switches itself from first-run setup to production — no second command, no manual restart, and no Node.js, npm, Git, or local build.
 
 ## What you need
 
@@ -190,9 +192,9 @@ docker compose --env-file .compdesk/compdesk.env -f docker-compose.legacy.yml up
 
 Once you're confident the unified stack is healthy, `.compdesk/`, `docker-compose.setup.yml`, and `docker-compose.legacy.yml` may be archived or removed — they are deprecated and kept only for this migration/rollback path.
 
-## Immutable image pinning
+## Image version pinning
 
-A release-asset `docker-compose.yml` already pins an exact published version literally — that's the point of downloading it from the release rather than the source tree. If you're using the source-tree file with `COMPDESK_VERSION` set yourself, always pin an exact published version (for example `1.2.3`), never `latest`, in anything you'd call production. `latest` only ever points at the newest *stable* release (never a release candidate); a pinned version tag and its matching commit-SHA tag are never reused or overwritten once published. Changing versions is a deliberate, reviewed action: edit `.env` (or download the new release asset), then `docker compose pull && docker compose up -d`.
+A release-asset `docker-compose.yml` pins the published version. If you're using the source-tree file with `COMPDESK_VERSION` set yourself, pin an exact published version (for example `1.2.3`) for production. `latest` is only applied to stable releases. Release tags identify the image digest scanned during publication, but registry tags can be moved by a later publish; the workflow does not enforce tag immutability. For immutable deployment inputs, replace both application image references with the verified `ghcr.io/tahahydra/compdesk@sha256:...` digest from the release. Changing versions is a deliberate action: download the new release asset or update the image references, then run `docker compose pull && docker compose up -d`.
 
 ## Rollback limitations
 

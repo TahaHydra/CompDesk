@@ -41,17 +41,19 @@ CompDesk is a self-hosted helpdesk for small organizations: department-scoped ti
 
 `docker-compose.external-db.yml` (an application container connecting to an external PostgreSQL server) exists in the repository but is **not currently validated** — a live-deployment test found its `app` container never reaches the database because the orchestrator's default database host (`db`) doesn't match an externally hosted PostgreSQL server. Do not use this topology until that is fixed; track it as a known issue rather than a supported beta feature.
 
-CompDesk must be served over HTTPS outside localhost. The production Compose topology keeps PostgreSQL private, runs migrations as a one-shot service, uses persistent volumes, and runs the application as a non-root user.
+CompDesk must be served over HTTPS outside localhost. The production Compose topology keeps PostgreSQL private, runs migrations in the application orchestrator before serving requests, uses persistent volumes, and runs the application as a non-root user.
 
 ## First run
 
-A fresh installation starts an isolated setup service before the main application. It generates a time-limited one-time token, binds to localhost by default, tests the selected PostgreSQL deployment, writes secrets atomically, runs migrations, creates the first Super Admin, and permanently disables setup after installation.
+A fresh installation starts the setup wizard before the main application. It generates a time-limited one-time token, publishes on localhost by default, tests the selected PostgreSQL deployment, writes secrets atomically, runs migrations, creates the first Super Admin, and permanently disables setup after installation.
 
-Docker Compose is the recommended deployment — one command, no Node.js or npm required:
+Docker Compose is the recommended deployment. Download the version-pinned `docker-compose.yml` asset from the [GitHub Release](https://github.com/TahaHydra/CompDesk/releases) you intend to install into an empty directory, then run there (no Node.js or npm required):
 
 ```bash
 docker compose up -d
 ```
+
+The Compose file in a source checkout uses a local-only placeholder image tag. For a source build, use `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build` instead.
 
 Read the clearly boxed one-time token, then open the wizard:
 
@@ -103,7 +105,7 @@ The server remains the authorization boundary. See the tested [permission matrix
 ## Security model
 
 - Secrets are never returned by settings or resource APIs. Database-stored integration secrets use authenticated AES-256-GCM envelopes.
-- PostgreSQL-backed limits protect credential login, setup authentication, uploads, and external API access across application processes.
+- PostgreSQL-backed limits protect credential login, uploads, and external API access across application processes. Setup authentication uses a separate in-memory limit in its single bootstrap process.
 - Ticket mutations require the loaded version and return HTTP 409 for stale writes.
 - Ticket reads use separate expiring presence records and do not modify ticket business timestamps.
 - Webhooks use HTTPS by default, block private and metadata destinations after DNS resolution, sign timestamped bodies, and retry through an outbox.

@@ -35,6 +35,7 @@ COPY --from=builder /app/scripts/migrate-private-attachments.mjs ./scripts/migra
 COPY --from=builder /app/scripts/validate-runtime-env.mjs ./scripts/validate-runtime-env.mjs
 COPY --from=builder /app/scripts/setup-bootstrap.mjs ./scripts/setup-bootstrap.mjs
 COPY --from=builder /app/scripts/setup-core.mjs ./scripts/setup-core.mjs
+COPY --from=builder /app/scripts/setup-terminal.mjs ./scripts/setup-terminal.mjs
 COPY --from=builder /app/scripts/setup-ui.html ./scripts/setup-ui.html
 COPY --from=builder /app/scripts/setup-installed.html ./scripts/setup-installed.html
 COPY --from=builder /app/scripts/orchestrator.mjs ./scripts/orchestrator.mjs
@@ -52,12 +53,10 @@ ENV HOSTNAME=0.0.0.0
 # One final runtime image serves initialization (config-init), first-run
 # setup, migrations, and production — Compose selects the role per service
 # via `command:`/`user:` overrides rather than a separate Dockerfile target.
-# It layers just the Prisma CLI (`prisma`) plus its own dependencies
-# (`@prisma/engines`, which holds both the Query Engine and Schema Engine
-# binaries needed by `prisma migrate deploy`) on top of the lean prod-only
-# node_modules above — never the full `deps` devDependency tree (eslint,
-# jest, playwright, typescript, tailwind, ...), which the old two-stage
-# split used to drag into every long-running production container.
+# Prisma is a production dependency because startup runs migrate deploy.
+# prod-deps supplies its complete locked dependency tree and executable shim;
+# builder supplies the generated client and downloaded engine binaries that
+# npm ci --ignore-scripts deliberately does not generate in prod-deps.
 FROM runtime-base AS runner
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma

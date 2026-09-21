@@ -1,6 +1,4 @@
-# Publishes the CompDesk runtime image to GHCR. PREPARED, NOT YET ACTIVE:
-# no version tag has ever been pushed on this repository, so this workflow
-# has never run and ghcr.io/tahahydra/compdesk does not yet exist. It only
+# Publishes the CompDesk runtime image to GHCR. It only
 # ever triggers on an explicit `vMAJOR.MINOR.PATCH[-prerelease]` tag push —
 # never on branch pushes or pull requests, and never produces a `latest` tag
 # for a prerelease.

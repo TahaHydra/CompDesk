@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
             actor: { id: requester.id, email: requester.email, role: Role.USER },
             requester: { id: requester.id, email: requester.email, role: Role.USER },
             input,
-            apiClient: { id: client.id, name: client.name },
+            apiClient: client,
         });
         await auditExternalApiRequest({ req, client, scope: 'tickets:write', queueId: input.queueId, result: result.replayed ? 'idempotent_replay' : 'created', target: result.ticket.id });
         return NextResponse.json(assertApiResponseSafe(result.ticket), { status: result.replayed ? 200 : 201 });

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma, Priority, TicketStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe } from '@/lib/api-dto';
+import { assertApiResponseSafe, projectTicketFormForRole } from '@/lib/api-dto';
 import { createTicketSchema } from '@/lib/validations';
 import { checkRateLimit } from '@/lib/utils';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
                     slaBreached = (now - new Date(ticket.createdAt).getTime()) / 60000 > resolutionMinutes;
                 }
             }
-            return { ...ticket, assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
+            return { ...projectTicketFormForRole(ticket, role), assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
         });
 
         return NextResponse.json(assertApiResponseSafe({
@@ -158,12 +158,9 @@ export async function GET(req: NextRequest) {
     }
 }
 export async function POST(req: NextRequest) {
-    let requesterId: string | null = null;
-    let idempotencyKey: string | null = null;
     try {
         const session = await auth();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        requesterId = session.user.id;
         if (!checkRateLimit(`ticket:create:${session.user.id}`, 10, 60000)) {
             return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
         }
@@ -172,7 +169,6 @@ export async function POST(req: NextRequest) {
         if (!parsed.success) {
             return NextResponse.json({ error: 'Ticket validation failed', details: parsed.error.flatten() }, { status: 400 });
         }
-        idempotencyKey = parsed.data.idempotencyKey ?? null;
         const result = await createTicketFromResolvedTemplate({
             source: 'web',
             actor: { id: session.user.id, email: session.user.email, role: session.user.role },
@@ -189,13 +185,6 @@ export async function POST(req: NextRequest) {
         }
         if (error instanceof Error && error.message === 'FORBIDDEN_QUEUE') {
             return NextResponse.json({ error: 'You do not have access to this department' }, { status: 403 });
-        }
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && requesterId && idempotencyKey) {
-            const existing = await prisma.ticket.findFirst({
-                where: { requesterId, idempotencyKey },
-                include: { queue: true, requester: { select: PUBLIC_REQUESTER_SELECT }, assignments: { include: { user: { select: STAFF_USER_SELECT } } } },
-            });
-            if (existing) return NextResponse.json(assertApiResponseSafe(existing));
         }
         logger.error('Failed to create ticket', { error });
         return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 });

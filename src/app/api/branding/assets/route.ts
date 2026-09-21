@@ -9,6 +9,7 @@ import {
     type BrandingConfig,
 } from '@/lib/branding';
 import logger from '@/lib/logger';
+import { readUploadFormData, UploadBodyError } from '@/lib/bounded-upload';
 import {
     IMAGE_MIME_EXTENSIONS,
     detectImageMime,
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const body = await req.formData();
+        const body = await readUploadFormData(req, MAX_BRANDING_ASSET_SIZE + 64 * 1024);
         const fieldValue = body.get('field');
         const fileValue = body.get('file');
         if (typeof fieldValue !== 'string' || !isBrandingAssetField(fieldValue)) {
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ url: assetUrl, branding }, { status: 201 });
     } catch (error) {
+        if (error instanceof UploadBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('Failed to upload branding asset', { error });
         return NextResponse.json({ error: 'Failed to upload branding asset' }, { status: 500 });
     }
