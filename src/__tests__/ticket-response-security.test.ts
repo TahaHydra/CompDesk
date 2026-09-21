@@ -41,7 +41,7 @@ import * as templateService from '@/lib/ticket-form/service';
 const queueId = '550e8400-e29b-41d4-a716-446655440000';
 const otherQueueId = '550e8400-e29b-41d4-a716-446655440001';
 const user = { id: '550e8400-e29b-41d4-a716-446655440002', email: 'user@example.com', role: 'USER' as const };
-const key = '550e8400-e29b-41d4-a716-446655440003';
+const idempotencyId = '550e8400-e29b-41d4-a716-446655440003';
 const rawTicket = () => ({
     id: 'ticket', requesterId: user.id, queueId, version: 1, status: 'OPEN', priority: 'NORMAL', createdAt: new Date(),
     assignments: [], queue: { id: queueId, name: 'Support' },
@@ -53,7 +53,7 @@ const rawTicket = () => ({
 });
 const request = (external = false, requestedQueue = queueId) => new NextRequest(`http://localhost/api/${external ? 'v1/' : ''}tickets`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ queueId: requestedQueue, idempotencyKey: key, ...(external ? { userEmail: user.email } : {}) }),
+    body: JSON.stringify({ queueId: requestedQueue, idempotencyKey: idempotencyId, ...(external ? { userEmail: user.email } : {}) }),
 });
 
 beforeEach(() => {
@@ -151,13 +151,13 @@ it('rejects replay from a ticket moved to a department outside the API client sc
 
 it('rechecks web access to the stored ticket before replaying it', async () => {
     mockCanAccessTicket.mockResolvedValue(false);
-    await expect(createTicketFromResolvedTemplate({ source: 'web', actor: user, requester: user, input: { queueId, idempotencyKey: key } }))
+    await expect(createTicketFromResolvedTemplate({ source: 'web', actor: user, requester: user, input: { queueId, idempotencyKey: idempotencyId } }))
         .rejects.toMatchObject({ status: 403 });
 });
 
 it('rejects replay when the current API client has lost access to the stored department', async () => {
     await expect(createTicketFromResolvedTemplate({
-        source: 'api', actor: user, requester: user, input: { queueId, idempotencyKey: key },
+        source: 'api', actor: user, requester: user, input: { queueId, idempotencyKey: idempotencyId },
         apiClient: { id: 'client', name: 'Client', allowedQueueIds: [], allowAllQueues: false },
     })).rejects.toMatchObject({ status: 403 });
 });
