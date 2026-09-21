@@ -2,19 +2,12 @@
 # config-init, migrations, first-run setup, and production (see
 # scripts/orchestrator.mjs); no build, no npm, no second Compose invocation.
 #
-# Image version: COMPDESK_VERSION defaults to "0.0.0-local" — a placeholder
-# that is never a real published tag (see scripts/generate-release-compose.mjs
-# and .github/workflows/publish-image.yml, which only ever publish a strict
-# vMAJOR.MINOR.PATCH[-prerelease] tag). This exists purely so the local build
-# override (docker-compose.build.yml) works with zero manual environment
-# setup: `docker compose -f docker-compose.yml -f docker-compose.build.yml up
-# -d --build`. Running THIS file alone, unpinned, against a real registry
-# would try to pull "ghcr.io/tahahydra/compdesk:0.0.0-local" and fail with a
-# clear "manifest unknown" error — it is intentionally never silently
-# satisfied. A real deployment always sets COMPDESK_VERSION to a published
-# release (see docs/DEPLOY_DOCKER.md), or uses the version-pinned Compose
-# file scripts/generate-release-compose.mjs produces for each release, where
-# `docker compose up -d` works completely unpinned by design.
+# Image version: the source file defaults to an intentionally unpublished
+# local placeholder so docker-compose.build.yml works without manual setup.
+# Running this file alone without selecting a published version therefore
+# fails clearly instead of silently pulling an unintended image. A real
+# deployment either sets COMPDESK_VERSION (see docs/DEPLOY_DOCKER.md) or uses
+# the version-pinned Compose asset attached to each release.
 name: compdesk
 
 services:
