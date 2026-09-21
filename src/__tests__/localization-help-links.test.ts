@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { dashboardLinksSchema, parseDashboardLinks } from '@/lib/dashboard-links';
 import { normalizeLanguage, translate } from '@/lib/i18n';
-import { helpArticleInputSchema, helpCollectionInputSchema } from '@/lib/help-center';
+import { helpArticleInputSchema, helpCollectionInputSchema, helpContentLanguages, localizedHelpFields } from '@/lib/help-center';
 import { resolveArticleLink } from '@/lib/help-article-links';
 import { isUploadedImageUrl } from '@/lib/uploaded-image-url';
 
@@ -16,9 +16,17 @@ describe('language and help-center domain rules', () => {
         expect(translate('fr', 'A snapshot of activity across {name}', { name: 'CompDesk' })).toContain('CompDesk');
     });
 
-    it('requires safe slugs and complete bilingual help content', () => {
+    it('accepts English-only, French-only, and bilingual help content', () => {
         expect(helpCollectionInputSchema.safeParse({
             slug: 'getting-started', titleEn: 'Getting started', titleFr: 'Bien démarrer',
+            icon: 'book', sortOrder: 10, isPublished: true,
+        }).success).toBe(true);
+        expect(helpCollectionInputSchema.safeParse({
+            slug: 'english-only', titleEn: 'English only', titleFr: '',
+            icon: 'book', sortOrder: 10, isPublished: true,
+        }).success).toBe(true);
+        expect(helpCollectionInputSchema.safeParse({
+            slug: 'francais', titleEn: '', titleFr: 'Français uniquement',
             icon: 'book', sortOrder: 10, isPublished: true,
         }).success).toBe(true);
         expect(helpCollectionInputSchema.safeParse({
@@ -30,6 +38,42 @@ describe('language and help-center domain rules', () => {
             contentFr: '## Instructions\n\nCréez une demande claire.',
             sortOrder: 10, isPublished: true,
         }).success).toBe(true);
+        expect(helpArticleInputSchema.safeParse({
+            collectionId, slug: 'english-only', titleEn: 'English article', titleFr: '',
+            contentEn: '## Instructions\n\nComplete instructions in English.', contentFr: '',
+            sortOrder: 10, isPublished: true,
+        }).success).toBe(true);
+        expect(helpArticleInputSchema.safeParse({
+            collectionId, slug: 'francais', titleEn: '', titleFr: 'Article français',
+            contentEn: '', contentFr: '## Instructions\n\nInstructions complètes en français.',
+            sortOrder: 10, isPublished: true,
+        }).success).toBe(true);
+    });
+
+    it('rejects absent and partial language variants', () => {
+        expect(helpCollectionInputSchema.safeParse({ slug: 'empty', titleEn: '', titleFr: '' }).success).toBe(false);
+        expect(helpArticleInputSchema.safeParse({
+            collectionId, slug: 'partial', titleEn: 'Partial article', titleFr: '',
+            contentEn: '', contentFr: '', sortOrder: 0, isPublished: true,
+        }).success).toBe(false);
+        expect(helpArticleInputSchema.safeParse({
+            collectionId, slug: 'partial-fr', titleEn: '', titleFr: '',
+            contentEn: '', contentFr: '## Contenu\n\nDu contenu sans titre français.', sortOrder: 0, isPublished: true,
+        }).success).toBe(false);
+    });
+
+    it('falls back to the available help translation', () => {
+        expect(localizedHelpFields({
+            titleEn: 'English title', titleFr: '', descriptionEn: 'English description', descriptionFr: '',
+            contentEn: 'English content', contentFr: '',
+        }, 'fr')).toEqual(expect.objectContaining({ title: 'English title', description: 'English description', content: 'English content' }));
+        expect(localizedHelpFields({
+            titleEn: '', titleFr: 'Titre français', descriptionEn: '', descriptionFr: 'Description française',
+            contentEn: '', contentFr: 'Contenu français',
+        }, 'en')).toEqual(expect.objectContaining({ title: 'Titre français', description: 'Description française', content: 'Contenu français' }));
+        expect(helpContentLanguages({ titleEn: '', titleFr: '' }, 'fr')).toEqual(['fr']);
+        expect(helpContentLanguages({ titleEn: 'English', titleFr: '' }, 'fr')).toEqual(['en']);
+        expect(helpContentLanguages({ titleEn: 'English', titleFr: 'Français' }, 'en')).toEqual(['en', 'fr']);
     });
 });
 

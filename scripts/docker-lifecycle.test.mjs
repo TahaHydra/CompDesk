@@ -104,13 +104,13 @@ async function withScenario(suffix, envExtra, fn) {
     }
 }
 
-const INSTALL_PAYLOAD = (adminEmail) => ({
+const INSTALL_PAYLOAD = (adminEmail, applicationUrl = 'http://localhost:3000') => ({
     deploymentMode: 'docker-compose',
     // config-init's file-based bootstrap credentials override this
     // server-side (see setup-bootstrap.mjs resolveDatabase()) — these
     // placeholder values are never actually used to connect.
     database: { provider: 'postgresql', host: 'db', port: 5432, database: 'compdesk', username: 'compdesk', password: 'ignored', sslMode: 'disable', ca: '' },
-    identity: { applicationUrl: 'http://localhost:3000', applicationName: 'CompDesk', supportEmail: '', primaryColor: '#4f46e5', accentColor: '#8b5cf6', reverseProxy: false },
+    identity: { applicationUrl, applicationName: 'CompDesk', supportEmail: '', primaryColor: '#4f46e5', accentColor: '#8b5cf6', reverseProxy: false },
     authentication: { localEnabled: true, microsoftEnabled: false, adminName: 'Lifecycle Admin', adminEmail, adminPassword: 'LifecycleTest1!Secure', adminPasswordConfirm: 'LifecycleTest1!Secure', tenantId: '', clientId: '', clientSecret: '' },
     smtp: { enabled: false, host: '', port: 587, username: '', password: '', from: '', recipient: '', secure: false, requireTls: true },
     storage: { privateAttachmentDir: 'storage/attachments', uploadMaxSizeMb: 10, attachmentMaxFilesPerTicket: 20, attachmentMaxMbPerTicket: 100, attachmentGlobalMaxGb: 10, tempAttachmentTtlHours: 24, tempAttachmentMaxFilesPerUser: 20, tempAttachmentMaxMbPerUser: 100, clamavEnabled: false, clamavHost: '', clamavPort: 3310 },
@@ -132,6 +132,9 @@ async function completeSetupOverHttp(appOrigin, env) {
     assert.match(bootstrapLogs.stdout, /CompDesk first-run setup is active/);
     assert.match(bootstrapLogs.stdout, /Token expires in 30 minutes/);
     assert.equal(bootstrapLogs.stdout.split(bootstrapToken).length - 1, 1, 'the bootstrap token should appear exactly once');
+    const setupPage = await fetch(`${appOrigin}/setup`);
+    const setupHtml = await setupPage.text();
+    assert.match(setupHtml, new RegExp(`name="applicationUrl"[^>]+value="${appOrigin.replaceAll('.', '\\.')}`), 'the setup form should default to the published browser origin');
 
     const session = await fetch(`${appOrigin}/setup/api/session`, {
         method: 'POST',
@@ -147,7 +150,7 @@ async function completeSetupOverHttp(appOrigin, env) {
     const install = await fetch(`${appOrigin}/setup/api/install`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(INSTALL_PAYLOAD(adminEmail)),
+        body: JSON.stringify(INSTALL_PAYLOAD(adminEmail, appOrigin)),
     });
     const installBody = await install.json();
     assert.equal(install.status, 200, `install should succeed: ${JSON.stringify(installBody)}`);
@@ -244,7 +247,7 @@ test('isolated Docker lifecycle', { timeout: 15 * 60 * 1000 }, async (t) => {
             const reconstructed = dockerRun(['run', '--rm', '-v', `${volumes.config}:/config`, 'alpine:3.22', 'cat', '/config/installation.json']);
             const reconstructedReceipt = JSON.parse(reconstructed.stdout);
             assert.equal(reconstructedReceipt.deploymentMode, 'docker-compose');
-            assert.equal(reconstructedReceipt.applicationUrl, 'http://localhost:3000');
+            assert.equal(reconstructedReceipt.applicationUrl, appOrigin);
 
             // 10. Inverse contradiction: the receipt exists (as normal) but the
             // database's installation record is gone (e.g. someone restored an

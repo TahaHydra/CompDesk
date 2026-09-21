@@ -39,6 +39,19 @@ test('requires HTTPS away from loopback', () => {
     assert.equal(core.validatePublicUrl('http://localhost:3000').valid, true);
 });
 
+test('exposes one password policy for server and setup-browser validation', () => {
+    assert.deepEqual(core.passwordRequirementResults('short'), {
+        minimumLength: false,
+        lowercase: true,
+        uppercase: false,
+        number: false,
+        symbol: false,
+    });
+    assert.equal(core.isStrongPassword('LongEnoughWithoutSymbol1'), false);
+    assert.equal(core.isStrongPassword('ReleaseCandidate1!Secure'), true);
+    assert.equal(core.PASSWORD_POLICY.minimumLength, 14);
+});
+
 test('persists a custom PostgreSQL CA path in the Prisma connection and environment', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-ca-'));
     try {

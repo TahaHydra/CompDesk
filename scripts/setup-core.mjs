@@ -24,13 +24,24 @@ export function normalizeEmail(value) {
     return String(value || '').trim().toLowerCase();
 }
 
-export function isStrongPassword(value) {
+export const PASSWORD_POLICY = Object.freeze({
+    minimumLength: 14,
+    requirements: Object.freeze(['lowercase', 'uppercase', 'number', 'symbol']),
+});
+
+export function passwordRequirementResults(value) {
     const password = String(value || '');
-    return password.length >= 14
-        && /[a-z]/.test(password)
-        && /[A-Z]/.test(password)
-        && /\d/.test(password)
-        && /[^A-Za-z0-9]/.test(password);
+    return {
+        minimumLength: password.length >= PASSWORD_POLICY.minimumLength,
+        lowercase: /[a-z]/.test(password),
+        uppercase: /[A-Z]/.test(password),
+        number: /\d/.test(password),
+        symbol: /[^A-Za-z0-9]/.test(password),
+    };
+}
+
+export function isStrongPassword(value) {
+    return Object.values(passwordRequirementResults(value)).every(Boolean);
 }
 
 export function validatePublicUrl(value) {

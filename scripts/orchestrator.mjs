@@ -9,6 +9,7 @@ import {
     isRuntimeConfigValid,
     parseEnvFile,
     parseReceipt,
+    productionAccessGuidance,
     reconcileInstallationState,
     safeErrorMessage,
     startProduction,
@@ -162,6 +163,7 @@ async function transitionToProduction() {
     }
     const runtimeEnv = loadRuntimeEnv();
     const env = { ...process.env, ...runtimeEnv, PORT: String(port), HOSTNAME: '0.0.0.0', NODE_ENV: 'production' };
+    log(productionAccessGuidance(runtimeEnv.AUTH_URL, port));
     return startProduction({
         runMigrations: () => runMigrations(env),
         runAttachmentMigration: () => runAttachmentMigration(env),

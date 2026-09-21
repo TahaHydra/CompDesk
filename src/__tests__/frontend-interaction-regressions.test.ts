@@ -48,8 +48,12 @@ function componentHarness(file: string, queryData: unknown[] = []) {
             useMutation: (options: any) => { const index = mutationCursor++; mutations[index] = options; return { isPending: pending.has(index), mutate: jest.fn() }; },
         },
         '@/components/ui/use-toast': { useToast: () => ({ toast }) },
-        '@/components/providers/language-provider': { useLanguage: () => ({ t: (text: string) => text }) },
-        '@/lib/help-center': { HELP_ICON_KEYS: [] },
+        '@/components/providers/language-provider': { useLanguage: () => ({ language: 'en', t: (text: string) => text }) },
+        '@/lib/help-center': {
+            HELP_ICON_KEYS: [],
+            helpContentLanguages: (value: any, language: string) => [value.titleEn ? 'en' : null, value.titleFr ? 'fr' : null].filter(Boolean).length ? [value.titleEn ? 'en' : null, value.titleFr ? 'fr' : null].filter(Boolean) : [language],
+            localizedHelpTitle: (value: any) => value.titleEn || value.titleFr,
+        },
         '@/lib/utils': { cn: (...values: unknown[]) => values.filter(Boolean).join(' ') },
         '@/lib/ticket-display': { formatTicketValue: (value: string) => value, getPriorityBadgeClass: () => '', getStatusBadgeClass: () => '' },
         '@/lib/ticket-content': { parseTicketContent: () => [] },
@@ -91,6 +95,31 @@ test('closing a deep-linked help article consumes the link instead of reopening 
     harness.render('HelpCenterManager'); harness.effects();
     tree = harness.render('HelpCenterManager');
     expect(find(tree, (node) => typeof node.type === 'function' && node.type.name === 'ArticleDialog').props.open).toBe(false);
+});
+
+test('an empty help center guides the administrator directly into collection creation', () => {
+    const harness = componentHarness('src/components/admin/help-center-manager.tsx', [[], []]);
+    let tree = harness.render('HelpCenterManager');
+    const create = find(tree, (node) => node.type === 'Button' && node.props.children?.includes?.('Create collection'));
+    expect(create).toBeDefined();
+    create.props.onClick();
+    tree = harness.render('HelpCenterManager');
+    expect(find(tree, (node) => typeof node.type === 'function' && node.type.name === 'CollectionDialog').props.open).toBe(true);
+});
+
+test('editing single-language help content can add the second translation', () => {
+    const collection = { id: 'collection-1', slug: 'accounts', titleEn: 'Accounts', titleFr: '', descriptionEn: '', descriptionFr: '', icon: 'book', sortOrder: 0, isPublished: true, _count: { articles: 0 } };
+    const harness = componentHarness('src/components/admin/help-center-manager.tsx', [[collection], []]);
+    let tree = harness.render('HelpCenterManager');
+    find(tree, (node) => node.type === 'Button' && node.props.children?.includes?.('Edit')).props.onClick();
+    tree = harness.render('HelpCenterManager');
+    let dialog = find(tree, (node) => typeof node.type === 'function' && node.type.name === 'CollectionDialog');
+    expect(dialog.props.languages).toEqual(['en']);
+    expect(fs.readFileSync(path.join(process.cwd(), 'src/components/admin/help-center-manager.tsx'), 'utf8')).toContain('Add French translation');
+    dialog.props.setLanguages(['en', 'fr']);
+    tree = harness.render('HelpCenterManager');
+    dialog = find(tree, (node) => typeof node.type === 'function' && node.type.name === 'CollectionDialog');
+    expect(dialog.props.languages).toEqual(['en', 'fr']);
 });
 
 test('a visible agent-only form field cannot be edited by a requester', () => {

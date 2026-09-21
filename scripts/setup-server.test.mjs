@@ -77,6 +77,9 @@ test('setup server blocks the application and protects the one active session', 
         assert.match(setupHtml, /Token expired\?/);
         assert.match(setupHtml, /docker compose restart compdesk/);
         assert.match(setupHtml, /no browser-accessible reset endpoint is used/);
+        assert.match(setupHtml, new RegExp(`name="applicationUrl"[^>]+value="${origin.replaceAll('.', '\\.')}`));
+        assert.doesNotMatch(setupHtml, /name="applicationUrl"[^>]+value="http:\/\/localhost:3000"/);
+        assert.match(setupHtml, /const passwordPolicy = JSON\.parse\('\{"minimumLength":14,"requirements":\["lowercase","uppercase","number","symbol"\]\}'\)/);
         assert.equal(setupHtml.includes(running.token), false, 'the setup page must never receive the bootstrap token');
         assert.match(running.output(), /CompDesk first-run setup is active/);
         assert.match(running.output(), /Token expires in 30 minutes/);
@@ -238,6 +241,8 @@ test('explicit SETUP_PUBLIC_ORIGIN is enforced independently of the listener por
     const running = await startSetup(stateDirectory, { SETUP_PUBLIC_ORIGIN: publicOrigin });
     const socketOrigin = `http://127.0.0.1:${running.port}`;
     try {
+        const setupPage = await fetch(`${socketOrigin}/setup`);
+        assert.match(await setupPage.text(), /name="applicationUrl"[^>]+value="https:\/\/helpdesk\.example\.test"/);
         const accepted = await fetch(`${socketOrigin}/setup/api/session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Origin: publicOrigin },
