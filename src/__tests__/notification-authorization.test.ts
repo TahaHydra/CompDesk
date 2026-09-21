@@ -74,4 +74,15 @@ describe('notification authorization', () => {
             where: expect.objectContaining({ createdAt: { gt: expect.any(Date) } }),
         }));
     });
+
+    it('does not disclose a tombstoned comment to its requester through notifications', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'requester', role: 'USER' } });
+        mockPrisma.timelineEvent.findMany.mockResolvedValue([{
+            id: 'removed', type: 'COMMENT', content: 'removed-sensitive-comment', deletedAt: new Date(),
+            createdAt: new Date(), user: { name: 'Agent' }, ticket: { id: 'ticket', key: 'TCK-1', title: 'Title' },
+        }]);
+        const response = await getNotifications();
+        expect(response.status).toBe(200);
+        expect(await response.text()).not.toContain('removed-sensitive-comment');
+    });
 });

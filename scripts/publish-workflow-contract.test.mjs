@@ -8,7 +8,7 @@ import test from 'node:test';
 // Dockerfile/Compose contracts — rather than pulling in a YAML parser as a
 // new dependency (js-yaml is only ever an incidental transitive dependency
 // today, not something this repo can rely on staying resolvable).
-const source = fs.readFileSync(path.join(process.cwd(), '.github', 'workflows', 'publish-image.yml'), 'utf8');
+const source = fs.readFileSync(path.join(process.cwd(), '.github', 'workflows', 'publish-image.yml'), 'utf8').replace(/\r\n/g, '\n');
 
 function countOccurrences(text, pattern) {
     return (text.match(new RegExp(pattern, 'g')) || []).length;
@@ -16,7 +16,7 @@ function countOccurrences(text, pattern) {
 
 test('the image is built exactly once: a single docker/build-push-action step in the publish job', () => {
     assert.equal(countOccurrences(source, 'uses: docker/build-push-action'), 1, 'expected exactly one build/push action invocation');
-    assert.match(source, /uses: docker\/build-push-action@v6[\s\S]*?push: true/, 'the one build step must push so its digest is scannable by reference');
+    assert.match(source, /uses: docker\/build-push-action@[^\s]+[\s\S]*?push: true/, 'the one build step must push so its digest is scannable by reference');
 });
 
 test('the build step does not push directly to a release tag (version, commit-SHA, or latest)', () => {

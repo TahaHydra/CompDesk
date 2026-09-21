@@ -17,6 +17,7 @@ import {
 import { AttachmentValidationError, attachmentLimits, inspectAttachment } from '@/lib/attachment-security';
 import { consumeDatabaseRateLimit } from '@/lib/database-rate-limit';
 import { requestSourceIp } from '@/lib/request-ip';
+import { readUploadFormData, UploadBodyError } from '@/lib/bounded-upload';
 
 class QuotaError extends Error {
     constructor(message: string, public status: number) {
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const body = await req.formData();
+        const body = await readUploadFormData(req, attachmentLimits().maxFileBytes + 64 * 1024);
         const fileValue = body.get('file');
         const ticketIdValue = body.get('ticketId');
         const ticketId = typeof ticketIdValue === 'string' && ticketIdValue ? ticketIdValue : null;
@@ -201,6 +202,7 @@ export async function POST(req: NextRequest) {
             throw error;
         }
     } catch (error) {
+        if (error instanceof UploadBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
         if (error instanceof AttachmentValidationError) {
             const status = error.code === 'MALWARE' ? 422 : error.code === 'SCAN' ? 503 : error.code === 'SIZE' ? 413 : 400;
             return NextResponse.json({ error: error.message }, { status });

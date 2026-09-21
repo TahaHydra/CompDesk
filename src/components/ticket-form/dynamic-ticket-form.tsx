@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { isFieldConditionVisible } from '@/lib/ticket-form/conditions';
+import { ticketFormSubmissionValues } from '@/lib/ticket-form/client-submission';
+import type { Role } from '@prisma/client';
 import type { TicketFormFieldDefinition, UploadedFieldFile } from '@/lib/ticket-form/types';
 
 interface TagOption { id: string; name: string; color?: string }
@@ -35,6 +37,7 @@ function fileList(value: unknown): UploadedFieldFile[] {
 export function DynamicTicketForm({
     fields,
     values,
+    role,
     errors = {},
     tags = [],
     disabled = false,
@@ -44,6 +47,7 @@ export function DynamicTicketForm({
 }: {
     fields: TicketFormFieldDefinition[];
     values: Record<string, unknown>;
+    role: Role;
     errors?: Record<string, string>;
     tags?: TagOption[];
     disabled?: boolean;
@@ -53,6 +57,7 @@ export function DynamicTicketForm({
 }) {
     const [uploading, setUploading] = useState<Set<string>>(new Set());
     const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+    const conditionValues = ticketFormSubmissionValues(fields, values, role);
     useEffect(() => onUploadingChange?.(uploading.size > 0), [onUploadingChange, uploading.size]);
 
     const uploadFiles = async (field: TicketFormFieldDefinition, selected: FileList | null) => {
@@ -83,7 +88,9 @@ export function DynamicTicketForm({
 
     return (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-12">
-            {fields.filter((field) => isFieldConditionVisible(field.conditionalRules, values)).map((field) => {
+            {fields.filter((field) => isFieldConditionVisible(field.conditionalRules, conditionValues)).map((field) => {
+                const editable = field.editableBy.includes(role);
+                const fieldDisabled = disabled || !editable;
                 const value = values[field.fieldKey];
                 const options = fieldOptions(field, tags);
                 const error = errors[field.fieldKey];
@@ -94,22 +101,22 @@ export function DynamicTicketForm({
                 return (
                     <div key={field.id} className={cn('space-y-2 md:col-span-12', WIDTH_CLASSES[field.width] ?? 'md:col-span-12')}>
                         <Label htmlFor={inputId} className="flex items-center gap-1.5">
-                            {field.label}{field.required ? <span className="text-destructive" aria-hidden="true">*</span> : null}
+                            {field.label}{field.required && editable ? <span className="text-destructive" aria-hidden="true">*</span> : null}{!editable ? <span className="text-xs font-normal text-muted-foreground">(read only)</span> : null}
                         </Label>
                         {field.helpText ? <p id={`${inputId}-help`} className="text-xs text-muted-foreground">{field.helpText}</p> : null}
 
                         {field.type === 'TEXT' ? (
                             <Input id={inputId} value={typeof value === 'string' ? value : ''} placeholder={field.placeholder ?? undefined}
                                 aria-invalid={Boolean(error)} aria-describedby={field.helpText ? `${inputId}-help` : undefined}
-                                disabled={disabled} onChange={(event) => onChange(field.fieldKey, event.target.value)} />
+                                disabled={fieldDisabled} onChange={(event) => onChange(field.fieldKey, event.target.value)} />
                         ) : null}
                         {field.type === 'TEXTAREA' ? (
                             <Textarea id={inputId} value={typeof value === 'string' ? value : ''} placeholder={field.placeholder ?? undefined}
-                                aria-invalid={Boolean(error)} rows={6} disabled={disabled}
+                                aria-invalid={Boolean(error)} rows={6} disabled={fieldDisabled}
                                 onChange={(event) => onChange(field.fieldKey, event.target.value)} />
                         ) : null}
                         {field.type === 'DROPDOWN' ? (
-                            <Select value={typeof value === 'string' ? value : ''} disabled={disabled}
+                            <Select value={typeof value === 'string' ? value : ''} disabled={fieldDisabled}
                                 onValueChange={(next) => onChange(field.fieldKey, next)}>
                                 <SelectTrigger id={inputId} aria-invalid={Boolean(error)}><SelectValue placeholder={field.placeholder ?? `Select ${field.label}`} /></SelectTrigger>
                                 <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
@@ -121,7 +128,7 @@ export function DynamicTicketForm({
                                     const selected = selectedValues.includes(option.value);
                                     return (
                                         <Button key={option.value} type="button" size="sm" variant={selected ? 'default' : 'outline'}
-                                            aria-pressed={selected} disabled={disabled}
+                                            aria-pressed={selected} disabled={fieldDisabled}
                                             onClick={() => onChange(field.fieldKey, selected ? selectedValues.filter((item) => item !== option.value) : [...selectedValues, option.value])}>
                                             {option.label}
                                         </Button>
@@ -131,13 +138,13 @@ export function DynamicTicketForm({
                         ) : null}
                         {field.type === 'CHECKBOX' ? (
                             <label htmlFor={inputId} className="flex cursor-pointer items-center gap-2 rounded-md border p-3 text-sm">
-                                <input id={inputId} type="checkbox" checked={value === true} disabled={disabled}
+                                <input id={inputId} type="checkbox" checked={value === true} disabled={fieldDisabled}
                                     onChange={(event) => onChange(field.fieldKey, event.target.checked)} />
                                 <span>{field.placeholder || field.label}</span>
                             </label>
                         ) : null}
                         {field.type === 'DATE' ? (
-                            <Input id={inputId} type="date" value={typeof value === 'string' ? value : ''} disabled={disabled}
+                            <Input id={inputId} type="date" value={typeof value === 'string' ? value : ''} disabled={fieldDisabled}
                                 aria-invalid={Boolean(error)} onChange={(event) => onChange(field.fieldKey, event.target.value)} />
                         ) : null}
                         {field.type === 'FILE' ? (
@@ -146,7 +153,7 @@ export function DynamicTicketForm({
                                     {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                                     {isUploading ? 'Uploading…' : allowUploads ? 'Choose files' : 'File input preview'}
                                 </label>
-                                <input id={inputId} type="file" multiple className="sr-only" disabled={disabled || isUploading || !allowUploads}
+                                <input id={inputId} type="file" multiple className="sr-only" disabled={fieldDisabled || isUploading || !allowUploads}
                                     accept={field.validationRules?.allowedFileTypes?.join(',')}
                                     onChange={(event) => { void uploadFiles(field, event.target.files); event.target.value = ''; }} />
                                 {fileList(value).map((file) => (
@@ -154,7 +161,7 @@ export function DynamicTicketForm({
                                         <FileText className="h-4 w-4 text-muted-foreground" />
                                         <span className="min-w-0 flex-1 truncate">{file.filename}</span>
                                         <Badge variant="outline">{Math.max(1, Math.round(file.size / 1024))} KB</Badge>
-                                        <Button type="button" variant="ghost" size="icon" disabled={disabled}
+                                        <Button type="button" variant="ghost" size="icon" disabled={fieldDisabled}
                                             aria-label={`Remove ${file.filename}`}
                                             onClick={() => onChange(field.fieldKey, fileList(value).filter((item) => item.url !== file.url))}>
                                             <Trash2 className="h-4 w-4" />

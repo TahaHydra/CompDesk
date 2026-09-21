@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -118,6 +119,41 @@ test('setup server blocks the application and protects the one active session', 
         });
         assert.equal(duplicate.status, 409);
     } finally {
+        await stop(running.child);
+        fs.rmSync(stateDirectory, { recursive: true, force: true });
+    }
+});
+
+test('concurrent exchanges of the bootstrap token create only one session', async () => {
+    const stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'compdesk-setup-race-'));
+    const running = await startSetup(stateDirectory);
+    const origin = `http://127.0.0.1:${running.port}`;
+    const body = JSON.stringify({ token: running.token });
+    const requests = [];
+    try {
+        // Send headers for both requests before either body. This makes both
+        // handlers enter the asynchronous body read before one can authenticate.
+        for (let index = 0; index < 2; index += 1) {
+            let request;
+            const completed = new Promise((resolve, reject) => {
+                request = http.request(`${origin}/setup/api/session`, {
+                    method: 'POST',
+                    headers: { Origin: origin, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+                }, (response) => {
+                    response.resume();
+                    response.on('end', () => resolve(response.statusCode));
+                });
+                request.on('error', reject);
+                request.flushHeaders();
+            });
+            requests.push({ request, completed });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        for (const { request } of requests) request.end(body);
+        const statuses = await Promise.all(requests.map(({ completed }) => completed));
+        assert.deepEqual(statuses.sort(), [200, 409]);
+    } finally {
+        for (const { request } of requests) request.destroy();
         await stop(running.child);
         fs.rmSync(stateDirectory, { recursive: true, force: true });
     }

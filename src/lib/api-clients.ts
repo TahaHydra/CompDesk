@@ -70,10 +70,10 @@ export type ApiAuthenticationResult =
     | { ok: true; client: ApiClient }
     | { ok: false; rateLimited: boolean; retryAfterSeconds?: number };
 
-async function failedAuthentication(req: NextRequest, keyFingerprint: string): Promise<ApiAuthenticationResult> {
+async function failedAuthentication(req: NextRequest): Promise<ApiAuthenticationResult> {
     const limit = await consumeDatabaseRateLimit(
         'external-api-auth-failure',
-        `${requestSourceIp(req)}:${keyFingerprint}`,
+        requestSourceIp(req),
         20,
         10 * 60 * 1000
     );
@@ -85,11 +85,11 @@ export async function authenticateApiRequest(
     requiredScope: ApiClientScope
 ): Promise<ApiAuthenticationResult> {
     const apiKey = extractApiKey(req);
-    if (!apiKey) return failedAuthentication(req, 'missing');
+    if (!apiKey) return failedAuthentication(req);
     const keyHash = hashApiKey(apiKey);
     const client = await prisma.apiClient.findUnique({ where: { keyHash } });
     if (!client?.isActive || !client.scopes.includes(requiredScope)) {
-        return failedAuthentication(req, keyHash.slice(0, 16));
+        return failedAuthentication(req);
     }
 
     const staleBefore = new Date(Date.now() - 5 * 60 * 1000);

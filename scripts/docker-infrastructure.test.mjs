@@ -26,6 +26,43 @@ test('the merged runner stage does not drag in the full development node_modules
     assert.doesNotMatch(runnerStage, /COPY --from=deps.*node_modules ./, 'must not copy the entire deps node_modules (devDependencies) into the runtime image');
 });
 
+test('every relative import of a packaged runtime script is included in the image', () => {
+    const dockerfile = source('Dockerfile');
+    const scripts = new Set([...dockerfile.matchAll(/^COPY[^\r\n]* \/app\/(scripts\/\S+) \.\/scripts\/\S+/gm)].map((match) => match[1]));
+    assert.ok(scripts.has('scripts/setup-bootstrap.mjs'));
+    for (const script of scripts) {
+        for (const match of source(script).matchAll(/(?:from\s*|import\s*\()(['"])(\.\.?\/[^'"]+)\1/g)) {
+            const dependency = path.posix.normalize(path.posix.join(path.posix.dirname(script), match[2]));
+            assert.ok(scripts.has(dependency), `${script} imports ${dependency}, which the runtime image does not include`);
+        }
+    }
+});
+
+test('the migration CLI and its dependency closure are installed as production dependencies', () => {
+    const packageJson = JSON.parse(source('package.json'));
+    assert.ok(packageJson.dependencies.prisma, 'prisma migrate deploy is required by the production orchestrator');
+    const lock = JSON.parse(source('package-lock.json'));
+    const visited = new Set();
+    function visit(packagePath) {
+        if (visited.has(packagePath)) return;
+        visited.add(packagePath);
+        const entry = lock.packages[packagePath];
+        assert.ok(entry && entry.dev !== true, `${packagePath} would be pruned by npm ci --omit=dev`);
+        for (const name of Object.keys(entry.dependencies || {})) {
+            let base = packagePath;
+            let resolved;
+            while (base) {
+                const candidate = `${base}/node_modules/${name}`;
+                if (lock.packages[candidate]) { resolved = candidate; break; }
+                const ancestor = base.lastIndexOf('/node_modules/');
+                base = ancestor < 0 ? '' : base.slice(0, ancestor);
+            }
+            visit(resolved || `node_modules/${name}`);
+        }
+    }
+    visit('node_modules/prisma');
+});
+
 function composeConfig(composeFile, extraEnv, isolatedEnvFile, extraFiles = []) {
     const output = execFileSync(
         'docker',

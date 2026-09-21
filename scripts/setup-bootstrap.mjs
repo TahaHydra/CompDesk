@@ -473,12 +473,11 @@ function validateInstall(input) {
 }
 
 async function runMigrations(environment) {
-    const prismaBin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'prisma.cmd' : 'prisma');
+    const prismaEntry = path.join(root, 'node_modules', 'prisma', 'build', 'index.js');
     await new Promise((resolve, reject) => {
-        const child = spawn(prismaBin, ['migrate', 'deploy'], {
+        const child = spawn(process.execPath, [prismaEntry, 'migrate', 'deploy'], {
             cwd: root,
             env: { ...process.env, ...environment },
-            shell: process.platform === 'win32',
             stdio: ['ignore', 'inherit', 'inherit'],
             windowsHide: true,
         });
@@ -694,6 +693,10 @@ async function handle(request, response) {
         for (const [id, session] of sessions) if (session.expiresAt < Date.now()) sessions.delete(id);
         if (sessions.size > 0) return json(response, 409, { error: 'Another setup session is already active.' });
         const body = await readBody(request);
+        // A second exchange may have completed while this request's body
+        // arrived. Recheck immediately before the synchronous session commit.
+        if (Date.now() > bootstrapExpiresAt) return json(response, 410, { error: EXPIRED_BOOTSTRAP_TOKEN_ERROR });
+        if (sessions.size > 0) return json(response, 409, { error: 'Another setup session is already active.' });
         if (!timingSafeEqual(body.token || '', bootstrapToken)) return json(response, 401, { error: INVALID_BOOTSTRAP_TOKEN_ERROR });
         const sessionId = randomSecret(32);
         const csrfToken = randomSecret(24);

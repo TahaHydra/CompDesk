@@ -76,8 +76,9 @@ async function deliver(webhook: WebhookConfig, event: string, deliveryId: string
             resolveWebhookDestination(webhook.url),
             resolveSecret(webhook),
         ]);
-        const parsed = JSON.parse(body) as WebhookPayload;
-        const timestamp = parsed.timestamp;
+        // The body records event time; the signature records this delivery attempt.
+        // A delayed retry must still pass the receiver's replay window.
+        const timestamp = new Date().toISOString();
         const response = await postPinned(destination, body, {
             'Content-Type': 'application/json',
             'X-CompDesk-Webhook-Id': deliveryId,

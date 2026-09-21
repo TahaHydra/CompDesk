@@ -57,7 +57,7 @@ export async function GET() {
             items: items.map((item) => ({
                 id: item.id,
                 type: item.type,
-                content: item.content,
+                content: item.deletedAt && role !== 'SUPER_ADMIN' ? '[Deleted comment]' : item.content,
                 createdAt: item.createdAt,
                 userName: item.user.name,
                 ticketId: item.ticket.id,

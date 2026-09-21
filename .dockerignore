@@ -4,6 +4,14 @@ node_modules
 coverage
 logs
 *.log
+.compdesk
+backups
+playwright-report
+test-results
+storage/*
+!storage/.gitkeep
+public/uploads/*
+!public/uploads/.gitkeep
 .env*
 !.env.example
 tsconfig.tsbuildinfo

@@ -17,6 +17,7 @@ import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link a
 import { BrandingSettings } from '@/components/admin/branding-settings';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
+import { copyText } from '@/lib/browser-clipboard';
 import { parseDashboardLinks, type DashboardLink } from '@/lib/dashboard-links';
 
 type SettingsMap = Record<string, string>;
@@ -811,7 +812,10 @@ function WebhooksTab() {
                     <div className="space-y-2"><Label>Events</Label><div className="flex flex-wrap gap-2">{WEBHOOK_EVENTS.map((event) => <Button key={event} type="button" size="sm" variant={events.includes(event) ? 'default' : 'outline'} aria-pressed={events.includes(event)} onClick={() => toggleEvent(event)}>{event}</Button>)}</div></div>
                     <p className="text-xs text-muted-foreground">Destinations must resolve only to public addresses. Deliveries use a timestamped HMAC signature, reject redirects, and retry with bounded exponential backoff.</p>
                     <Button onClick={() => createWebhook.mutate()} disabled={!name.trim() || !url.trim() || events.length === 0 || createWebhook.isPending}>{createWebhook.isPending ? 'Creating…' : 'Create Webhook'}</Button>
-                    {latestSecret ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:bg-amber-950/30"><p className="text-sm font-medium">Copy this signing secret now. It is shown only once.</p><code className="mt-2 block break-all text-xs">{latestSecret}</code><Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => { void navigator.clipboard.writeText(latestSecret); toast({ title: 'Signing secret copied' }); }}>Copy secret</Button></div> : null}
+                    {latestSecret ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:bg-amber-950/30"><p className="text-sm font-medium">Copy this signing secret now. It is shown only once.</p><code className="mt-2 block break-all text-xs">{latestSecret}</code><Button type="button" size="sm" variant="outline" className="mt-2" onClick={async () => {
+                        const copied = await copyText(latestSecret);
+                        toast(copied ? { title: 'Signing secret copied' } : { title: 'Copy unavailable', description: 'Select the displayed secret and copy it manually.', variant: 'destructive' });
+                    }}>Copy secret</Button></div> : null}
                 </CardContent>
             </Card>
 
