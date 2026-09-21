@@ -1,0 +1,2 @@
+# Test-only UUID fixture misclassified as a generic API key before its variable was renamed.
+4d6dd50f68343ec4bc2ae97d27fbc0665f86b8bf:src/__tests__/ticket-response-security.test.ts:generic-api-key:44
