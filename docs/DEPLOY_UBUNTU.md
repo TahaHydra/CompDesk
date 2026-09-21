@@ -25,7 +25,7 @@ From the exact release tag, run the verified first-run path as the unprivileged
 service account:
 
 ```bash
-git checkout v0.9.0-beta.1
+git checkout v0.9.0-beta.2
 npm ci
 npm run verify
 npm run setup:bootstrap

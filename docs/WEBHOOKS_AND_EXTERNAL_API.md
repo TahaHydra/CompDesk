@@ -12,7 +12,7 @@ Every request contains:
 
 - `X-CompDesk-Webhook-Id`: unique delivery UUID;
 - `X-CompDesk-Webhook-Event`: event name;
-- `X-CompDesk-Webhook-Timestamp`: ISO timestamp included in the body;
+- `X-CompDesk-Webhook-Timestamp`: ISO timestamp of this delivery attempt; the body's timestamp remains the original event time;
 - `X-CompDesk-Webhook-Signature`: `v1=` followed by hex HMAC-SHA256;
 - `X-CompDesk-Webhook-Replay-Window`: sender-declared 300-second acceptance window.
 
@@ -23,6 +23,8 @@ The signed bytes are exactly:
 ```
 
 Receivers must compare the HMAC in constant time, reject timestamps outside five minutes, and reject a delivery ID already processed. Never parse and reserialize the body before verifying it.
+
+Retries keep the same delivery ID and exact body, but sign a fresh header timestamp so a delayed retry can pass the five-minute check. Use the header timestamp for replay protection and the body timestamp for event ordering.
 
 Deliveries are persisted before dispatch. Workers claim a delivery with a database lease, use an absolute 10-second timeout, retain HTTP/error-stage history, and retry with bounded exponential backoff for at most eight attempts. Ten consecutive endpoint failures disable the webhook. Super Admins can inspect the latest 50 deliveries, send a safe test event, and retry failed deliveries. Multiple replicas can safely compete for work because the lease update is atomic.
 

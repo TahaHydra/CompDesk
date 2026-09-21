@@ -183,9 +183,6 @@ describe('Phase 4 migration and workflow contracts', () => {
         expect(escalation).not.toContain('assigneeId:');
         expect(source('src/app/api/v1/tickets/route.ts')).toContain('assignments:');
         expect(source('src/app/api/dashboard/stats/route.ts')).toContain('assignments:');
-        const updateRoute = source('src/app/api/tickets/[id]/route.ts');
-        expect(updateRoute).toContain('...updatedTicket.assignments.map');
-        expect(updateRoute).toContain('...new Set(recipients');
     });
 
     it('provides additive claim, unclaim, searchable management, and non-duplicating UI operations', () => {

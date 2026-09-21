@@ -30,7 +30,7 @@ Quiesce application writes or take a coordinated storage snapshot:
 
 ```bash
 docker compose exec -T db \
-  sh -c ‘exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"’ \
+  sh -c 'exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
   > database.dump
 
 docker run --rm -v compdesk_attachments:/source:ro -v "$PWD":/backup alpine:3.22 \
@@ -50,7 +50,7 @@ For an installation still running the legacy `docker-compose.legacy.yml`/`docker
 
 ```bash
 docker compose --env-file .compdesk/compdesk.env -f docker-compose.legacy.yml exec -T db \
-  sh -c ‘exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"’ \
+  sh -c 'exec pg_dump --format=custom --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
   > database.dump
 
 docker run --rm -v compdesk_attachments:/source:ro -v "$PWD":/backup alpine:3.22 \
@@ -63,7 +63,7 @@ chmod 600 database.dump attachments.tar.gz uploads.tar.gz compdesk.env.backup
 if [ -f database-ca.pem.backup ]; then chmod 600 database-ca.pem.backup; fi
 ```
 
-For external PostgreSQL (either topology), use the database provider’s consistent snapshot procedure or `npm run backup` from a host that can reach it.
+For external PostgreSQL (either topology), use the database provider's consistent snapshot procedure or `npm run backup` from a host that can reach it.
 
 ## Restore rehearsal
 

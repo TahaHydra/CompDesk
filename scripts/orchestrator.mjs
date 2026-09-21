@@ -129,12 +129,9 @@ function spawnStep(command, args, env, { shell = false } = {}) {
     });
 }
 
-function prismaBinary() {
-    return path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'prisma.cmd' : 'prisma');
-}
-
 async function runMigrations(env) {
-    return spawnStep(prismaBinary(), ['migrate', 'deploy'], env, { shell: process.platform === 'win32' });
+    const prismaEntry = path.join(root, 'node_modules', 'prisma', 'build', 'index.js');
+    return spawnStep(process.execPath, [prismaEntry, 'migrate', 'deploy'], env);
 }
 
 async function runAttachmentMigration(env) {

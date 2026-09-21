@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { copyText } from '@/lib/browser-clipboard';
 
 export default function AdminUsersPage() {
     const { toast } = useToast();
@@ -143,10 +144,11 @@ export default function AdminUsersPage() {
         },
     });
 
-    const copyPassword = () => {
-        navigator.clipboard.writeText(generatedPassword);
-        setPasswordCopied(true);
-        setTimeout(() => setPasswordCopied(false), 2000);
+    const copyPassword = async () => {
+        const copied = await copyText(generatedPassword);
+        setPasswordCopied(copied);
+        if (copied) setTimeout(() => setPasswordCopied(false), 2000);
+        else toast({ title: 'Copy unavailable', description: 'Select the displayed password and copy it manually.', variant: 'destructive' });
     };
 
     const filteredUsers = (users ?? []).filter((u: any) =>
