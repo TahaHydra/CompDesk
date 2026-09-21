@@ -22,6 +22,7 @@ import {
     encryptEnvelope,
     isSameOrigin,
     isStrongPassword,
+    PASSWORD_POLICY,
     normalizeEmail,
     parseCookies,
     randomSecret,
@@ -133,6 +134,14 @@ function html(response, body, status = 200, csp = "default-src 'self'; style-src
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+}
+
+function renderSetupPage(request) {
+    const fallbackOrigin = `http://localhost:${port}`;
+    const publicOrigin = originFromRequest(request) || explicitSetupOrigin || fallbackOrigin;
+    return fs.readFileSync(uiPath, 'utf8')
+        .replace('{{SETUP_PUBLIC_ORIGIN}}', escapeHtml(publicOrigin))
+        .replace('{{PASSWORD_POLICY_JSON}}', JSON.stringify(PASSWORD_POLICY).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c'));
 }
 
 function renderInstalledPage() {
@@ -677,7 +686,7 @@ async function handle(request, response) {
         return;
     }
     if (requestUrl.pathname === '/setup' && request.method === 'GET') {
-        html(response, fs.readFileSync(uiPath, 'utf8'));
+        html(response, renderSetupPage(request));
         return;
     }
     if (!requestUrl.pathname.startsWith('/setup/api/')) {

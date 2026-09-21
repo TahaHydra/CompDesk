@@ -164,6 +164,7 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     await expect(page.getByRole('heading', { name: '4. Identity and network' })).toBeVisible();
 
     // Step 4: identity and network
+    await expect(page.locator('input[name="applicationUrl"]')).toHaveValue(setupOrigin);
     await page.locator('input[name="applicationUrl"]').fill(setupOrigin);
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByRole('heading', { name: '5. First Super Admin and authentication' })).toBeVisible();
@@ -171,6 +172,35 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     // Step 5: first administrator
     await page.locator('input[name="adminName"]').fill('Release Administrator');
     await page.locator('input[name="adminEmail"]').fill(adminEmail);
+    const password = page.locator('input[name="adminPassword"]');
+    const confirmation = page.locator('input[name="adminPasswordConfirm"]');
+    for (const invalid of [
+        'Aa1!short',
+        'UPPERCASE1234!LONG',
+        'lowercase1234!long',
+        'NoNumbersHere!Long',
+        'NoSymbol12345678',
+    ]) {
+        await password.fill(invalid);
+        await confirmation.fill(invalid);
+        await page.getByRole('button', { name: 'Next' }).click();
+        await expect(page.getByRole('heading', { name: '5. First Super Admin and authentication' })).toBeVisible();
+        await expect(password).toHaveAttribute('aria-invalid', 'true');
+    }
+    await password.fill('ReleaseCandidate1!Secure');
+    await confirmation.fill('ReleaseCandidate1!Different');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(confirmation).toHaveAttribute('aria-invalid', 'true');
+
+    await page.locator('input[name="localEnabled"]').uncheck();
+    await page.locator('input[name="microsoftEnabled"]').check();
+    await password.fill('');
+    await confirmation.fill('');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('heading', { name: '6. Secrets and encryption' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back' }).click();
+    await page.locator('input[name="localEnabled"]').check();
+    await page.locator('input[name="microsoftEnabled"]').uncheck();
     await page.locator('input[name="adminPassword"]').fill('ReleaseCandidate1!Secure');
     await page.locator('input[name="adminPasswordConfirm"]').fill('ReleaseCandidate1!Secure');
     await page.getByRole('button', { name: 'Next' }).click();
@@ -197,6 +227,7 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     await page.getByRole('button', { name: 'Install CompDesk' }).click();
     expect((await installResponse).status()).toBe(200);
     await expect(page.getByRole('heading', { name: 'Installation complete' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('button', { name: 'Continue to sign in' })).toBeVisible();
 
     const retired = await page.request.get(`${setupOrigin}/setup`);
     expect(retired.status()).toBe(410);
@@ -204,8 +235,11 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     expect(retiredApi.status()).toBe(410);
 
     await startApplication();
-    await page.goto(`${setupOrigin}/auth/signin`);
-    await expect(page).toHaveURL(/\/auth\/signin/);
-    await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Installation complete' })).toBeVisible();
+    await Promise.all([
+        page.waitForURL(/\/auth\/signin/, { waitUntil: 'domcontentloaded' }),
+        page.getByRole('button', { name: 'Continue to sign in' }).click(),
+    ]);
+    await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByLabel('Email')).toBeVisible();
 });

@@ -85,6 +85,10 @@ export function parseEnvFile(contents) {
     return result;
 }
 
+export function productionAccessGuidance(applicationUrl, internalPort) {
+    return `Open CompDesk in your browser at ${applicationUrl}. Any later Next.js localhost:${internalPort} message is the container-internal listener.`;
+}
+
 // Prevents two production-start sequences from ever running concurrently in
 // the same process (e.g. a duplicate install callback racing a retry).
 export function createTransitionGuard() {

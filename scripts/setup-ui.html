@@ -50,7 +50,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             <label class="full">Optional CA certificate<textarea name="dbCa" rows="3"></textarea></label>
         </fieldset><button type="button" class="secondary" id="testDatabase">Test PostgreSQL</button><div id="databaseResult"></div></section>
         <section data-step="3" class="hidden"><h2>4. Identity and network</h2><fieldset>
-            <label class="full">Public application URL<input name="applicationUrl" type="url" value="http://localhost:3000" required></label>
+            <label class="full">Public application URL<input name="applicationUrl" type="url" value="{{SETUP_PUBLIC_ORIGIN}}" required></label>
             <label>Application name<input name="applicationName" value="CompDesk" maxlength="80" required></label>
             <label>Support email<input name="supportEmail" type="email" placeholder="support@example.com"></label>
             <label>Primary color<input name="primaryColor" value="#4f46e5" pattern="#[0-9A-Fa-f]{6}" required></label>
@@ -62,11 +62,11 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             <label class="choice"><input name="microsoftEnabled" type="checkbox"> Microsoft Entra ID</label>
             <label>Administrator name<input name="adminName" required></label>
             <label>Administrator email<input name="adminEmail" type="email" required autocomplete="username"></label>
-            <label>Local password<input name="adminPassword" type="password" minlength="14" autocomplete="new-password"></label>
-            <label>Confirm password<input name="adminPasswordConfirm" type="password" minlength="14" autocomplete="new-password"></label>
+            <label>Local password<input name="adminPassword" type="password" autocomplete="new-password" aria-describedby="passwordRequirements"></label>
+            <label>Confirm password<input name="adminPasswordConfirm" type="password" autocomplete="new-password" aria-describedby="passwordRequirements"></label>
             <label>Entra tenant ID<input name="tenantId"></label><label>Entra client ID<input name="clientId"></label>
             <label class="full">Entra client secret<input name="clientSecret" type="password" autocomplete="new-password"></label>
-        </fieldset><p>Passwords require at least 14 characters with upper, lower, number, and symbol. Expected callback: <code id="callback"></code></p></section>
+        </fieldset><div id="passwordRequirements" class="notice" aria-live="polite"></div><p>Expected callback: <code id="callback"></code></p></section>
         <section data-step="5" class="hidden"><h2>6. Secrets and encryption</h2><p>CompDesk generates independent cryptographic secrets during installation. They are written atomically to one ignored environment file with restrictive permissions and are never shown by this wizard.</p></section>
         <section data-step="6" class="hidden"><h2>7. SMTP and notifications</h2><label class="choice"><input name="smtpEnabled" type="checkbox"> Configure SMTP now (optional)</label><fieldset>
             <label>Host<input name="smtpHost"></label><label>Port<input name="smtpPort" type="number" value="587"></label>
@@ -102,6 +102,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
     const sections = [...form.querySelectorAll('[data-step]')];
     let step = 0;
     let csrf = '';
+    const passwordPolicy = JSON.parse('{{PASSWORD_POLICY_JSON}}');
     const element = (tag, text, className = '') => {
         const node = document.createElement(tag);
         if (text !== undefined) node.textContent = String(text);
@@ -137,11 +138,37 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
     const message = (text, kind = '') => { const node=$('#message'); node.textContent=text; node.className=`notice ${kind}`; };
     const copyText=async(text)=>{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return;}const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();const copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('Copy is unavailable. Select the command manually.');};
     document.querySelectorAll('[data-copy-target]').forEach((button)=>{button.onclick=async()=>{const target=document.getElementById(button.dataset.copyTarget);try{await copyText(target.textContent);$('#copyStatus').textContent='Command copied.';}catch(error){$('#copyStatus').textContent=error instanceof Error?error.message:'Copy failed. Select the command manually.';}};});
+    const passwordResults=()=>{const password=value('adminPassword');return {minimumLength:password.length>=passwordPolicy.minimumLength,lowercase:/[a-z]/.test(password),uppercase:/[A-Z]/.test(password),number:/\d/.test(password),symbol:/[^A-Za-z0-9]/.test(password),confirmation:Boolean(password)&&password===value('adminPasswordConfirm')};};
+    const renderPasswordRequirements=()=>{
+        const container=$('#passwordRequirements');
+        if(!checked('localEnabled')){container.classList.add('hidden');form.elements.adminPassword.removeAttribute('aria-invalid');form.elements.adminPasswordConfirm.removeAttribute('aria-invalid');return;}
+        container.classList.remove('hidden');
+        const results=passwordResults();
+        const labels={minimumLength:`At least ${passwordPolicy.minimumLength} characters`,lowercase:'A lowercase letter',uppercase:'An uppercase letter',number:'A number',symbol:'A symbol',confirmation:'Passwords match'};
+        const list=document.createElement('ul');
+        for(const key of ['minimumLength','lowercase','uppercase','number','symbol','confirmation']){const item=element('li',`${results[key]?'✓':'○'} ${labels[key]}`);item.dataset.requirement=key;list.append(item);}
+        container.replaceChildren(element('strong','Password requirements'),list);
+    };
+    const validateAuthenticationStep=()=>{
+        if(!checked('localEnabled')){form.elements.adminPassword.setCustomValidity('');form.elements.adminPasswordConfirm.setCustomValidity('');return true;}
+        const results=passwordResults();
+        const policyValid=['minimumLength','lowercase','uppercase','number','symbol'].every((key)=>results[key]);
+        form.elements.adminPassword.setCustomValidity(policyValid?'':`Use at least ${passwordPolicy.minimumLength} characters with lowercase, uppercase, number, and symbol.`);
+        form.elements.adminPasswordConfirm.setCustomValidity(results.confirmation?'':'Passwords must match.');
+        form.elements.adminPassword.setAttribute('aria-invalid',String(!policyValid));
+        form.elements.adminPasswordConfirm.setAttribute('aria-invalid',String(!results.confirmation));
+        renderPasswordRequirements();
+        const invalid=policyValid?(results.confirmation?null:form.elements.adminPasswordConfirm):form.elements.adminPassword;
+        if(invalid){invalid.reportValidity();invalid.focus();return false;}
+        return true;
+    };
+    for(const name of ['adminPassword','adminPasswordConfirm','localEnabled']) form.elements[name].addEventListener('input',renderPasswordRequirements);
     const render = () => {
         sections.forEach((section,index)=>section.classList.toggle('hidden',index!==step));
         $('#progress').style.width=`${(step+1)*10}%`; $('#stepLabel').textContent=`Step ${step+1} of 10`;
         $('#back').disabled=step===0; $('#next').classList.toggle('hidden',step===9); $('#install').classList.toggle('hidden',step!==9);
         if(step===4) $('#callback').textContent=`${value('applicationUrl').replace(/\/$/,'')}/api/auth/callback/microsoft-entra-id`;
+        if(step===4) renderPasswordRequirements();
         if(step===9) {
             const state=data();
             const authentication = `${state.authentication.localEnabled?'Local ':''}${state.authentication.microsoftEnabled?'Microsoft Entra ID':''}` || 'None';
@@ -183,6 +210,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
     };
     $('#back').onclick=()=>{step=Math.max(0,step-1);render();};
     $('#next').onclick=async()=>{
+        if(step===4&&!validateAuthenticationStep()) return;
         const currentFields = [...sections[step].querySelectorAll('input, select, textarea')];
         const invalidField = currentFields.find((field) => !field.checkValidity());
         if (invalidField) {
@@ -201,11 +229,9 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
     $('#testSmtp').onclick=()=>testSmtp('verify');
     $('#sendSmtp').onclick=()=>testSmtp('send');
     const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
-    // Bounded exponential backoff: never polls forever. Any successful
-    // response (not just mode:'production') is treated as "transitioned",
-    // since a non-setup 2xx/redirect from the same origin means the
-    // orchestrator has already handed the port to the production server.
-    const pollForTransition=async(loginUrl,statusNode)=>{
+    // Bounded exponential backoff keeps the completion screen visible while
+    // the setup listener hands the same port to the production server.
+    const pollForTransition=async(statusNode,continueButton)=>{
         const deadline=Date.now()+120_000;
         let delay=500;
         while(Date.now()<deadline){
@@ -213,7 +239,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
                 const response=await fetch('/api/health/live',{cache:'no-store'});
                 if(response.ok){
                     const body=await response.json().catch(()=>({}));
-                    if(body.mode!=='setup'){location.href=loginUrl.href;return;}
+                    if(body.mode!=='setup'){statusNode.textContent='CompDesk is ready.';continueButton.disabled=false;return;}
                 }
             }catch{ /* setup listener may be mid-shutdown; keep polling */ }
             statusNode.textContent=`Waiting for CompDesk to finish starting… (${Math.round((deadline-Date.now())/1000)}s)`;
@@ -233,17 +259,28 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             const autoTransition = Array.isArray(deployment.commands) && deployment.commands.length === 0 && Boolean(loginUrl);
             const children = [element('h2', 'Installation complete'), element('div', autoTransition ? 'Installation complete. CompDesk is starting.' : result.message, 'notice success')];
             if (result.demoCredentials) {
-                const demo = element('div', undefined, 'notice');
-                demo.append(element('strong', 'Demo credentials (shown once)'), document.createElement('br'), document.createTextNode(`Email: ${result.demoCredentials.email}`), document.createElement('br'), document.createTextNode(`Password: ${result.demoCredentials.password}`));
+                const demo = element('div', undefined, 'notice success');
+                const credentialsText=`CompDesk demo credentials\nEmail: ${result.demoCredentials.email}\nPassword: ${result.demoCredentials.password}\n`;
+                const controls=element('div',undefined,'actions');
+                const copyButton=element('button','Copy demo credentials','secondary');copyButton.type='button';
+                const downloadButton=element('button','Download demo credentials','secondary');downloadButton.type='button';
+                const credentialStatus=element('p','', 'copy-status');credentialStatus.setAttribute('role','status');credentialStatus.setAttribute('aria-live','polite');
+                copyButton.onclick=async()=>{try{await copyText(credentialsText);credentialStatus.textContent='Demo credentials copied.';}catch(error){credentialStatus.textContent=error instanceof Error?error.message:'Copy failed. Select the credentials manually.';}};
+                downloadButton.onclick=()=>{const url=URL.createObjectURL(new Blob([credentialsText],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='compdesk-demo-credentials.txt';link.click();URL.revokeObjectURL(url);credentialStatus.textContent='Demo credentials downloaded.';};
+                controls.append(copyButton,downloadButton);
+                demo.append(element('h3', 'Demo credentials (shown once)'), element('p', `Email: ${result.demoCredentials.email}`), element('p', `Password: ${result.demoCredentials.password}`), controls, credentialStatus);
                 children.push(demo);
             }
+            const continueButton=loginUrl?element('button','Continue to sign in','primary'):null;
+            if(continueButton){continueButton.type='button';continueButton.disabled=true;continueButton.onclick=()=>location.assign(loginUrl.href);}
             if (autoTransition) {
-                const status = element('p', 'Waiting for CompDesk to finish starting…');
+                const status = element('p', 'CompDesk is starting…');
                 status.id = 'transitionStatus';
-                children.push(status);
+                status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+                children.push(status,continueButton);
                 children.push(element('p', 'This setup server is now permanently disabled and cannot be reopened.'));
                 form.replaceChildren(...children);
-                pollForTransition(loginUrl, status);
+                pollForTransition(status,continueButton);
                 return;
             }
             if (deployment.summary) children.push(element('p', deployment.summary));
@@ -258,9 +295,15 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
                 }
                 children.push(stepsList);
             }
-            if (loginUrl) children.push(element('p', `Once production is running, sign in at: ${loginUrl.href}`));
+            let status=null;
+            if (loginUrl) {
+                children.push(element('p', `Once production is running, sign in at: ${loginUrl.href}`));
+                status=element('p', 'CompDesk is starting…');status.id='transitionStatus';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+                children.push(status,continueButton);
+            }
             children.push(element('p', 'This setup server is now permanently disabled and cannot be reopened.'));
             form.replaceChildren(...children);
+            if(status) pollForTransition(status,continueButton);
         }catch(error){
             $('#install').disabled=false;
             message(error instanceof Error ? error.message : 'Installation failed.','error');

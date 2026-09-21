@@ -4,6 +4,7 @@ import {
     classifyChildExit,
     createTransitionGuard,
     gracefulShutdown,
+    productionAccessGuidance,
     isRuntimeConfigValid,
     parseEnvFile,
     parseReceipt,
@@ -18,6 +19,13 @@ import {
 function noWait() {
     return Promise.resolve();
 }
+
+test('production startup distinguishes the browser URL from the container listener', () => {
+    assert.equal(
+        productionAccessGuidance('http://localhost:3100', 3000),
+        'Open CompDesk in your browser at http://localhost:3100. Any later Next.js localhost:3000 message is the container-internal listener.'
+    );
+});
 
 test('waitForTcp resolves as soon as connect succeeds and reports the attempt count', async () => {
     let calls = 0;

@@ -60,9 +60,14 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const searchFields: Prisma.HelpArticleWhereInput[] = language === 'fr'
-            ? [{ titleFr: { contains: query, mode: 'insensitive' } }, { summaryFr: { contains: query, mode: 'insensitive' } }, { contentFr: { contains: query, mode: 'insensitive' } }]
-            : [{ titleEn: { contains: query, mode: 'insensitive' } }, { summaryEn: { contains: query, mode: 'insensitive' } }, { contentEn: { contains: query, mode: 'insensitive' } }];
+        const searchFields: Prisma.HelpArticleWhereInput[] = [
+            { titleEn: { contains: query, mode: 'insensitive' } },
+            { summaryEn: { contains: query, mode: 'insensitive' } },
+            { contentEn: { contains: query, mode: 'insensitive' } },
+            { titleFr: { contains: query, mode: 'insensitive' } },
+            { summaryFr: { contains: query, mode: 'insensitive' } },
+            { contentFr: { contains: query, mode: 'insensitive' } },
+        ];
         const articles = await prisma.helpArticle.findMany({
             where: {
                 ...(includeDrafts ? {} : { isPublished: true, collection: { isPublished: true } }),

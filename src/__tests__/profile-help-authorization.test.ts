@@ -4,7 +4,7 @@ const mockRemoveUploadedImage = jest.fn();
 const mockPrisma = {
     user: { findUnique: jest.fn(), update: jest.fn() },
     helpCollection: { create: jest.fn() },
-    helpArticle: { findUnique: jest.fn() },
+    helpArticle: { findUnique: jest.fn(), findMany: jest.fn() },
     appSetting: { findUnique: jest.fn() },
 };
 
@@ -84,6 +84,22 @@ describe('profile preference and help-center authorization', () => {
         });
         const response = await getHelpArticles(new NextRequest('http://localhost/api/help/articles?slug=draft-article'));
         expect(response.status).toBe(404);
+    });
+
+    it('searches both languages and falls back when the preferred translation is unavailable', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue({ preferredLanguage: 'fr' });
+        mockPrisma.helpArticle.findMany.mockResolvedValue([{
+            id: 'article-id', collectionId: 'collection-id', slug: 'english-only',
+            titleEn: 'Reset your password', titleFr: '', summaryEn: 'Account recovery', summaryFr: '',
+            contentEn: 'Complete account recovery instructions.', contentFr: '', isPublished: true, sortOrder: 0,
+            collection: { id: 'collection-id', slug: 'accounts', titleEn: 'Accounts', titleFr: '', isPublished: true },
+        }]);
+        const response = await getHelpArticles(new NextRequest('http://localhost/api/help/articles?q=password'));
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toEqual([expect.objectContaining({ title: 'Reset your password', summary: 'Account recovery' })]);
+        const query = mockPrisma.helpArticle.findMany.mock.calls[0][0];
+        expect(JSON.stringify(query.where.OR)).toContain('titleEn');
+        expect(JSON.stringify(query.where.OR)).toContain('titleFr');
     });
 
     it('blocks normal users from creating help content', async () => {
