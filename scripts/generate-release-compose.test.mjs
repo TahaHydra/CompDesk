@@ -11,10 +11,9 @@ const SOURCE = fs.readFileSync(path.join(ROOT, 'docker-compose.yml'), 'utf8');
 
 test('pinReleaseCompose replaces every placeholder image reference with the exact pinned version', () => {
     const pinned = pinReleaseCompose(SOURCE, '1.2.3');
-    // The header comment legitimately mentions these names in prose — only
-    // the interpolation syntax itself must be gone from the pinned output.
     assert.doesNotMatch(pinned, /\$\{COMPDESK_VERSION/, 'no COMPDESK_VERSION interpolation should remain');
     assert.doesNotMatch(pinned, /\$\{COMPDESK_IMAGE/, 'no COMPDESK_IMAGE interpolation should remain');
+    assert.doesNotMatch(pinned, /0\.0\.0-local/, 'release assets must not mention the source-only placeholder tag');
     assert.match(pinned, /image: ghcr\.io\/tahahydra\/compdesk:1\.2\.3/);
     const occurrences = (pinned.match(/image: ghcr\.io\/tahahydra\/compdesk:1\.2\.3/g) || []).length;
     assert.equal(occurrences, 2, 'both config-init and compdesk services must be pinned');
