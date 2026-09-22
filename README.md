@@ -67,6 +67,10 @@ For local development, follow [SETUP.md](SETUP.md).
 
 ## Screenshots
 
+### Login
+
+![CompDesk login page](docs/screenshots/login.png)
+
 ### Dashboard
 
 ![CompDesk dashboard](docs/screenshots/demo-dashboard.png)
