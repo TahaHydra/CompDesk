@@ -30,8 +30,10 @@ interface ResolvedResponse {
     category: { id: string; name: string } | null;
 }
 
-function hasMeaningfulValues(values: Record<string, unknown>) {
-    return Object.values(values).some((value) => {
+function hasMeaningfulValues(values: Record<string, unknown>, fields: TicketFormFieldDefinition[] = []) {
+    return Object.entries(values).some(([key, value]) => {
+        const configured = fields.find((field) => field.fieldKey === key)?.defaultValue;
+        if (JSON.stringify(value) === JSON.stringify(configured)) return false;
         if (value === undefined || value === null || value === '') return false;
         if (Array.isArray(value)) return value.length > 0;
         return typeof value === 'boolean' ? value : true;
@@ -42,7 +44,12 @@ function compatibleValues(current: Record<string, unknown>, previousFields: Tick
     const previous = new Map(previousFields.map((field) => [field.fieldKey, field]));
     return Object.fromEntries(nextFields.flatMap((field) => {
         const oldField = previous.get(field.fieldKey);
-        if (oldField?.type === field.type && Object.prototype.hasOwnProperty.call(current, field.fieldKey)) return [[field.fieldKey, current[field.fieldKey]]];
+        if (oldField?.type === field.type && Object.prototype.hasOwnProperty.call(current, field.fieldKey)) {
+            const value = current[field.fieldKey];
+            if (field.type === 'DROPDOWN' && field.options.length && !field.options.includes(String(value))) return [];
+            if (field.type === 'MULTISELECT' && field.options.length && Array.isArray(value)) return [[field.fieldKey, value.filter((item) => field.options.includes(item))]];
+            return [[field.fieldKey, value]];
+        }
         return field.defaultValue === undefined || field.defaultValue === null ? [] : [[field.fieldKey, field.defaultValue]];
     }));
 }
@@ -133,7 +140,7 @@ export default function NewTicketPage() {
         return next;
     }, [t, templateQuery.data, values]);
 
-    const confirmRoutingChange = () => !hasMeaningfulValues(values) || window.confirm(t('Changing the department or category can change the ticket form. Compatible values will be kept, but other entered values may be removed. Continue?'));
+    const confirmRoutingChange = () => !hasMeaningfulValues(values, templateQuery.data?.fields) || window.confirm(t('Changing the department or category can change the ticket form. Compatible values will be kept, but other entered values may be removed. Continue?'));
     const changeDepartment = (nextQueueId: string) => {
         if (nextQueueId === queueId || !confirmRoutingChange()) return;
         setQueueId(nextQueueId); setCategoryId(''); setErrors({});
@@ -185,6 +192,7 @@ export default function NewTicketPage() {
                 <div><h1 className="text-3xl font-bold tracking-tight">{t('New Ticket')}</h1><p className="mt-1 text-muted-foreground">{t('Choose where the request belongs, then complete the resolved form.')}</p></div>
             </div>
 
+            {departmentsQuery.isError || categoriesQuery.isError ? <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm">{t('Routing options could not be loaded')} <Button variant="outline" onClick={() => { void departmentsQuery.refetch(); if (queueId) void categoriesQuery.refetch(); }}>{t('Retry')}</Button></div> : null}
             {routingMessage ? <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{routingMessage}</div> : null}
             <Card className="border shadow-sm">
                 <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Route className="h-5 w-5 text-primary" />{t('1. Route the request')}</CardTitle></CardHeader>

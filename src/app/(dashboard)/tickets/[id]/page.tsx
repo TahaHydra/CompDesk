@@ -100,11 +100,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             void fetch(`/api/tickets/${id}/presence`, { method: 'DELETE', keepalive: true });
         };
     }, [id, isAgent]);
-    const { data: ticket, isLoading } = useQuery({
+    const { data: ticket, isLoading, isError, error, refetch } = useQuery({
         queryKey: ['ticket', id],
         queryFn: async () => {
             const res = await fetch(`/api/tickets/${id}`);
-            if (!res.ok) throw new Error('Failed to fetch ticket');
+            if (!res.ok) throw Object.assign(new Error('Failed to fetch ticket'), { status: res.status });
             return res.json();
         },
         refetchInterval: 15000,
@@ -114,7 +114,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         queryKey: ['users'],
         queryFn: async () => {
             const res = await fetch('/api/users');
-            return res.json();
+            if (!res.ok) throw new Error('Failed to load users');
+            const values = await res.json();
+            if (!Array.isArray(values)) throw new Error('Invalid users response');
+            return values;
         },
         enabled: isAgent,
     });
@@ -143,7 +146,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             return res.json();
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+            for (const queryKey of [['ticket', id], ['tickets'], ['queue-tickets'], ['dashboard-stats']]) void queryClient.invalidateQueries({ queryKey });
             toast({ title: 'Ticket updated' });
         },
         onError: (e: Error) => {
@@ -367,7 +370,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <XCircle className="h-12 w-12 text-destructive mb-4" />
-                <h2 className="text-xl font-bold">Ticket not found</h2>
+                <h2 className="text-xl font-bold">{t(isError && (error as Error & { status?: number })?.status !== 404 ? 'Ticket could not be loaded' : 'Ticket not found')}</h2>{isError ? <Button variant="outline" onClick={() => void refetch()}>{t('Retry')}</Button> : null}
                 <Button asChild variant="outline" className="mt-4"><Link href="/tickets">Back to tickets</Link></Button>
             </div>
         );
