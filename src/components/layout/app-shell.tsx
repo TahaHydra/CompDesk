@@ -52,6 +52,8 @@ import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { AboutDialog } from '@/components/layout/about-dialog';
+import { UpdateDialog, UpdateFooterControl } from '@/components/layout/update-dialog';
+import { UpdateProvider } from '@/components/providers/update-provider';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
 import { installInteractionLockGuard } from '@/lib/browser-interaction';
@@ -210,6 +212,7 @@ export default function AppShell({
         </a>
     );
     return (
+        <UpdateProvider role={userRole} userId={session.user.id} version={version}>
         <div className="fixed inset-0 flex overflow-hidden bg-background">
             {/* Backdrop for mobile drawer */}
             {mobileOpen && (
@@ -270,13 +273,7 @@ export default function AppShell({
 
                 {/* Attribution footer */}
                 <div className={cn('shrink-0 border-t px-3 py-3', collapsed ? 'flex flex-col items-center gap-2' : 'space-y-1')}>
-                    {!collapsed && (
-                        <p className="text-[11px] leading-tight text-muted-foreground">
-                            CompDesk v{version}
-                            <br />
-                            {t('Open source')} · MIT
-                        </p>
-                    )}
+                    <UpdateFooterControl sidebarCollapsed={collapsed} />
                     <div className={cn('flex items-center text-[11px] font-medium text-muted-foreground', collapsed ? 'flex-col gap-2' : 'gap-1.5')}>
                         <a
                             href="https://xhydra.fr"
@@ -451,6 +448,8 @@ export default function AppShell({
                 </main>
             </div>
             <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} version={version} />
+            <UpdateDialog />
         </div>
+        </UpdateProvider>
     );
 }

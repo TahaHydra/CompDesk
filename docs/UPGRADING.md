@@ -12,6 +12,12 @@
 
 ### Docker Compose (unified stack)
 
+After verifying a complete backup and reviewing the desired release, download
+and review its version-pinned `docker-compose.yml` release asset (or deliberately
+update your exact image version/digest). Preserve your deployment-specific
+customizations. Pulling against the previous pinned file keeps the previous
+version selected. Then, from the deployment's Compose directory:
+
 ```bash
 docker compose pull
 docker compose up -d
@@ -21,6 +27,11 @@ Migrations run automatically, once, before the application starts serving
 traffic — there is no separate migration step to run by hand. See
 [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md) for the full upgrade/troubleshooting
 guidance and what happens if a migration fails.
+
+Administrators can inspect release metadata and readiness in the application;
+Super Admins can access copyable assisted instructions. See
+[UPDATE_CHECKS.md](UPDATE_CHECKS.md) for checking, privacy, permissions, and the
+limits of the informational recovery state.
 
 ### Standalone Node.js
 

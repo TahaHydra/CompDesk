@@ -14,8 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook, RefreshCw } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
+import { UpdateSettings } from '@/components/admin/update-settings';
+import { DemoSettings } from '@/components/admin/demo-settings';
+import { useLanguage } from '@/components/providers/language-provider';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
 import { copyText } from '@/lib/browser-clipboard';
@@ -840,6 +843,7 @@ function WebhooksTab() {
     );
 }
 export default function AdminSettingsPage() {
+    const { t } = useLanguage();
     return (
         <div className="space-y-6">
             <PageHeader icon={Settings} title="Settings" description="Application configuration" />
@@ -855,9 +859,11 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
                     <TabsTrigger value="api" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> API Clients</TabsTrigger>
                     <TabsTrigger value="webhooks" className="gap-1 min-w-max"><Webhook className="h-3.5 w-3.5" /> Webhooks</TabsTrigger>
+                    <TabsTrigger value="updates" className="gap-1 min-w-max"><RefreshCw className="h-3.5 w-3.5" /> {t('Updates')}</TabsTrigger>
+                    <TabsTrigger value="demo" className="gap-1 min-w-max">{t('Demo data')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="branding"><BrandingSettings /></TabsContent>
-                <TabsContent value="smtp"><GraphMailSettings /><SmtpSettingsTab /></TabsContent>
+                <TabsContent value="smtp"><div className="space-y-6"><GraphMailSettings /><SmtpSettingsTab /></div></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
                 <TabsContent value="entra"><EntraSettingsTab /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
@@ -865,6 +871,8 @@ export default function AdminSettingsPage() {
                 <TabsContent value="features"><FeatureFlagsTab /></TabsContent>
                 <TabsContent value="api"><ApiClientsTab /></TabsContent>
                 <TabsContent value="webhooks"><WebhooksTab /></TabsContent>
+                <TabsContent value="updates"><UpdateSettings /></TabsContent>
+                <TabsContent value="demo"><DemoSettings /></TabsContent>
             </Tabs>
         </div>
     );

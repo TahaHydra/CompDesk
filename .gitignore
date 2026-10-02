@@ -16,6 +16,7 @@ dist/
 .env.production.local
 .env.development.local
 .env.staging
+/.env.compdesk-test
 .env*.bak
 .env*.lock
 .env*.tmp

@@ -17,7 +17,7 @@ const ALLOWED_KEYS = new Set([
     'azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id',
     'dashboard_links', 'login_local_enabled',
     'feature_attachments_enabled', 'feature_dashboard_links_enabled', 'feature_external_api_enabled',
-    'feature_webhooks_enabled',
+    'feature_webhooks_enabled', 'updates_automatic',
 ]);
 
 function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Record<string, string>): Record<string, string> {

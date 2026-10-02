@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 
-const seed = readFileSync(path.join(process.cwd(), 'prisma', 'seed.ts'), 'utf8');
+const seed = readFileSync(path.join(process.cwd(), 'scripts', 'demo-dataset.mjs'), 'utf8');
 
 describe('realistic demo data contract', () => {
     it('ships useful department templates and assigns department defaults', () => {

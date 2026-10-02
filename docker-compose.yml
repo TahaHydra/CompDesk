@@ -111,6 +111,7 @@ services:
       COMPDESK_CONFIG_DIR: /config
       COMPDESK_DB_HOST: db
       COMPDESK_DB_PORT: '5432'
+      COMPDESK_UPDATE_MANIFEST_URL: ${COMPDESK_UPDATE_MANIFEST_URL:-}
       # Optional explicit browser-visible setup origin for reverse proxies or
       # custom domains. Direct Docker access normally derives the exact origin
       # from the request Host header, including a custom published APP_PORT.
