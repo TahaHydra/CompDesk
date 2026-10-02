@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { constants, createReadStream } from 'node:fs';
-import { copyFile, mkdir, readdir, stat, lstat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, stat, lstat, unlink, open } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import nextEnv from '@next/env';
@@ -29,6 +29,26 @@ async function containsFiles(directory) {
         if (!entry.isDirectory() || await containsFiles(path.join(directory, entry.name))) return true;
     }
     return false;
+}
+
+async function normalizeHistoricalPlaceholder(file) {
+    const info = await lstat(file);
+    if (!info.isFile()) return false;
+    if (info.size === 0) return true;
+    if (info.size !== 9 && info.size !== 10) return false;
+    const handle = await open(file, constants.O_RDWR | (constants.O_NOFOLLOW || 0));
+    try {
+        const openedInfo = await handle.stat();
+        if (!openedInfo.isFile() || openedInfo.size !== info.size) return false;
+        const bytes = Buffer.alloc(info.size);
+        const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+        if (bytesRead !== bytes.length || (!bytes.equals(Buffer.from('.gitkeep\n')) && !bytes.equals(Buffer.from('.gitkeep\r\n')))) return false;
+        // Only these exact historical repository sentinels have no application data.
+        await handle.truncate(0);
+        return true;
+    } finally {
+        await handle.close();
+    }
 }
 
 export async function migratePrivateAttachments({ root, storageRoot, prisma }) {
@@ -96,7 +116,7 @@ export async function migratePrivateAttachments({ root, storageRoot, prisma }) {
             throw error;
         });
         for (const entry of entries) {
-            if (entry.name === '.gitkeep' && entry.isFile() && (await lstat(path.join(uploads, entry.name))).size === 0) continue;
+            if (entry.name === '.gitkeep' && entry.isFile() && await normalizeHistoricalPlaceholder(path.join(uploads, entry.name))) continue;
             if (['branding', 'quick-links'].includes(entry.name) && entry.isDirectory()) continue;
             if (entry.name === '.gitkeep' || !entry.isDirectory() || await containsFiles(path.join(uploads, entry.name))) {
                 throw new Error(`Unhandled public upload remains; preserve and reconcile it before startup: ${path.join(uploads, entry.name)}`);

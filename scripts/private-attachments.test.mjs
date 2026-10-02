@@ -182,6 +182,27 @@ test('startup migration accepts only the regular zero-byte uploads placeholder',
     assert.equal(await fs.readFile(path.join(root, 'private', ticket, filename), 'utf8'), 'private content');
 });
 
+for (const marker of ['.gitkeep\n', '.gitkeep\r\n']) {
+    test(`startup migration normalizes exact historical placeholder ${JSON.stringify(marker)}`, async (t) => {
+        const root = await fixture(t);
+        await fs.writeFile(path.join(root, 'public', 'uploads', '.gitkeep'), marker);
+        await fs.cp(path.join(root, 'public'), path.join(root, '.next', 'standalone', 'public'), { recursive: true });
+        await migrate(root, { id: 'attachment', ticketId: ticket, path: oldPath });
+        for (const publicRoot of ['public', '.next/standalone/public']) {
+            assert.equal((await fs.stat(path.join(root, publicRoot, 'uploads', '.gitkeep'))).size, 0);
+        }
+        assert.equal(await fs.readFile(path.join(root, 'private', ticket, filename), 'utf8'), 'private content');
+    });
+}
+
+test('startup migration preserves and rejects a malformed historical placeholder', async (t) => {
+    const root = await fixture(t);
+    const marker = path.join(root, 'public', 'uploads', '.gitkeep');
+    await fs.writeFile(marker, '.gitkeepX\n');
+    await assert.rejects(migrate(root, { id: 'attachment', ticketId: ticket, path: oldPath }), /Unhandled public upload/);
+    assert.equal(await fs.readFile(marker, 'utf8'), '.gitkeepX\n');
+});
+
 for (const [name, content] of [['.gitkeep', 'private data'], ['unexpected.txt', ''], ['.gitkeep', null]]) {
     test(`guards and startup migration reject unexpected upload ${name} (${content === null ? 'directory' : 'file'})`, async (t) => {
         const root = await fixture(t);
