@@ -1,6 +1,7 @@
 FROM node:24-alpine AS base
 RUN apk upgrade --no-cache
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
