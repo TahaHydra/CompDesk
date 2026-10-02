@@ -25,9 +25,11 @@ export function GraphMailSettings() {
         {draft.provider === 'graph' ? <>
             <p className="text-sm text-muted-foreground">{t('Use a dedicated Entra mail application scoped to your sender mailbox. Sign-in configuration is separate.')}</p>
             <div className="grid gap-4 sm:grid-cols-2">{(['tenantId', 'clientId', 'sender', 'secret'] as const).map((key) => <div key={key} className="space-y-2"><Label htmlFor={`graph-${key}`}>{t({ tenantId: 'Tenant ID', clientId: 'Application client ID', sender: 'Sender mailbox', secret: 'Application client secret' }[key])}</Label><Input id={`graph-${key}`} type={key === 'secret' ? 'password' : key === 'sender' ? 'email' : 'text'} autoComplete={key === 'secret' ? 'new-password' : 'off'} value={draft[key]} placeholder={key === 'secret' && query.data?.secretConfigured ? t('Configured; enter a replacement only') : undefined} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} /></div>)}</div>
-            <a className="text-sm underline" href="https://learn.microsoft.com/en-us/exchange/permissions-exo/application-rbac" target="_blank" rel="noreferrer">{t('Mailbox permission documentation')}</a>
+            <div><a className="text-sm underline" href="https://learn.microsoft.com/en-us/exchange/permissions-exo/application-rbac" target="_blank" rel="noreferrer">{t('Mailbox permission documentation')}</a></div>
         </> : <p className="text-sm text-muted-foreground">{t('SMTP configuration remains available below.')}</p>}
-        <Button disabled={!query.data || save.isPending} onClick={() => { setMessage(''); save.mutate(); }}>{t('Save mail settings')}</Button>
+        <div className="flex justify-end border-t pt-4">
+            <Button disabled={!query.data || save.isPending} onClick={() => { setMessage(''); save.mutate(); }}>{t('Save mail settings')}</Button>
+        </div>
         {query.data?.provider === 'graph' ? <div className="flex flex-wrap items-end gap-3"><div className="space-y-2"><Label htmlFor="graph-recipient">{t('Test recipient')}</Label><Input id="graph-recipient" type="email" value={recipient} onChange={(event) => setRecipient(event.target.value)} /></div><Button variant="outline" disabled={!recipient || test.isPending || save.isPending} onClick={() => { setMessage(''); test.mutate(); }}>{t('Send test message')}</Button></div> : null}
         {message ? <p role="status" className="text-sm">{message}</p> : null}
     </CardContent></Card>;
