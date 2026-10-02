@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { projectTicketFormForRole } from '@/lib/api-dto';
 import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { filterDashboardLinksForQueueAccess, parseDashboardLinks } from '@/lib/dashboard-links';
@@ -77,7 +78,7 @@ export async function GET() {
 
         return NextResponse.json({
             stats: { total, open, pending, resolved, urgent, escalated },
-            recentTickets,
+            recentTickets: recentTickets.map((ticket) => projectTicketFormForRole(ticket, role)),
             customLinks,
             ticketView: broadestTicketView(role),
         });

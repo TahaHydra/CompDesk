@@ -3,8 +3,9 @@ const mockCanAccessQueue = jest.fn();
 const mockCanAccessTicket = jest.fn();
 const mockAuthenticate = jest.fn();
 const mockPrisma = {
+    appSetting: { findUnique: jest.fn().mockResolvedValue(null) },
     ticket: { findMany: jest.fn(), count: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
-    queue: { findFirst: jest.fn() },
+    queue: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     slaPolicy: { findMany: jest.fn(), findUnique: jest.fn() },
     user: { upsert: jest.fn(), findMany: jest.fn() },
     groupMember: { findMany: jest.fn() },
@@ -30,6 +31,7 @@ jest.mock('@/lib/email', () => ({ sendTicketCreatedEmail: jest.fn(), sendNewTick
 jest.mock('@/lib/webhooks', () => ({ fireWebhook: jest.fn() }));
 jest.mock('@/lib/logger', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn() } }));
 
+import { GET as dashboardStats } from '@/app/api/dashboard/stats/route';
 import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { GET, POST } from '@/app/api/tickets/route';
@@ -160,4 +162,13 @@ it('rejects replay when the current API client has lost access to the stored dep
         source: 'api', actor: user, requester: user, input: { queueId, idempotencyKey: idempotencyId },
         apiClient: { id: 'client', name: 'Client', allowedQueueIds: [], allowAllQueues: false },
     })).rejects.toMatchObject({ status: 403 });
+});
+
+test('dashboard omits hidden historical form defaults and values for requesters', async () => {
+ const response = await dashboardStats();
+ expect(response.status).toBe(200);
+ const data = await response.json();
+ expect(JSON.stringify(data.recentTickets)).not.toContain('private-default');
+ expect(JSON.stringify(data.recentTickets)).not.toContain('private-value');
+ expect(JSON.stringify(data.recentTickets)).toContain('visible');
 });
