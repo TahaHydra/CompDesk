@@ -10,7 +10,7 @@ const mockPrisma = {
     user: { upsert: jest.fn(), findMany: jest.fn() },
     groupMember: { findMany: jest.fn() },
     queueMember: { findMany: jest.fn() },
-    timelineEvent: { createMany: jest.fn() },
+    timelineEvent: { createMany: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
 };
 jest.mock('@/lib/auth', () => ({ auth: mockAuth }));
@@ -36,6 +36,7 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { GET, POST } from '@/app/api/tickets/route';
 import { PATCH } from '@/app/api/tickets/[id]/route';
+import { POST as escalate } from '@/app/api/tickets/[id]/escalate/route';
 import { POST as apiPost } from '@/app/api/v1/tickets/route';
 import { createTicketFromResolvedTemplate } from '@/lib/tickets/create-ticket';
 import * as templateService from '@/lib/ticket-form/service';
@@ -173,6 +174,14 @@ test('dashboard omits hidden historical form defaults and values for requesters'
  expect(JSON.stringify(data.recentTickets)).toContain('visible');
 });
 
+test('dashboard urgent count applies the same role visibility as priority filters', async () => {
+    expect((await dashboardStats()).status).toBe(200);
+    const urgentQuery = mockPrisma.ticket.count.mock.calls.find(([query]) => query.where.priority === 'URGENT')?.[0];
+    expect(JSON.stringify(urgentQuery)).toContain('"visibleTo":["USER"]');
+    expect(JSON.stringify(urgentQuery)).toContain('"fieldKey":"priority"');
+    expect(mockPrisma.ticket.count.mock.calls[0][0].where).toEqual({ AND: [{ requesterId: user.id }, { status: { not: 'WITHDRAWN' } }] });
+});
+
 test('creation selects only active staff for watchers and department mail', async () => {
  prepareCreation();
  mockPrisma.$transaction.mockResolvedValueOnce(rawTicket());
@@ -180,4 +189,35 @@ test('creation selects only active staff for watchers and department mail', asyn
  for (const model of [mockPrisma.groupMember, mockPrisma.queueMember]) {
   expect(model.findMany.mock.calls[0][0].where.user).toEqual({ isActive: true, role: { in: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] } });
  }
+});
+
+test('escalation projects private fields for the acting agent', async () => {
+    mockAuth.mockResolvedValue({ user: { ...user, role: 'AGENT' } });
+    const privateTicket = rawTicket();
+    privateTicket.formSchemaSnapshot.fields[1].visibleTo = ['ADMIN'];
+    mockPrisma.ticket.findUnique.mockResolvedValue(privateTicket);
+    mockPrisma.ticket.findUniqueOrThrow.mockResolvedValue(privateTicket);
+    const response = await escalate(new NextRequest('http://localhost/api/tickets/ticket/escalate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: 1 }) }), { params: Promise.resolve({ id: 'ticket' }) });
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain('private-');
+});
+
+test('agents cannot patch built-in fields excluded by immutable editability', async () => {
+    mockAuth.mockResolvedValue({ user: { ...user, role: 'AGENT' } });
+    const privateTicket = rawTicket();
+    privateTicket.formSchemaSnapshot.fields.push({ id: 'description', fieldKey: 'description', label: 'Description', type: 'TEXTAREA', defaultValue: '', visibleTo: ['ADMIN'], editableBy: ['ADMIN'], isActive: true });
+    mockPrisma.ticket.findUnique.mockResolvedValue(privateTicket);
+    const response = await PATCH(new NextRequest('http://localhost/api/tickets/ticket', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: 'Overwrite confidential content', expectedVersion: 1 }) }), { params: Promise.resolve({ id: 'ticket' }) });
+    expect(response.status).toBe(403);
+    expect(mockPrisma.ticket.updateMany).not.toHaveBeenCalled();
+});
+
+test('escalation cannot overwrite a priority that the agent cannot edit', async () => {
+    mockAuth.mockResolvedValue({ user: { ...user, role: 'AGENT' } });
+    const privateTicket = rawTicket();
+    privateTicket.formSchemaSnapshot.fields.push({ id: 'priority', fieldKey: 'priority', label: 'Priority', type: 'DROPDOWN', defaultValue: 'NORMAL', visibleTo: ['ADMIN', 'AGENT'], editableBy: ['ADMIN'], isActive: true });
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...privateTicket, escalationLevel: 0 });
+    const response = await escalate(new NextRequest('http://localhost/api/tickets/ticket/escalate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedVersion: 1 }) }), { params: Promise.resolve({ id: 'ticket' }) });
+    expect(response.status).toBe(403);
+    expect(mockPrisma.ticket.updateMany).not.toHaveBeenCalled();
 });

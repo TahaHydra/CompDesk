@@ -10,6 +10,7 @@ import { resolveStoredAttachmentPath } from '@/lib/attachment-storage';
 import { isAttachmentDownloadable } from '@/lib/attachment-security';
 import { requestSourceIp } from '@/lib/request-ip';
 import logger from '@/lib/logger';
+import { ticketAttachmentVisibleToRole } from '@/lib/ticket-form/privacy';
 
 export async function GET(
     _req: NextRequest,
@@ -22,10 +23,10 @@ export async function GET(
         const { id } = await params;
         const attachment = await prisma.attachment.findUnique({
             where: { id },
-            include: { ticket: { select: { id: true, requesterId: true, queueId: true } } },
+            include: { ticket: { select: { id: true, requesterId: true, queueId: true, formSchemaSnapshot: true, submittedFormValues: true } } },
         });
         if (!attachment) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
-        if (attachment.isInternal && session.user.role === 'USER') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!ticketAttachmentVisibleToRole(attachment.ticket, attachment, session.user.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         if (!(await canAccessTicket(session.user.id, session.user.role, attachment.ticket))) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
@@ -70,10 +71,10 @@ export async function DELETE(
         const { id } = await params;
         const attachment = await prisma.attachment.findUnique({
             where: { id },
-            include: { ticket: { select: { id: true, requesterId: true, queueId: true } } },
+            include: { ticket: { select: { id: true, requesterId: true, queueId: true, formSchemaSnapshot: true, submittedFormValues: true } } },
         });
         if (!attachment) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
-        if (attachment.isInternal && session.user.role === 'USER') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (!ticketAttachmentVisibleToRole(attachment.ticket, attachment, session.user.role, true)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const hasTicketAccess = await canAccessTicket(session.user.id, session.user.role, attachment.ticket);
         const isOwner = attachment.ticket.requesterId === session.user.id;

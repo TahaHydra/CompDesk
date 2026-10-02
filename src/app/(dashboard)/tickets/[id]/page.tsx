@@ -50,8 +50,9 @@ function StatusBadge({ value }: { value: string }) {
     );
 }
 
-function PriorityBadge({ value }: { value: string }) {
+function PriorityBadge({ value }: { value: string | null | undefined }) {
     const { t } = useLanguage();
+    if (!value) return null;
     return (
         <Badge variant="outline" className={cn('text-xs', getPriorityBadgeClass(value))}>
             {t(formatTicketValue(value))}
@@ -502,7 +503,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono text-sm text-muted-foreground">{ticket.key}</span>
                             <StatusBadge value={ticket.status} />
-                            <PriorityBadge value={ticket.priority} />
+                            {ticket.priority ? <PriorityBadge value={ticket.priority} /> : null}
                             {ticket.escalationLevel > 0 && (
                                 <Badge variant="destructive" className="gap-1"><ArrowUpCircle className="h-3 w-3" /> {t("Escalated L")}{ticket.escalationLevel}</Badge>
                             )}
@@ -812,7 +813,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     />
                                 </div>
 
-                                <div className="space-y-2">
+                                {ticket.priority ? <div className="space-y-2">
                                     <label className="text-xs font-medium text-muted-foreground">{t("Priority")}</label>
                                     <Select
                                         value={ticket.priority}
@@ -829,7 +830,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                </div>
+                                </div> : null}
 
                                 {/* Category selector for agents */}
                                 <div className="space-y-2">

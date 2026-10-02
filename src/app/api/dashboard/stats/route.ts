@@ -7,7 +7,7 @@ import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { filterDashboardLinksForQueueAccess, parseDashboardLinks } from '@/lib/dashboard-links';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
-import { broadestTicketView } from '@/lib/ticket-search';
+import { broadestTicketView, ticketBuiltInVisibilityWhere } from '@/lib/ticket-search';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -36,7 +36,7 @@ export async function GET() {
             prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['NEW', 'OPEN'] } } }),
             prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['PENDING_USER', 'PENDING_AGENT'] } } }),
             prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
-            prisma.ticket.count({ where: { ...activeWhereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
+            prisma.ticket.count({ where: { AND: [activeWhereClause, ticketBuiltInVisibilityWhere('priority', role)], priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
             prisma.ticket.findMany({
                 where: activeWhereClause,
                 include: {

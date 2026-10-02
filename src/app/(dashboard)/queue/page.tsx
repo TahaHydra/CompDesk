@@ -272,9 +272,9 @@ export default function QueueInboxPage() {
                                                 </Badge>
                                             </td>
                                             <td className="px-4 py-3 hidden sm:table-cell">
-                                                <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>
+                                                {ticket.priority ? <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>
                                                     {t(ticket.priority)}
-                                                </Badge>
+                                                </Badge> : null}
                                             </td>
                                             <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap hidden xl:table-cell">
                                                 {new Date(ticket.createdAt).toLocaleDateString()}

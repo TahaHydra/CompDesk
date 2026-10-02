@@ -8,6 +8,7 @@ import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessTicket } from '@/lib/permissions';
 import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipients';
+import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
 
 // POST /api/tickets/[id]/comments
 export async function POST(
@@ -76,7 +77,7 @@ export async function POST(
         if (!isInternal) {
             const emails = await ticketNotificationRecipients(id, session.user.id);
             if (emails.length > 0) {
-                void sendNewCommentEmail(emails, ticket.key, ticket.title, content.substring(0, 200));
+                void sendNewCommentEmail(emails, ticket.key, ticketPublicTitle(ticket), content.substring(0, 200));
             }
         }
 

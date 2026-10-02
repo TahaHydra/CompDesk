@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAgentAccessibleQueueIds, getQueueInboxQueueIds } from '@/lib/permissions';
+import { projectTicketBuiltIns, projectTicketTimelineEvent } from '@/lib/ticket-form/privacy';
 
 export async function GET() {
     try {
@@ -38,7 +39,7 @@ export async function GET() {
                 where: eventFilter,
                 include: {
                     user: { select: { name: true } },
-                    ticket: { select: { id: true, key: true, title: true } },
+                    ticket: { select: { id: true, key: true, title: true, formSchemaSnapshot: true } },
                 },
                 orderBy: { createdAt: 'desc' },
                 take: 20,
@@ -46,7 +47,7 @@ export async function GET() {
             prisma.timelineEvent.count({
                 where: { ...eventFilter, createdAt: { gt: lastReadAt } },
             }),
-            prisma.ticketReminder.findMany({ where: { userId, deliveredAt: { not: null }, status: { not: 'CANCELLED' }, ticket: ticketFilter }, include: { ticket: { select: { id: true, key: true, title: true } } }, orderBy: { deliveredAt: 'desc' }, take: 20 }),
+            prisma.ticketReminder.findMany({ where: { userId, deliveredAt: { not: null }, status: { not: 'CANCELLED' }, ticket: ticketFilter }, include: { ticket: { select: { id: true, key: true, title: true, formSchemaSnapshot: true } } }, orderBy: { deliveredAt: 'desc' }, take: 20 }),
             prisma.ticketReminder.count({ where: { userId, deliveredAt: { gt: lastReadAt }, status: { not: 'CANCELLED' }, ticket: ticketFilter } }),
         ]);
 
@@ -54,13 +55,13 @@ export async function GET() {
             items: [...items.map((item) => ({
                 id: item.id,
                 type: item.type,
-                content: item.deletedAt && role !== 'SUPER_ADMIN' ? '[Deleted comment]' : item.content,
+                content: item.deletedAt && role !== 'SUPER_ADMIN' ? '[Deleted comment]' : projectTicketTimelineEvent(item.ticket, item, role).content,
                 createdAt: item.createdAt,
                 userName: item.user.name,
                 ticketId: item.ticket.id,
                 ticketKey: item.ticket.key,
-                ticketTitle: item.ticket.title,
-            })), ...reminders.map((reminder) => ({ id: reminder.id, type: 'REMINDER', content: reminder.note, createdAt: reminder.deliveredAt, userName: session.user.name || '', ticketId: reminder.ticketId, ticketKey: reminder.ticket.key, ticketTitle: reminder.ticket.title }))].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()).slice(0, 20),
+                ticketTitle: projectTicketBuiltIns(item.ticket, role).title,
+            })), ...reminders.map((reminder) => ({ id: reminder.id, type: 'REMINDER', content: reminder.note, createdAt: reminder.deliveredAt, userName: session.user.name || '', ticketId: reminder.ticketId, ticketKey: reminder.ticket.key, ticketTitle: projectTicketBuiltIns(reminder.ticket, role).title }))].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()).slice(0, 20),
             unreadCount: unreadCount + reminderUnread,
         });
     } catch (error) {

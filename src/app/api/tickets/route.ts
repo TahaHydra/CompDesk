@@ -13,6 +13,7 @@ import {
     buildTicketVisibilityWhere,
     normalizeTicketView,
     ticketScopeLabel,
+    ticketBuiltInVisibilityWhere,
 } from '@/lib/ticket-search';
 import { createTicketFromResolvedTemplate } from '@/lib/tickets/create-ticket';
 import { TemplateResolutionError } from '@/lib/ticket-form/service';
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
 
         const priorityParam = searchParams.get('priority');
         if (priorityParam && VALID_PRIORITIES.has(priorityParam as Priority)) {
+            conditions.push(ticketBuiltInVisibilityWhere('priority', role));
             conditions.push({ priority: priorityParam as Priority });
         }
 
@@ -102,8 +104,8 @@ export async function GET(req: NextRequest) {
         if (ticketKey) conditions.push({ key: { equals: ticketKey, mode: 'insensitive' } });
 
         const tagIds = parseIds(searchParams.get('tagIds'), 20);
-        if (tagIds.length > 0) conditions.push(buildTicketTagFilter(tagIds, 'any'));
-        if (search) conditions.push(buildTicketTextSearch(search));
+        if (tagIds.length > 0) conditions.push(ticketBuiltInVisibilityWhere('tags', role), buildTicketTagFilter(tagIds, 'any'));
+        if (search) conditions.push(buildTicketTextSearch(search, role));
 
         const where: Prisma.TicketWhereInput = { AND: conditions };
         const [tickets, total] = await Promise.all([

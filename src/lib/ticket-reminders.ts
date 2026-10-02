@@ -4,6 +4,7 @@ import { canAccessTicket } from '@/lib/permissions';
 import { sendEmail } from '@/lib/email';
 import { translate } from '@/lib/i18n';
 import logger from '@/lib/logger';
+import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
 
 export const reminderTerminalStatuses = ['RESOLVED', 'CLOSED', 'WITHDRAWN'];
 export function reminderRetryTime(attempts: number, now = Date.now()) { return new Date(now + Math.min(3600000, 60000 * 2 ** Math.max(0, attempts - 1))); }
@@ -20,7 +21,7 @@ export async function processTicketReminders() {
         AND "next_attempt_at" <= timezone('UTC', NOW()) AND ("lease_until" IS NULL OR "lease_until" < timezone('UTC', NOW())) ORDER BY "scheduled_at" FOR UPDATE SKIP LOCKED LIMIT 10)
         RETURNING "id"`;
     for (const { id } of claimed) {
-        const reminder = await prisma.ticketReminder.findUnique({ where: { id }, include: { user: { select: { id: true, email: true, role: true, isActive: true, preferredLanguage: true } }, ticket: { select: { id: true, key: true, title: true, status: true, queueId: true, requesterId: true } } } });
+        const reminder = await prisma.ticketReminder.findUnique({ where: { id }, include: { user: { select: { id: true, email: true, role: true, isActive: true, preferredLanguage: true } }, ticket: { select: { id: true, key: true, title: true, formSchemaSnapshot: true, status: true, queueId: true, requesterId: true } } } });
         if (!reminder || reminder.status !== 'PENDING' || reminder.leaseToken !== leaseToken) continue;
         const where = { id, status: 'PENDING', leaseToken };
         // A batch can wait behind slow mail requests. Renew only if this worker still owns it.
@@ -36,7 +37,7 @@ export async function processTicketReminders() {
             const heading = translate(reminder.user.preferredLanguage === 'fr' ? 'fr' : 'en', 'Ticket reminder');
             const base = (process.env.AUTH_URL || process.env.NEXTAUTH_URL || '').replace(/\/$/, '');
             const link = /^https?:\/\//.test(base) ? `${base}/tickets/${encodeURIComponent(reminder.ticketId)}` : '';
-            accepted = await sendEmail({ to: reminder.user.email, subject: `${heading}: ${reminder.ticket.key}`, html: `<h2>${escape(heading)}</h2><p>${escape(reminder.ticket.title)}</p><p>${escape(reminder.note)}</p>${link ? `<a href="${escape(link)}">${escape(reminder.ticket.key)}</a>` : ''}`, text: `${heading}: ${reminder.ticket.key}\n${reminder.ticket.title}\n${reminder.note}\n${link}` });
+            accepted = await sendEmail({ to: reminder.user.email, subject: `${heading}: ${reminder.ticket.key}`, html: `<h2>${escape(heading)}</h2><p>${escape(ticketPublicTitle(reminder.ticket))}</p><p>${escape(reminder.note)}</p>${link ? `<a href="${escape(link)}">${escape(reminder.ticket.key)}</a>` : ''}`, text: `${heading}: ${reminder.ticket.key}\n${ticketPublicTitle(reminder.ticket)}\n${reminder.note}\n${link}` });
         }
         const complete = !reminder.email || accepted;
         await prisma.ticketReminder.updateMany({ where, data: { emailAccepted: accepted, status: complete ? 'DELIVERED' : reminder.attempts >= 5 ? 'FAILED' : 'PENDING', nextAttemptAt: reminderRetryTime(reminder.attempts), leaseToken: null, leaseUntil: null } });

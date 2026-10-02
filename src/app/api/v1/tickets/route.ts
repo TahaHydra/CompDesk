@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { assertApiResponseSafe } from '@/lib/api-dto';
+import { assertApiResponseSafe, projectTicketFormForRole } from '@/lib/api-dto';
 import {
     apiClientCanAccessQueue,
     auditExternalApiRequest,
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
         prisma.ticket.count({ where }),
     ]);
     await auditExternalApiRequest({ req, client, scope: 'tickets:read', queueId, result: 'success', target: '/api/v1/tickets' });
-    return NextResponse.json(assertApiResponseSafe({ tickets, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }));
+    return NextResponse.json(assertApiResponseSafe({ tickets: tickets.map((ticket) => projectTicketFormForRole(ticket, 'USER')), pagination: { page, limit, total, pages: Math.ceil(total / limit) } }));
 }
 
 export async function POST(req: NextRequest) {

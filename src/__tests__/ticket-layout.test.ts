@@ -4,7 +4,7 @@ import ts from 'typescript';
 import { isFieldConditionVisible } from '@/lib/ticket-form/conditions';
 import { ticketFormSubmissionValues } from '@/lib/ticket-form/client-submission';
 
-function render(file: string, props: any, ticket?: any, globals = {}) {
+function render(file: string, props: any, ticket?: any, globals = {}, overrides = {}) {
     const react = { createElement: (type: any, props: any, ...children: any[]) => ({ type, props: { ...props, children } }),
         use: (value: any) => value, useState: (value: any) => [value, jest.fn()], useRef: (value: any) => ({ current: value }),
         useEffect: jest.fn(), useCallback: (fn: any) => fn, useMemo: (fn: any) => fn() };
@@ -20,6 +20,7 @@ function render(file: string, props: any, ticket?: any, globals = {}) {
         '@/lib/ticket-display': { formatTicketValue: (value: string) => value, getStatusBadgeClass: () => '', getPriorityBadgeClass: () => '' },
         '@/lib/ticket-form/conditions': { isFieldConditionVisible },
         '@/lib/ticket-form/client-submission': { ticketFormSubmissionValues },
+        ...overrides,
     };
     const compiledModule = { exports: {} as any };
     const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
@@ -38,6 +39,27 @@ test('helper text follows controls and checkboxes have one accessible label', ()
     expect(flat.indexOf(flat.find((n) => n.type === 'Input'))).toBeLessThan(flat.indexOf('Long guidance'));
     expect(flat.filter((n) => n === 'Sensitive')).toHaveLength(1);
     expect(flat.find((n) => n.type === 'input' && n.props.type === 'checkbox').props['aria-describedby']).toBeUndefined();
+});
+
+test.each(['dashboard', 'queue'])('%s still renders redacted priority without a priority badge', (page) => {
+    const redacted = { id: 't', key: 'T-1', title: 'Support request', status: 'NEW', priority: null, createdAt: '2026-10-02T10:00:00Z' };
+    const overrides = {
+        '@/components/providers/branding-provider': { useBranding: () => ({ shortApplicationName: 'CompDesk' }) },
+        'next/navigation': { useRouter: () => ({ replace: jest.fn() }), useSearchParams: () => new URLSearchParams() },
+        '@tanstack/react-query': { useQuery: ({ queryKey }: any) => ({ data: queryKey[0] === 'dashboard-stats' ? { stats: {}, recentTickets: [redacted], customLinks: [], ticketView: 'all' } : queryKey[0] === 'queue-tickets' ? { tickets: [redacted], pagination: { page: 1, pages: 1, total: 1 } } : [{ id: 'q', name: 'Department' }], isLoading: false }) },
+    };
+    const flat = nodes(render(`src/app/(dashboard)/${page}/page.tsx`, {}, redacted, {}, overrides));
+    expect(flat).toContain('Support request');
+    expect(flat.filter((node) => node?.type === 'Badge' && node.props.className?.includes('priority-'))).toHaveLength(0);
+});
+
+test('detail renders redacted description and priority without badges or empty priority selectors', () => {
+    const redacted = { id: 't', key: 'T-1', requesterId: 'me', requester: { name: 'Owner' }, title: 'Support request', status: 'NEW', priority: null, description: null, severity: null, createdAt: '2026-10-02T10:00:00Z', updatedAt: '2026-10-02T10:00:00Z', timeline: [] };
+    const flat = nodes(render('src/app/(dashboard)/tickets/[id]/page.tsx', { params: { id: 't' } }, redacted));
+    expect(flat).toContain('Support request');
+    expect(flat).toContain('No description provided');
+    expect(flat.filter((node) => node?.type?.name === 'PriorityBadge' && node.props.value == null)).toHaveLength(0);
+    expect(flat.filter((node) => node?.type === 'Select' && node.props.value == null)).toHaveLength(0);
 });
 
 test('a later upload failure preserves earlier successful files and retry appends without duplicates', async () => {

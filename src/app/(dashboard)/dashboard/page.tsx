@@ -29,7 +29,7 @@ interface RecentTicket {
     key: string;
     title: string;
     status: string;
-    priority: string;
+    priority: string | null;
     createdAt: string;
     slaBreached?: boolean;
     requester?: { name: string } | null;
@@ -134,7 +134,7 @@ export default function DashboardPage() {
                                             <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{ticket.requester?.name ?? '—'}</td>
                                             <td className="hidden px-4 py-3 lg:table-cell"><AssigneeSummary assignees={(ticket.assignments ?? []).map((assignment) => assignment.user)} /></td>
                                             <td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>{ticket.status.replaceAll('_', ' ')}</Badge></td>
-                                            <td className="hidden px-4 py-3 sm:table-cell"><Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>{ticket.priority}</Badge></td>
+                                            <td className="hidden px-4 py-3 sm:table-cell">{ticket.priority ? <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>{ticket.priority}</Badge> : null}</td>
                                             <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-muted-foreground lg:table-cell">{dateFormatter.format(new Date(ticket.createdAt))}</td>
                                         </tr>
                                     ))}

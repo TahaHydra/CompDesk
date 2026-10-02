@@ -24,6 +24,7 @@ import type { TicketFormFieldDefinition, UploadedFieldFile } from '@/lib/ticket-
 import logger from '@/lib/logger';
 import { authenticatedAttachmentUrl, privateAttachmentLocation, resolveTemporaryAttachmentPath } from '@/lib/attachment-storage';
 import { attachmentLimits, isAttachmentDownloadable } from '@/lib/attachment-security';
+import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
 
 export interface TicketCreationActor {
     id: string;
@@ -316,7 +317,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     ticketId,
                     userId: requester.id,
                     type: 'CREATED',
-                    content: source === 'api' ? `Ticket created via API: ${validated.title}` : `Ticket created: ${validated.title}`,
+                    content: source === 'api' ? `Ticket created via API: ${ticketPublicTitle({ title: validated.title, formSchemaSnapshot: snapshot })}` : `Ticket created: ${ticketPublicTitle({ title: validated.title, formSchemaSnapshot: snapshot })}`,
                     metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source, ...(apiClient ? { apiClientId: apiClient.id, apiClientName: apiClient.name } : {}) },
                 },
             });
@@ -338,9 +339,9 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         throw error;
     }
 
-    void sendTicketCreatedEmail(requester.email, ticket.key, ticket.title);
+    void sendTicketCreatedEmail(requester.email, ticket.key, ticketPublicTitle(ticket));
     const agentEmails = [...agentMap.values()].filter(Boolean);
-    if (agentEmails.length > 0) void sendNewTicketForDepartmentEmail(agentEmails, ticket.key, ticket.title, ticket.queue.name);
+    if (agentEmails.length > 0) void sendNewTicketForDepartmentEmail(agentEmails, ticket.key, ticketPublicTitle(ticket), ticket.queue.name);
     void fireWebhook('ticket.created', {
         ticketId: ticket.id,
         key: ticket.key,

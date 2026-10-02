@@ -15,6 +15,8 @@ import { authenticatedAttachmentUrl } from '@/lib/attachment-storage';
 import { restartedSlaDueAt, statusTimestampChanges } from '@/lib/tickets/lifecycle';
 import { isAttachmentDownloadable } from '@/lib/attachment-security';
 import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipients';
+import { projectFormFileValues, projectPublicTicketTimelineEvent, projectTicketBuiltIns, projectTicketTimelineEvent, ticketAttachmentVisibleToRole, ticketBuiltInAllowed, ticketPublicTitle } from '@/lib/ticket-form/privacy';
+import { BuiltInTicketField } from '@prisma/client';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -67,13 +69,14 @@ export async function GET(
                 ? { ...event, content: '[Deleted comment]', metadata: { deleted: true }, deleteReason: null }
                 : event);
         }
+        ticket.timeline = ticket.timeline.map((event) => projectTicketTimelineEvent(ticket, event, session.user.role));
         const snapshot = parseTicketFormSchemaSnapshot(ticket.formSchemaSnapshot);
         const historicalFields = fieldsVisibleToRoleFromSnapshot(ticket.formSchemaSnapshot, session.user.role);
         const storedValues = ticket.submittedFormValues && typeof ticket.submittedFormValues === 'object' && !Array.isArray(ticket.submittedFormValues)
             ? ticket.submittedFormValues as Record<string, unknown>
             : {};
         const downloadableAttachments = ticket.attachments.filter(
-            (attachment) => !attachment.deletedAt && isAttachmentDownloadable(attachment.scanStatus)
+            (attachment) => !attachment.deletedAt && isAttachmentDownloadable(attachment.scanStatus) && ticketAttachmentVisibleToRole(ticket, attachment, session.user.role)
         );
         const attachmentUrlsByStoredPath = new Map<string, string>(
             downloadableAttachments.map((attachment) => [attachment.path, authenticatedAttachmentUrl(attachment.id)] as const)
@@ -85,7 +88,7 @@ export async function GET(
             historicalFields
                 .filter((field) => Object.prototype.hasOwnProperty.call(storedValues, field.fieldKey))
                 .map((field) => {
-                    const value = storedValues[field.fieldKey];
+                    const value = field.type === 'FILE' ? projectFormFileValues(ticket, storedValues[field.fieldKey], session.user.role) : storedValues[field.fieldKey];
                     if (!Array.isArray(value)) return [field.fieldKey, value];
                     return [field.fieldKey, value.map((item) => {
                         if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
@@ -141,7 +144,7 @@ export async function GET(
         };
 
         const safeTicket = {
-            ...ticket,
+            ...projectTicketBuiltIns(ticket, session.user.role),
             ...(session.user.role === 'USER' ? {
                 queue: { id: ticket.queue.id, name: ticket.queue.name, description: ticket.queue.description },
                 category: ticket.category ? { id: ticket.category.id, name: ticket.category.name, description: ticket.category.description } : null,
@@ -155,7 +158,7 @@ export async function GET(
                 id: watcher.id,
                 user: { id: watcher.user.id, name: watcher.user.name },
             })),
-            attachments: ticket.attachments.filter((attachment) => session.user.role !== 'USER' || !attachment.isInternal).map((attachment) => ({
+            attachments: ticket.attachments.filter((attachment) => ticketAttachmentVisibleToRole(ticket, attachment, session.user.role)).map((attachment) => ({
                 id: attachment.id,
                 isInternal: attachment.isInternal,
                 filename: attachment.filename,
@@ -208,6 +211,11 @@ export async function PATCH(
         }
 
         const { expectedVersion, tagIds, ...changes } = parsed.data;
+        const builtInChanges = { title: BuiltInTicketField.TITLE, description: BuiltInTicketField.DESCRIPTION, priority: BuiltInTicketField.PRIORITY, severity: BuiltInTicketField.SEVERITY } as const;
+        if (Object.entries(builtInChanges).some(([key, builtIn]) => changes[key as keyof typeof changes] !== undefined && !ticketBuiltInAllowed(existingTicket, builtIn, session.user.role, true))
+            || tagIds !== undefined && !ticketBuiltInAllowed(existingTicket, BuiltInTicketField.TAGS, session.user.role, true)) {
+            return NextResponse.json({ error: 'A requested field is not editable for your role' }, { status: 403 });
+        }
         if (expectedVersion !== existingTicket.version) {
             return NextResponse.json({ error: 'Ticket changed since it was loaded. Refresh and review the latest values.', currentVersion: existingTicket.version }, { status: 409 });
         }
@@ -296,7 +304,7 @@ export async function PATCH(
 
         if (timelineEvents.length > 0) {
             const emails = await ticketNotificationRecipients(id, session.user.id);
-            if (emails.length > 0) void sendTicketUpdatedEmail(emails, updatedTicket.key, updatedTicket.title, 'Ticket Updated', timelineEvents.map((event) => event.content).join(', '));
+            if (emails.length > 0) void sendTicketUpdatedEmail(emails, updatedTicket.key, ticketPublicTitle(updatedTicket), 'Ticket Updated', timelineEvents.map((event) => projectPublicTicketTimelineEvent(updatedTicket, event).content).join(', '));
         }
         if (changes.status === 'RESOLVED') fireWebhook('ticket.resolved', { ticketId: id, key: updatedTicket.key, title: updatedTicket.title });
         void auditLog({ userId: session.user.id, action: 'ticket.updated', entity: 'ticket', entityId: id, metadata: { changes, tagIds: uniqueTagIds, expectedVersion, resultingVersion: updatedTicket.version, sla: slaAudit } });

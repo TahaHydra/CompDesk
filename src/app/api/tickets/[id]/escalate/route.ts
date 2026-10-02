@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe } from '@/lib/api-dto';
+import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe, projectTicketFormForRole } from '@/lib/api-dto';
+import { ticketBuiltInAllowed, ticketPublicTitle } from '@/lib/ticket-form/privacy';
 import { isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
@@ -51,6 +52,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const resultingAssignmentIds = assignmentAdded && escalateToId ? [...previousAssignmentIds, escalateToId] : previousAssignmentIds;
         const newLevel = ticket.escalationLevel + 1;
         const newPriority = newLevel >= 2 ? 'URGENT' : ticket.priority === 'NORMAL' ? 'HIGH' : ticket.priority;
+        if (newPriority !== ticket.priority && !ticketBuiltInAllowed(ticket, 'PRIORITY', session.user.role, true)) {
+            return NextResponse.json({ error: 'The ticket priority is not editable for your role' }, { status: 403 });
+        }
         const mutationTime = new Date();
         const sla = newPriority !== ticket.priority
             ? await prisma.slaPolicy.findUnique({ where: { queueId_priority: { queueId: ticket.queueId, priority: newPriority } }, select: { resolutionMinutes: true } })
@@ -119,7 +123,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }
 
         if (candidate) {
-            void sendTicketUpdatedEmail([candidate.email], ticket.key, ticket.title, 'Ticket Escalated', `This ticket has been escalated to you (Level ${newLevel}). Reason: ${reason || 'No reason provided'}`);
+            void sendTicketUpdatedEmail([candidate.email], ticket.key, ticketPublicTitle(ticket), 'Ticket Escalated', `This ticket has been escalated to you (Level ${newLevel}). Reason: ${reason || 'No reason provided'}`);
         }
         await auditLog({
             userId: session.user.id,
@@ -128,7 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             entityId: ticketId,
             metadata: { level: newLevel, escalateToId, reason, assignmentBehavior: 'additive', assignmentAdded, previousAssignmentIds, resultingAssignmentIds, expectedVersion, resultingVersion: expectedVersion + 1 },
         });
-        return NextResponse.json(assertApiResponseSafe({ success: true, escalationLevel: newLevel, ticket: updated }));
+        return NextResponse.json(assertApiResponseSafe({ success: true, escalationLevel: newLevel, ticket: projectTicketFormForRole(updated, session.user.role) }));
     } catch (error) {
         logger.error('Failed to escalate ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
