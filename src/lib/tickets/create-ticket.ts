@@ -236,11 +236,11 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
             where: { queueId_priority: { queueId: input.queueId, priority: validated.priority } },
         }),
         prisma.groupMember.findMany({
-            where: { group: { queueAssignments: { some: { queueId: input.queueId, role: 'agent' } } } },
+            where: { user: { isActive: true, role: { in: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] } }, group: { queueAssignments: { some: { queueId: input.queueId, role: 'agent' } } } },
             include: { user: { select: { id: true, email: true } } },
         }),
         prisma.queueMember.findMany({
-            where: { queueId: input.queueId, role: 'agent' },
+            where: { queueId: input.queueId, role: 'agent', user: { isActive: true, role: { in: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] } } },
             include: { user: { select: { id: true, email: true } } },
         }),
     ]);

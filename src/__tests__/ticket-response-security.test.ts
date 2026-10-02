@@ -172,3 +172,12 @@ test('dashboard omits hidden historical form defaults and values for requesters'
  expect(JSON.stringify(data.recentTickets)).not.toContain('private-value');
  expect(JSON.stringify(data.recentTickets)).toContain('visible');
 });
+
+test('creation selects only active staff for watchers and department mail', async () => {
+ prepareCreation();
+ mockPrisma.$transaction.mockResolvedValueOnce(rawTicket());
+ await createTicketFromResolvedTemplate({ source: 'web', actor: user, requester: user, input: { queueId, idempotencyKey: idempotencyId } });
+ for (const model of [mockPrisma.groupMember, mockPrisma.queueMember]) {
+  expect(model.findMany.mock.calls[0][0].where.user).toEqual({ isActive: true, role: { in: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] } });
+ }
+});
