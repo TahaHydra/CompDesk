@@ -1,4 +1,5 @@
 import path from 'path';
+import { resolveApplicationRoot } from '@/lib/runtime-paths';
 import { readdir, stat, unlink } from 'fs/promises';
 
 const SAFE_SEGMENT = /^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9]+)?$/;
@@ -19,9 +20,9 @@ export function temporaryAttachmentLimits() {
 export function attachmentStorageRoot(): string {
     const configured = process.env.ATTACHMENT_STORAGE_DIR?.trim();
     const root = configured
-        ? path.resolve(process.cwd(), configured)
-        : path.resolve(process.cwd(), 'storage', 'attachments');
-    const publicRoot = path.resolve(process.cwd(), 'public');
+        ? path.resolve(resolveApplicationRoot(), configured)
+        : path.resolve(resolveApplicationRoot(), 'storage', 'attachments');
+    const publicRoot = path.resolve(resolveApplicationRoot(), 'public');
     if (root === publicRoot || root.startsWith(`${publicRoot}${path.sep}`)) {
         throw new Error('Private attachment storage cannot be inside the public directory');
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileText, Loader2, Trash2, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,6 +57,8 @@ export function DynamicTicketForm({
     onChange: (fieldKey: string, value: unknown) => void;
 }) {
     const { t } = useLanguage();
+    const latestValues = useRef(values);
+    latestValues.current = values;
     const [uploading, setUploading] = useState<Set<string>>(new Set());
     const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
     const conditionValues = ticketFormSubmissionValues(fields, values, role);
@@ -67,16 +69,18 @@ export function DynamicTicketForm({
         setUploading((current) => new Set(current).add(field.fieldKey));
         setUploadErrors((current) => { const next = { ...current }; delete next[field.fieldKey]; return next; });
         try {
-            const uploaded: UploadedFieldFile[] = [];
+
             for (const file of Array.from(selected)) {
                 const body = new FormData();
                 body.append('file', file);
                 const response = await fetch('/api/upload', { method: 'POST', body });
                 const payload = await response.json();
                 if (!response.ok) throw new Error(payload.error || `Failed to upload ${file.name}`);
-                uploaded.push({ url: payload.url, filename: payload.filename, mimetype: payload.mimetype, size: payload.size });
+                const next = [...fileList(latestValues.current[field.fieldKey]), { url: payload.url, filename: payload.filename, mimetype: payload.mimetype, size: payload.size }];
+                latestValues.current = { ...latestValues.current, [field.fieldKey]: next };
+                onChange(field.fieldKey, next);
             }
-            onChange(field.fieldKey, [...fileList(values[field.fieldKey]), ...uploaded]);
+
         } catch (error) {
             setUploadErrors((current) => ({ ...current, [field.fieldKey]: error instanceof Error ? error.message : 'File upload failed' }));
         } finally {

@@ -1,3 +1,4 @@
+import { reserveNextTicketCount } from '@/lib/ticket-counter';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { mkdir, readFile, rename, stat } from 'fs/promises';
@@ -48,18 +49,6 @@ interface PreparedAttachment {
     sha256: string;
     scanStatus: 'NOT_CONFIGURED' | 'CLEAN' | 'INFECTED' | 'ERROR';
     scannedAt: Date | null;
-}
-
-async function reserveNextTicketCount(tx: Prisma.TransactionClient, year: number): Promise<number> {
-    const current = await tx.ticketCounter.findUnique({ where: { id: 'singleton' } });
-    if (!current) {
-        await tx.ticketCounter.create({ data: { id: 'singleton', year, count: 1 } });
-        return 1;
-    }
-    if (current.year !== year) {
-        return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { year, count: 1 } })).count;
-    }
-    return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { count: { increment: 1 } } })).count;
 }
 
 function submissionValues(input: CreateTicketInput): Record<string, unknown> {

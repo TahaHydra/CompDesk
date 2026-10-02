@@ -118,7 +118,7 @@ function validateFieldValue(
         return value;
     }
     if (field.type === FormFieldType.DATE) {
-        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || (Number.isNaN(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value)) {
             errors[field.fieldKey] = `${field.label} must be a valid date`;
             return undefined;
         }

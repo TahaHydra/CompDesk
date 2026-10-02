@@ -1,3 +1,4 @@
+import { resolutionSlaBreached } from '@/lib/sla-deadline';
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma, Priority, TicketStatus } from '@prisma/client';
 import { auth } from '@/lib/auth';
@@ -136,13 +137,7 @@ export async function GET(req: NextRequest) {
         const slaMap = new Map(slaPolicies.map((sla) => [`${sla.queueId}:${sla.priority}`, sla.resolutionMinutes] as const));
         const now = Date.now();
         const enrichedTickets = tickets.map((ticket) => {
-            let slaBreached = false;
-            if (ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && ticket.status !== 'WITHDRAWN') {
-                const resolutionMinutes = slaMap.get(`${ticket.queueId}:${ticket.priority}`);
-                if (resolutionMinutes !== undefined) {
-                    slaBreached = (now - new Date(ticket.createdAt).getTime()) / 60000 > resolutionMinutes;
-                }
-            }
+            const slaBreached = resolutionSlaBreached(ticket, slaMap.get(`${ticket.queueId}:${ticket.priority}`), now);
             return { ...projectTicketFormForRole(ticket, role), assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
         });
 
