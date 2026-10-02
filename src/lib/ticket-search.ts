@@ -26,10 +26,11 @@ export function ticketScopeLabel(role: Role, view: TicketView): string {
 
 export function buildTicketVisibilityWhere(userId: string, role: Role, view: TicketView, accessibleQueueIds: string[] | null): Prisma.TicketWhereInput {
     if (role === 'USER') return { requesterId: userId };
-    if (view === 'my') return { OR: [{ assignments: { some: { userId } } }, { requesterId: userId }] };
-    if (role === 'SUPER_ADMIN') return {};
+    const personal: Prisma.TicketWhereInput = { OR: [{ assignments: { some: { userId } } }, { requesterId: userId }] };
+    if (role === 'SUPER_ADMIN') return view === 'my' ? personal : {};
     const queueIds = accessibleQueueIds ?? [];
-    return { queueId: { in: queueIds.length > 0 ? queueIds : ['__none__'] } };
+    const departments = { queueId: { in: queueIds.length > 0 ? queueIds : ['__none__'] } };
+    return view === 'my' ? { AND: [departments, personal] } : departments;
 }
 
 export function buildTicketTextSearch(search: string): Prisma.TicketWhereInput {

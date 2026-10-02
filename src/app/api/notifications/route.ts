@@ -20,12 +20,7 @@ export async function GET() {
             ticketFilter = { requesterId: userId };
         } else if (role === 'AGENT') {
             const departmentIds = await getAgentAccessibleQueueIds(userId);
-            ticketFilter = {
-                OR: [
-                    { requesterId: userId },
-                    ...(departmentIds.length ? [{ queueId: { in: departmentIds } }] : []),
-                ],
-            };
+            ticketFilter = { queueId: { in: departmentIds.length ? departmentIds : ['__none__'] } };
         } else if (role === 'ADMIN') {
             const departmentIds = await getQueueInboxQueueIds(userId, role);
             ticketFilter = departmentIds?.length

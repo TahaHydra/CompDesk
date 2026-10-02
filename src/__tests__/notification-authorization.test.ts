@@ -56,9 +56,7 @@ describe('notification authorization', () => {
         await getNotifications();
         const query = mockPrisma.timelineEvent.findMany.mock.calls[0][0];
         expect(query.where.type).toBeUndefined();
-        expect(query.where.ticket).toEqual({
-            OR: [{ requesterId: 'agent-id' }, { queueId: { in: ['queue-1'] } }],
-        });
+        expect(query.where.ticket).toEqual({ queueId: { in: ['queue-1'] } });
         expect(JSON.stringify(query.where.ticket)).not.toContain('watchers');
     });
 
