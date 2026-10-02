@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
+import { useLanguage } from '@/components/providers/language-provider';
 
 interface Queue { id: string; name: string; defaultTemplateId: string | null; defaultTemplate?: { id: string; name: string } | null }
 interface Template { id: string; name: string; isSystemDefault: boolean; archivedAt: string | null }
@@ -34,6 +35,7 @@ interface Category {
 
 export default function AdminCategoriesPage() {
     const { data: session } = useSession();
+    const { t } = useLanguage();
     const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
     const queryClient = useQueryClient();
     const { toast } = useToast();
@@ -51,7 +53,9 @@ export default function AdminCategoriesPage() {
         queryFn: async () => {
             const response = await fetch('/api/categories?includeInactive=true');
             if (!response.ok) throw new Error('Failed to load categories');
-            return response.json();
+            const payload = await response.json();
+            if (!Array.isArray(payload)) throw new Error('The server returned an invalid list');
+            return payload;
         },
     });
     const queuesQuery = useQuery<Queue[]>({
@@ -59,7 +63,9 @@ export default function AdminCategoriesPage() {
         queryFn: async () => {
             const response = await fetch('/api/queues?includeInactive=true');
             if (!response.ok) throw new Error('Failed to load departments');
-            return response.json();
+            const payload = await response.json();
+            if (!Array.isArray(payload)) throw new Error('The server returned an invalid list');
+            return payload;
         },
     });
     const templatesQuery = useQuery<Template[]>({
@@ -67,7 +73,9 @@ export default function AdminCategoriesPage() {
         queryFn: async () => {
             const response = await fetch('/api/ticket-form-templates');
             if (!response.ok) throw new Error('Failed to load templates');
-            return response.json();
+            const payload = await response.json();
+            if (!Array.isArray(payload)) throw new Error('The server returned an invalid list');
+            return payload;
         },
     });
     const systemTemplate = templatesQuery.data?.find((template) => template.isSystemDefault);
@@ -104,7 +112,7 @@ export default function AdminCategoriesPage() {
                 ? {
                     ...(editing ? { id: editing.id } : {}),
                     name,
-                    description: description || undefined,
+                    description,
                     queueId,
                     templateId: selectedTemplateId,
                     isActive,
@@ -124,7 +132,7 @@ export default function AdminCategoriesPage() {
             setDialogOpen(false);
             toast({ title: isSuperAdmin ? (editing ? 'Category updated' : 'Category created') : 'Category template assigned' });
         },
-        onError: (error: Error) => toast({ title: 'Category could not be saved', description: error.message, variant: 'destructive' }),
+        onError: (error: Error) => toast({ title: t("Category could not be saved"), description: error.message, variant: 'destructive' }),
     });
     const removeMutation = useMutation({
         mutationFn: async ({ category, mode }: { category: Category; mode: 'archive' | 'hard' }) => {
@@ -134,9 +142,9 @@ export default function AdminCategoriesPage() {
         },
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['categories'] });
-            toast({ title: 'Category updated' });
+            toast({ title: t("Category updated") });
         },
-        onError: (error: Error) => toast({ title: 'Category action failed', description: error.message, variant: 'destructive' }),
+        onError: (error: Error) => toast({ title: t("Category action failed"), description: error.message, variant: 'destructive' }),
     });
     const restore = (category: Category) => {
         openEdit(category);
@@ -144,40 +152,46 @@ export default function AdminCategoriesPage() {
     };
     const queues = queuesQuery.data ?? [];
 
+    const readQueries = [categoriesQuery, queuesQuery, templatesQuery];
+    const readError = readQueries.find((query) => query.error)?.error;
+    const hasContent = categoriesQuery.data !== undefined && queuesQuery.data !== undefined;
+
     return (
         <div className="space-y-6">
+            {readError ? <div role="alert" className="rounded-lg border border-destructive/30 p-4 text-destructive">{readError instanceof Error ? readError.message : t('Request failed')}<Button variant="outline" className="ml-3" onClick={() => readQueries.forEach((query) => void query.refetch())}>{t('Try again')}</Button></div> : null}
+            {!hasContent && !readError && readQueries.some((query) => query.isLoading) ? <p role="status">{t('Loading...')}</p> : null}
             <PageHeader
                 icon={Tags}
-                title="Categories"
+                title={t("Categories")}
                 description={isSuperAdmin
-                    ? 'Manage department-owned categories and optional ticket-form overrides.'
-                    : 'Assign ticket-form overrides to categories in departments you administer.'}
+                    ? t("Manage department-owned categories and optional ticket-form overrides.")
+                    : t("Assign ticket-form overrides to categories in departments you administer.")}
             >
-                {isSuperAdmin ? <Button onClick={openCreate}><Plus className="mr-1 h-4 w-4" /> Add category</Button> : null}
+                {isSuperAdmin ? <Button onClick={openCreate}><Plus className="mr-1 h-4 w-4" /> {t("Add category")}</Button> : null}
             </PageHeader>
 
             {queues.length ? (
                 <div className="max-w-sm space-y-2">
-                    <Label>Filter by department</Label>
+                    <Label>{t("Filter by department")}</Label>
                     <Select value={filterQueueId} onValueChange={setFilterQueueId}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All departments</SelectItem>
+                            <SelectItem value="all">{t("All departments")}</SelectItem>
                             {queues.map((queue) => <SelectItem key={queue.id} value={queue.id}>{queue.name}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
             ) : null}
 
-            {groups.length === 0 ? (
+            {!hasContent ? null : groups.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    {isSuperAdmin ? 'No departments or categories are available.' : 'You are not assigned as an administrator of any department.'}
+                    {isSuperAdmin ? t("No departments or categories are available.") : t("You are not assigned as an administrator of any department.")}
                 </div>
             ) : groups.map(({ queue, categories }) => (
                 <section key={queue.id} className="space-y-3">
-                    <div className="flex items-center gap-2"><h2 className="text-lg font-semibold">{queue.name}</h2><Badge variant="secondary">{categories.length} categories</Badge></div>
+                    <div className="flex items-center gap-2"><h2 className="text-lg font-semibold">{queue.name}</h2><Badge variant="secondary">{categories.length} {t("categories")}</Badge></div>
                     {categories.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No categories in this department.</div>
+                        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{t("No categories in this department.")}</div>
                     ) : (
                         <div className="grid gap-3 md:grid-cols-2">
                             {categories.map((category) => {
@@ -189,31 +203,31 @@ export default function AdminCategoriesPage() {
                                                 <div>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <h3 className="font-medium">{category.name}</h3>
-                                                        <Badge variant={category.isActive ? 'secondary' : 'destructive'}>{category.isActive ? 'Active' : 'Archived'}</Badge>
+                                                        <Badge variant={category.isActive ? 'secondary' : 'destructive'}>{category.isActive ? t("Active") : t("Archived")}</Badge>
                                                     </div>
-                                                    <p className="mt-1 text-sm text-muted-foreground">{category.description || 'No description'}</p>
+                                                    <p className="mt-1 text-sm text-muted-foreground">{category.description || t("No description")}</p>
                                                 </div>
-                                                <Badge variant="outline">{category._count.tickets} tickets</Badge>
+                                                <Badge variant="outline">{category._count.tickets} {t("tickets")}</Badge>
                                             </div>
                                             <div className="rounded-md bg-muted/50 p-2 text-xs">
-                                                <span className="text-muted-foreground">Effective template: </span>
+                                                <span className="text-muted-foreground">{t("Effective template:")} </span>
                                                 <span className="font-medium">{effectiveTemplate}</span>
-                                                <span className="text-muted-foreground"> · {category.templateId ? 'Override' : 'Inherited'}</span>
+                                                <span className="text-muted-foreground"> · {category.templateId ? t("Override") : t("Inherited")}</span>
                                             </div>
                                             <div className="flex flex-wrap gap-2">
                                                 <Button size="sm" variant="outline" onClick={() => openEdit(category)}>
                                                     {isSuperAdmin ? <Pencil className="mr-1 h-3.5 w-3.5" /> : <FileText className="mr-1 h-3.5 w-3.5" />}
-                                                    {isSuperAdmin ? 'Edit' : 'Assign template'}
+                                                    {isSuperAdmin ? t("Edit") : t("Assign template")}
                                                 </Button>
                                                 {isSuperAdmin ? (
                                                     <>
                                                         {category.isActive ? (
-                                                            <Button size="sm" variant="outline" onClick={() => removeMutation.mutate({ category, mode: 'archive' })}><Archive className="mr-1 h-3.5 w-3.5" /> Archive</Button>
+                                                            <Button size="sm" variant="outline" onClick={() => removeMutation.mutate({ category, mode: 'archive' })}><Archive className="mr-1 h-3.5 w-3.5" /> {t("Archive")}</Button>
                                                         ) : (
-                                                            <Button size="sm" variant="outline" onClick={() => restore(category)}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore</Button>
+                                                            <Button size="sm" variant="outline" onClick={() => restore(category)}><RotateCcw className="mr-1 h-3.5 w-3.5" /> {t("Restore")}</Button>
                                                         )}
                                                         {category._count.tickets === 0 ? (
-                                                            <ConfirmDestructiveAction title="Delete category?" description={<>The unused category <strong>{category.name}</strong> will be permanently deleted.</>} pending={removeMutation.isPending} onConfirm={() => removeMutation.mutate({ category, mode: 'hard' })} trigger={<Button size="sm" variant="destructive"><Trash2 className="mr-1 h-3.5 w-3.5" /> Delete</Button>} />
+                                                            <ConfirmDestructiveAction title={t("Delete category?")} description={<>{t("The unused category")} <strong>{category.name}</strong> {t("will be permanently deleted.")}</>} pending={removeMutation.isPending} onConfirm={() => removeMutation.mutate({ category, mode: 'hard' })} trigger={<Button size="sm" variant="destructive"><Trash2 className="mr-1 h-3.5 w-3.5" /> {t("Delete")}</Button>} />
                                                         ) : null}
                                                     </>
                                                 ) : null}
@@ -229,43 +243,43 @@ export default function AdminCategoriesPage() {
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent>
-                    <DialogHeader><DialogTitle>{isSuperAdmin ? (editing ? 'Edit category' : 'Create category') : `Assign template · ${editing?.name ?? ''}`}</DialogTitle></DialogHeader>
+                    <DialogHeader><DialogTitle>{isSuperAdmin ? (editing ? t("Edit category") : t("Create category")) : `Assign template · ${editing?.name ?? ''}`}</DialogTitle></DialogHeader>
                     <div className="space-y-4">
                         {isSuperAdmin ? (
                             <>
-                                <div className="space-y-2"><Label>Name</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
-                                <div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} /></div>
+                                <div className="space-y-2"><Label>{t("Name")}</Label><Input value={name} onChange={(event) => setName(event.target.value)} /></div>
+                                <div className="space-y-2"><Label>{t("Description")}</Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} /></div>
                                 <div className="space-y-2">
-                                    <Label>Owning department</Label>
+                                    <Label>{t("Owning department")}</Label>
                                     <Select value={queueId} onValueChange={setQueueId}>
-                                        <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                                        <SelectTrigger><SelectValue placeholder={t("Select department")} /></SelectTrigger>
                                         <SelectContent>{queues.map((queue) => <SelectItem key={queue.id} value={queue.id}>{queue.name}</SelectItem>)}</SelectContent>
                                     </Select>
-                                    {editing && editing._count.tickets > 0 && queueId !== editing.queueId ? <p className="text-xs text-destructive">Categories with historical tickets cannot be moved.</p> : null}
+                                    {editing && editing._count.tickets > 0 && queueId !== editing.queueId ? <p className="text-xs text-destructive">{t("Categories with historical tickets cannot be moved.")}</p> : null}
                                 </div>
                             </>
                         ) : null}
                         <div className="space-y-2">
-                            <Label>Template assignment</Label>
+                            <Label>{t("Template assignment")}</Label>
                             <Select value={templateId} onValueChange={setTemplateId}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="inherit">Inherit department template</SelectItem>
+                                    <SelectItem value="inherit">{t("Inherit department template")}</SelectItem>
                                     {(templatesQuery.data ?? []).filter((template) => !template.archivedAt).map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </div>
                         {isSuperAdmin ? (
                             <div className="flex items-center justify-between rounded-md border p-3">
-                                <div><Label>Active</Label><p className="text-xs text-muted-foreground">Archived categories remain on historical tickets.</p></div>
+                                <div><Label>{t("Active")}</Label><p className="text-xs text-muted-foreground">{t("Archived categories remain on historical tickets.")}</p></div>
                                 <Switch checked={isActive} onCheckedChange={setIsActive} />
                             </div>
                         ) : null}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                        <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("Cancel")}</Button>
                         <Button onClick={() => saveMutation.mutate()} disabled={(isSuperAdmin && (!name.trim() || !queueId)) || !editing && !isSuperAdmin || saveMutation.isPending}>
-                            {isSuperAdmin ? 'Save category' : 'Assign template'}
+                            {isSuperAdmin ? t("Save category") : t("Assign template")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

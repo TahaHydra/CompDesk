@@ -34,29 +34,34 @@ async function readJson<T>(url: string): Promise<T> {
     const response = await fetch(url);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Failed to load help content');
-    return payload;
+    if (!Array.isArray(payload)) throw new Error('The server returned an invalid help list');
+    return payload as T;
 }
 
 export default function HelpCenterPage() {
     const { data: session } = useSession();
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const [search, setSearch] = useState('');
     const deferredSearch = useDeferredValue(search.trim());
     const admin = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
     const collectionsQuery = useQuery({
-        queryKey: ['help-collections'],
+        queryKey: ['help-collections', language],
         queryFn: () => readJson<LocalizedHelpCollection[]>('/api/help/collections'),
     });
     const articlesQuery = useQuery({
-        queryKey: ['help-articles', deferredSearch],
+        queryKey: ['help-articles', language, deferredSearch],
         queryFn: () => readJson<LocalizedHelpArticle[]>(`/api/help/articles${deferredSearch ? `?q=${encodeURIComponent(deferredSearch)}` : ''}`),
     });
 
     const collections = collectionsQuery.data ?? [];
     const articles = articlesQuery.data ?? [];
 
+    const readError = collectionsQuery.error || articlesQuery.error;
+    if (readError && !collectionsQuery.data && !articlesQuery.data) return <div role="alert" className="rounded-lg border p-6">{readError instanceof Error ? readError.message : t('Request failed')}<Button className="ml-3" onClick={() => { void collectionsQuery.refetch(); void articlesQuery.refetch(); }}>{t('Try again')}</Button></div>;
+
     return (
         <div className="mx-auto max-w-6xl space-y-10 pb-10">
+            {readError ? <div role="alert" className="rounded-lg border p-4">{readError instanceof Error ? readError.message : t('Request failed')}<Button className="ml-3" onClick={() => { void collectionsQuery.refetch(); void articlesQuery.refetch(); }}>{t('Try again')}</Button></div> : null}
             <section className="rounded-2xl border bg-card px-5 py-10 text-center shadow-sm sm:px-10 sm:py-14">
                 <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl border bg-muted/40">
                     <BookOpen className="h-5 w-5 text-primary" />

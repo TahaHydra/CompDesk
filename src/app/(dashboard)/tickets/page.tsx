@@ -16,10 +16,11 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/layout/page-header';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
 import { AssigneeSummary } from '@/components/tickets/assignee-summary';
+import { useLanguage } from '@/components/providers/language-provider';
 
 const DEFAULT_LIMIT = 20;
 const PAGE_LIMITS = [10, 20, 50] as const;
-const STATUS_VALUES = ['all', 'pending', 'NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED', 'RESOLVED,CLOSED'] as const;
+const STATUS_VALUES = ['all', 'pending', 'NEW,OPEN', 'NEW,OPEN,PENDING_USER,PENDING_AGENT', 'NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVED', 'CLOSED', 'RESOLVED,CLOSED'] as const;
 const PRIORITY_VALUES = ['all', 'LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
 interface Option { id: string; name: string; queueId?: string }
 
@@ -34,6 +35,7 @@ function scopeLabel(role: string | undefined, view: string) {
 
 export default function TicketsPage() {
     const params = useSearchParams();
+    const { t } = useLanguage();
     const router = useRouter();
     const { data: session } = useSession();
     const role = session?.user?.role;
@@ -54,7 +56,29 @@ export default function TicketsPage() {
     const [page, setPage] = useState(positive(params.get('page'), 1));
     const [limit, setLimit] = useState(Math.min(50, positive(params.get('limit'), DEFAULT_LIMIT)));
 
+    const urlSnapshot = params.toString();
+    const previousUrl = useRef(urlSnapshot);
+    const reconcilingUrl = useRef(false);
     useEffect(() => {
+        if (previousUrl.current === urlSnapshot) return;
+        previousUrl.current = urlSnapshot;
+        reconcilingUrl.current = true;
+        const incoming = new URLSearchParams(urlSnapshot);
+        const incomingSearch = incoming.get('search') ?? '';
+        scopeExplicit.current = incoming.has('view');
+        setSearchInput(incomingSearch); setSearch(incomingSearch.trim());
+        setView(incoming.get('view') ?? (incomingSearch.trim() ? broadest(role) : 'my'));
+        setStatus(valid(incoming.get('status'), STATUS_VALUES, 'all'));
+        setPriority(valid(incoming.get('priority'), PRIORITY_VALUES, 'all'));
+        setQueueId(incoming.get('queueId') ?? 'all'); setCategoryId(incoming.get('categoryId') ?? 'all');
+        setRequesterId(incoming.get('requesterId') ?? 'all'); setAssigneeId(incoming.get('assigneeId') ?? 'all');
+        setTagIds((incoming.get('tagIds') ?? '').split(',').filter(Boolean));
+        setTicketRef(incoming.get('ticketId') ?? incoming.get('ticketKey') ?? '');
+        setPage(positive(incoming.get('page'), 1)); setLimit(Math.min(50, positive(incoming.get('limit'), DEFAULT_LIMIT)));
+    }, [urlSnapshot, role]);
+
+    useEffect(() => {
+        if (searchInput.trim() === search) return;
         const timeout = window.setTimeout(() => {
             const next = searchInput.trim();
             if (next && !search && !scopeExplicit.current) setView(broadest(role));
@@ -68,12 +92,13 @@ export default function TicketsPage() {
         if (!views.includes(view)) setView(broadest(role));
     }, [role, view, views]);
 
-    const queuesQuery = useQuery<Option[]>({ queryKey: ['queues', 'ticket-filters'], queryFn: async () => { const response = await fetch('/api/queues?accessible=true'); if (!response.ok) throw new Error('Failed to load departments'); return response.json(); }, enabled: Boolean(role && role !== 'USER') });
+    const queuesQuery = useQuery<Option[]>({ queryKey: ['queues', 'ticket-filters'], queryFn: async () => { const response = await fetch('/api/queues?accessible=true'); if (!response.ok) throw new Error('Failed to load departments'); const payload = await response.json(); if (!Array.isArray(payload)) throw new Error('The server returned an invalid list'); return payload; }, enabled: Boolean(role && role !== 'USER') });
     const categoriesQuery = useQuery<Option[]>({ queryKey: ['categories', 'ticket-filters', queueId], queryFn: async () => { const response = await fetch(`/api/categories?queueId=${encodeURIComponent(queueId)}`); if (!response.ok) throw new Error('Failed to load categories'); return response.json(); }, enabled: queueId !== 'all' });
-    const tagsQuery = useQuery<Option[]>({ queryKey: ['tags', 'ticket-filters'], queryFn: async () => { const response = await fetch('/api/tags'); return response.ok ? response.json() : []; } });
+    const tagsQuery = useQuery<Option[]>({ queryKey: ['tags', 'ticket-filters'], queryFn: async () => { const response = await fetch('/api/tags'); if (!response.ok) throw new Error('Failed to load tags'); const payload = await response.json(); if (!Array.isArray(payload)) throw new Error('The server returned an invalid list'); return payload; } });
 
     useEffect(() => {
         if (!role) return;
+        if (reconcilingUrl.current) { reconcilingUrl.current = false; return; }
         const next = new URLSearchParams();
         if (view !== 'my' || search || scopeExplicit.current) next.set('view', view);
         if (search) next.set('search', search);
@@ -87,8 +112,8 @@ export default function TicketsPage() {
         if (ticketRef.trim()) next.set(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(ticketRef.trim()) ? 'ticketId' : 'ticketKey', ticketRef.trim());
         if (page > 1) next.set('page', String(page));
         if (limit !== DEFAULT_LIMIT) next.set('limit', String(limit));
-        router.replace(next.size ? `/tickets?${next}` : '/tickets', { scroll: false });
-    }, [assigneeId, categoryId, limit, page, priority, queueId, requesterId, role, router, search, status, tagIds, ticketRef, view]);
+        if (next.toString() !== urlSnapshot) router.replace(next.size ? `/tickets?${next}` : '/tickets', { scroll: false });
+    }, [assigneeId, categoryId, limit, page, priority, queueId, requesterId, role, router, search, status, tagIds, ticketRef, view, urlSnapshot]);
 
     const queryValues = { view, search, status, priority, queueId, categoryId, requesterId, assigneeId, tagIds: tagIds.join(','), ticketRef: ticketRef.trim(), page, limit };
     const ticketsQuery = useQuery({
@@ -101,7 +126,9 @@ export default function TicketsPage() {
             if (tagIds.length) query.set('tagIds', tagIds.join(','));
             if (ticketRef.trim()) query.set(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(ticketRef.trim()) ? 'ticketId' : 'ticketKey', ticketRef.trim());
             const response = await fetch(`/api/tickets?${query}`); const payload = await response.json();
-            if (!response.ok) throw new Error(payload.error || 'Failed to fetch tickets'); return payload;
+            if (!response.ok) throw new Error(payload.error || 'Failed to fetch tickets');
+            if (!Array.isArray(payload.tickets) || !payload.pagination || !['page', 'pages', 'total'].every((key) => typeof payload.pagination[key] === 'number')) throw new Error('The server returned an invalid ticket list');
+            return payload;
         },
     });
     const tickets = ticketsQuery.data?.tickets ?? [];
@@ -109,24 +136,27 @@ export default function TicketsPage() {
     const hasFilters = Boolean(searchInput.trim() || status !== 'all' || priority !== 'all' || queueId !== 'all' || categoryId !== 'all' || requesterId !== 'all' || assigneeId !== 'all' || tagIds.length || ticketRef.trim());
     const reset = () => { scopeExplicit.current = false; setView('my'); setSearchInput(''); setSearch(''); setStatus('all'); setPriority('all'); setQueueId('all'); setCategoryId('all'); setRequesterId('all'); setAssigneeId('all'); setTagIds([]); setTicketRef(''); setPage(1); };
 
+    const filterQueries = [queuesQuery, categoriesQuery, tagsQuery];
+    const readError = ticketsQuery.error || filterQueries.find((query) => query.error)?.error;
     return <div className="space-y-6">
-        <PageHeader title="Tickets" description={`${pagination.total} ticket${pagination.total === 1 ? '' : 's'} total`}><Button asChild className="gap-2"><Link href="/tickets/new"><Plus className="h-4 w-4" /> New Ticket</Link></Button></PageHeader>
+        {readError ? <div role="alert" className="rounded-lg border p-4 text-destructive">{readError instanceof Error ? readError.message : t('Request failed')}<Button className="ml-3" variant="outline" onClick={() => { void ticketsQuery.refetch(); filterQueries.forEach((query) => { if (query.error) void query.refetch(); }); }}>{t('Try again')}</Button></div> : null}
+        <PageHeader title={t("Tickets")} description={t('{count} tickets total', { count: pagination.total })}><Button asChild className="gap-2"><Link href="/tickets/new"><Plus className="h-4 w-4" /> {t("New Ticket")}</Link></Button></PageHeader>
         <Card><CardContent className="space-y-4 p-4">
-            <div className="flex flex-wrap items-center gap-3"><Tabs value={view} onValueChange={(next) => { scopeExplicit.current = true; setView(next); setPage(1); }}><TabsList><TabsTrigger value="my">My Tickets</TabsTrigger>{views.includes('queue') ? <TabsTrigger value="queue">Departments</TabsTrigger> : null}{views.includes('all') ? <TabsTrigger value="all">All permitted</TabsTrigger> : null}</TabsList></Tabs><Badge variant="outline">{ticketsQuery.data?.scope?.label ?? scopeLabel(role, view)}</Badge><div className="relative ml-auto"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search tickets" placeholder="Key, title, people, tags, category…" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} className="w-72 pl-9" /></div></div>
+            <div className="flex flex-wrap items-center gap-3"><Tabs value={view} onValueChange={(next) => { scopeExplicit.current = true; setView(next); setPage(1); }}><TabsList><TabsTrigger value="my">{t("My Tickets")}</TabsTrigger>{views.includes('queue') ? <TabsTrigger value="queue">{t("Departments")}</TabsTrigger> : null}{views.includes('all') ? <TabsTrigger value="all">{t("All permitted")}</TabsTrigger> : null}</TabsList></Tabs><Badge variant="outline">{t(ticketsQuery.data?.scope?.label ?? scopeLabel(role, view))}</Badge><div className="relative ml-auto"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label={t("Search tickets")} placeholder={t("Key, title, people, tags, category…")} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} className="w-72 pl-9" /></div></div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <Filter label="Status"><Select value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="pending">Pending (user or agent)</SelectItem><SelectItem value="NEW">New</SelectItem><SelectItem value="OPEN">Open</SelectItem><SelectItem value="PENDING_USER">Pending user</SelectItem><SelectItem value="PENDING_AGENT">Pending agent</SelectItem><SelectItem value="RESOLVED">Resolved</SelectItem><SelectItem value="CLOSED">Closed</SelectItem><SelectItem value="RESOLVED,CLOSED">Resolved or closed</SelectItem></SelectContent></Select></Filter>
-                <Filter label="Priority"><Select value={priority} onValueChange={(value) => { setPriority(value); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITY_VALUES.map((value) => <SelectItem key={value} value={value}>{value === 'all' ? 'All priorities' : value}</SelectItem>)}</SelectContent></Select></Filter>
-                {role !== 'USER' ? <Filter label="Department"><Select value={queueId} onValueChange={(value) => { setQueueId(value); setCategoryId('all'); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All permitted departments</SelectItem>{(queuesQuery.data ?? []).map((queue) => <SelectItem key={queue.id} value={queue.id}>{queue.name}</SelectItem>)}</SelectContent></Select></Filter> : null}
-                {role !== 'USER' ? <Filter label="Category"><Select value={categoryId} disabled={queueId === 'all'} onValueChange={(value) => { setCategoryId(value); setPage(1); }}><SelectTrigger><SelectValue placeholder="Select department first" /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{(categoriesQuery.data ?? []).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></Filter> : null}
-                {role !== 'USER' ? <Filter label="Requester"><UserSearchCombobox kind="requester" queueId={queueId === 'all' ? undefined : queueId} value={requesterId} allowAny onValueChange={(value) => { setRequesterId(value); setPage(1); }} /></Filter> : null}
-                {role !== 'USER' ? <Filter label="Assignee"><UserSearchCombobox kind="assignee" queueId={queueId === 'all' ? undefined : queueId} value={assigneeId} allowAny allowUnassigned onValueChange={(value) => { setAssigneeId(value); setPage(1); }} /></Filter> : null}
-                <Filter label="Ticket key or exact ID"><Input value={ticketRef} onChange={(event) => { setTicketRef(event.target.value); setPage(1); }} placeholder="TCK-2026-000001 or UUID" /></Filter>
-                <Filter label="Page size"><Select value={String(limit)} onValueChange={(value) => { setLimit(Number(value)); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAGE_LIMITS.map((size) => <SelectItem key={size} value={String(size)}>{size} per page</SelectItem>)}</SelectContent></Select></Filter>
+                <Filter label={t("Status")}><Select value={status} onValueChange={(value) => { setStatus(value); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="pending">{t("Pending (user or agent)")}</SelectItem><SelectItem value="NEW,OPEN">{t("New or open")}</SelectItem><SelectItem value="NEW,OPEN,PENDING_USER,PENDING_AGENT">{t("Active")}</SelectItem><SelectItem value="NEW">{t("New")}</SelectItem><SelectItem value="OPEN">{t("Open")}</SelectItem><SelectItem value="PENDING_USER">{t("Pending user")}</SelectItem><SelectItem value="PENDING_AGENT">{t("Pending agent")}</SelectItem><SelectItem value="RESOLVED">{t("Resolved")}</SelectItem><SelectItem value="CLOSED">{t("Closed")}</SelectItem><SelectItem value="RESOLVED,CLOSED">{t("Resolved or closed")}</SelectItem></SelectContent></Select></Filter>
+                <Filter label={t("Priority")}><Select value={priority} onValueChange={(value) => { setPriority(value); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITY_VALUES.map((value) => <SelectItem key={value} value={value}>{value === 'all' ? t("All priorities") : value}</SelectItem>)}</SelectContent></Select></Filter>
+                {role !== 'USER' ? <Filter label={t("Department")}><Select value={queueId} onValueChange={(value) => { setQueueId(value); setCategoryId('all'); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All permitted departments")}</SelectItem>{(queuesQuery.data ?? []).map((queue) => <SelectItem key={queue.id} value={queue.id}>{queue.name}</SelectItem>)}</SelectContent></Select></Filter> : null}
+                {role !== 'USER' ? <Filter label={t("Category")}><Select value={categoryId} disabled={queueId === 'all'} onValueChange={(value) => { setCategoryId(value); setPage(1); }}><SelectTrigger><SelectValue placeholder={t("Select department first")} /></SelectTrigger><SelectContent><SelectItem value="all">{t("All categories")}</SelectItem>{(categoriesQuery.data ?? []).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></Filter> : null}
+                {role !== 'USER' ? <Filter label={t("Requester")}><UserSearchCombobox kind="requester" queueId={queueId === 'all' ? undefined : queueId} value={requesterId} allowAny onValueChange={(value) => { setRequesterId(value); setPage(1); }} /></Filter> : null}
+                {role !== 'USER' ? <Filter label={t("Assignee")}><UserSearchCombobox kind="assignee" queueId={queueId === 'all' ? undefined : queueId} value={assigneeId} allowAny allowUnassigned onValueChange={(value) => { setAssigneeId(value); setPage(1); }} /></Filter> : null}
+                <Filter label={t("Ticket key or exact ID")}><Input value={ticketRef} onChange={(event) => { setTicketRef(event.target.value); setPage(1); }} placeholder="TCK-2026-000001 or UUID" /></Filter>
+                <Filter label={t("Page size")}><Select value={String(limit)} onValueChange={(value) => { setLimit(Number(value)); setPage(1); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAGE_LIMITS.map((size) => <SelectItem key={size} value={String(size)}>{size} {t("per page")}</SelectItem>)}</SelectContent></Select></Filter>
             </div>
-            <div><Label className="text-xs text-muted-foreground">Tags (matches any selected tag)</Label><div className="mt-2 flex flex-wrap gap-2">{(tagsQuery.data ?? []).map((tag) => <Button key={tag.id} type="button" size="sm" variant={tagIds.includes(tag.id) ? 'default' : 'outline'} onClick={() => { setTagIds((current) => current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id]); setPage(1); }}>{tag.name}</Button>)}</div></div>
-            {hasFilters ? <Button variant="ghost" size="sm" onClick={reset}><X className="mr-1 h-4 w-4" /> Reset filters</Button> : null}
+            <div><Label className="text-xs text-muted-foreground">{t("Tags (matches any selected tag)")}</Label><div className="mt-2 flex flex-wrap gap-2">{(tagsQuery.data ?? []).map((tag) => <Button key={tag.id} type="button" size="sm" variant={tagIds.includes(tag.id) ? 'default' : 'outline'} onClick={() => { setTagIds((current) => current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id]); setPage(1); }}>{tag.name}</Button>)}</div></div>
+            {hasFilters ? <Button variant="ghost" size="sm" onClick={reset}><X className="mr-1 h-4 w-4" /> {t("Reset filters")}</Button> : null}
         </CardContent></Card>
-        {ticketsQuery.isError ? <Card><CardContent className="p-6 text-destructive">{ticketsQuery.error.message}</CardContent></Card> : <Card><CardContent className="p-0">{ticketsQuery.isLoading ? <div className="py-20 text-center text-muted-foreground">Loading tickets…</div> : !tickets.length ? <div className="py-20 text-center"><Ticket className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p>No tickets found</p></div> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40"><Th>ID</Th><Th>Title</Th><Th>Department</Th><Th>Requester</Th><Th>Assignee</Th><Th>Status</Th><Th>Priority</Th></tr></thead><tbody className="divide-y">{tickets.map((ticket: any) => <tr key={ticket.id} className="hover:bg-muted/30"><td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td><td className="max-w-72 px-4 py-3 font-medium"><Link href={`/tickets/${ticket.id}`} className="block truncate rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{ticket.title}</Link></td><td className="px-4 py-3">{ticket.queue?.name ?? '—'}</td><td className="px-4 py-3">{ticket.requester?.name ?? '—'}</td><td className="px-4 py-3"><AssigneeSummary assignees={ticket.assignees} /></td><td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()}`}>{ticket.status.replaceAll('_', ' ')}</Badge></td><td className="px-4 py-3"><Badge variant="outline">{ticket.priority}</Badge></td></tr>)}</tbody></table></div>}{pagination.pages > 1 ? <div className="flex items-center justify-between border-t p-4"><span className="text-sm text-muted-foreground">Page {pagination.page} of {pagination.pages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage((current) => current + 1)}>Next</Button></div></div> : null}</CardContent></Card>}
+        {ticketsQuery.isError && !ticketsQuery.data ? null : <Card><CardContent className="p-0">{ticketsQuery.isLoading ? <div className="py-20 text-center text-muted-foreground">{t("Loading tickets…")}</div> : !tickets.length ? <div className="py-20 text-center"><Ticket className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p>{t("No tickets found")}</p></div> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/40"><Th>{t("ID")}</Th><Th>{t("Title")}</Th><Th>{t("Department")}</Th><Th>{t("Requester")}</Th><Th>{t("Assignee")}</Th><Th>{t("Status")}</Th><Th>{t("Priority")}</Th></tr></thead><tbody className="divide-y">{tickets.map((ticket: any) => <tr key={ticket.id} className="hover:bg-muted/30"><td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td><td className="max-w-72 px-4 py-3 font-medium"><Link href={`/tickets/${ticket.id}`} className="block truncate rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{ticket.title}</Link></td><td className="px-4 py-3">{ticket.queue?.name ?? '—'}</td><td className="px-4 py-3">{ticket.requester?.name ?? '—'}</td><td className="px-4 py-3"><AssigneeSummary assignees={ticket.assignees} /></td><td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()}`}>{t(ticket.status.replaceAll('_', ' '))}</Badge></td><td className="px-4 py-3"><Badge variant="outline">{t(ticket.priority)}</Badge></td></tr>)}</tbody></table></div>}{pagination.pages > 1 ? <div className="flex items-center justify-between border-t p-4"><span className="text-sm text-muted-foreground">{t("Page")} {pagination.page} {t("of")} {pagination.pages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>{t("Previous")}</Button><Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage((current) => current + 1)}>{t("Next")}</Button></div></div> : null}</CardContent></Card>}
     </div>;
 }
 

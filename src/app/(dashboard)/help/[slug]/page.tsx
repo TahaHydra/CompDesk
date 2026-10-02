@@ -23,19 +23,24 @@ interface HelpArticleDetail {
     };
 }
 
+class HelpArticleReadError extends Error {
+    constructor(message: string, readonly status: number) { super(message); }
+}
+
 async function loadArticle(slug: string): Promise<HelpArticleDetail> {
     const response = await fetch(`/api/help/articles?slug=${encodeURIComponent(slug)}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
-    if (!response.ok) throw new Error(payload.error || 'Failed to load this help article');
+    if (!response.ok) throw new HelpArticleReadError(payload.error || 'Failed to load this help article', response.status);
+    if (!payload || typeof payload.content !== 'string' || typeof payload.title !== 'string' || !payload.collection || !Array.isArray(payload.collection.articles)) throw new Error('The server returned an invalid help article');
     return payload;
 }
 
 export default function HelpArticlePage() {
     const { slug } = useParams<{ slug: string }>();
     const { data: session } = useSession();
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const articleQuery = useQuery({
-        queryKey: ['help-article', slug],
+        queryKey: ['help-article', language, slug],
         queryFn: () => loadArticle(slug),
         enabled: Boolean(slug),
         retry: 1,
@@ -45,22 +50,22 @@ export default function HelpArticlePage() {
         return (
             <div className="flex min-h-[45vh] items-center justify-center" role="status">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="sr-only">Loading article</span>
+                <span className="sr-only">{t('Loading article')}</span>
             </div>
         );
     }
 
-    if (articleQuery.isError || !articleQuery.data) {
+    if (!articleQuery.data || articleQuery.error instanceof HelpArticleReadError && articleQuery.error.status < 500) {
         return (
             <div className="mx-auto max-w-xl rounded-xl border bg-card p-8 text-center shadow-sm">
                 <FileText className="mx-auto h-9 w-9 text-muted-foreground" />
-                <h1 className="mt-4 text-xl font-semibold">This article could not be loaded</h1>
+                <h1 className="mt-4 text-xl font-semibold">{t('This article could not be loaded')}</h1>
                 <p className="mt-2 text-sm text-muted-foreground">
                     {articleQuery.error instanceof Error ? articleQuery.error.message : 'The article may have been removed or is temporarily unavailable.'}
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-2">
                     <Button asChild variant="outline"><Link href="/help"><ArrowLeft className="mr-2 h-4 w-4" />{t('Back to Help Center')}</Link></Button>
-                    <Button onClick={() => articleQuery.refetch()}><RefreshCw className="mr-2 h-4 w-4" />Try again</Button>
+                    <Button onClick={() => articleQuery.refetch()}><RefreshCw className="mr-2 h-4 w-4" />{t('Try again')}</Button>
                 </div>
             </div>
         );
@@ -72,6 +77,7 @@ export default function HelpArticlePage() {
 
     return (
         <div className="mx-auto max-w-7xl">
+            {articleQuery.error ? <div role="alert" className="mb-4 rounded-lg border p-4">{articleQuery.error instanceof Error ? articleQuery.error.message : t('Request failed')}<Button className="ml-3" onClick={() => void articleQuery.refetch()}>{t('Try again')}</Button></div> : null}
             <div className="mb-6 flex items-center justify-between gap-4 border-b pb-4">
                 <Link href="/help" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
                     <ArrowLeft className="h-4 w-4" />{t('Back to Help Center')}

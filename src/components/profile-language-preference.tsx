@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Globe2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import { cn } from '@/lib/utils';
 
 export function LanguagePreference({ initialLanguage }: { initialLanguage: AppLanguage }) {
     const router = useRouter();
+    const queryClient = useQueryClient();
     const { toast } = useToast();
     const { language, setLanguage, t } = useLanguage();
     const [selected, setSelected] = useState<AppLanguage>(initialLanguage);
@@ -27,6 +29,7 @@ export function LanguagePreference({ initialLanguage }: { initialLanguage: AppLa
             });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || t('Could not update language'));
+            await Promise.all(['help-collections', 'help-articles', 'help-article'].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
             setLanguage(payload.preferredLanguage);
             toast({ title: selected === 'fr' ? 'Langue mise à jour' : 'Language updated' });
             router.refresh();

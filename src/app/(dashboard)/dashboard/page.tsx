@@ -46,15 +46,18 @@ interface DashboardData {
 export default function DashboardPage() {
     const branding = useBranding();
     const { t, language } = useLanguage();
-    const { data, isLoading } = useQuery<DashboardData>({
+    const { data, isLoading, error, refetch } = useQuery<DashboardData>({
         queryKey: ['dashboard-stats'],
         queryFn: async () => {
             const response = await fetch('/api/dashboard/stats');
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || 'Failed to fetch dashboard');
+            if (!payload.stats || !['total', 'open', 'pending', 'resolved', 'urgent', 'escalated'].every((key) => typeof payload.stats[key] === 'number') || !Array.isArray(payload.recentTickets) || !Array.isArray(payload.customLinks)) throw new Error('The server returned an invalid dashboard');
             return payload;
         },
     });
+
+    if (error && !data) return <div role="alert" className="rounded-lg border p-6">{error instanceof Error ? error.message : t('Request failed')}<Button className="ml-3" onClick={() => void refetch()}>{t('Try again')}</Button></div>;
 
     const stats = data?.stats ?? { total: 0, open: 0, pending: 0, resolved: 0, urgent: 0, escalated: 0 };
     const recentTickets = data?.recentTickets ?? [];
@@ -63,15 +66,16 @@ export default function DashboardPage() {
     const ticketHref = (filters = '') => `/tickets?view=${ticketView}${filters}`;
     const statCards = [
         { label: 'Total Tickets', value: stats.total, icon: Ticket, className: 'text-primary', href: ticketHref() },
-        { label: 'Open', value: stats.open, icon: AlertCircle, className: 'text-sky-700 dark:text-sky-300', href: ticketHref('&status=OPEN') },
+        { label: 'Open', value: stats.open, icon: AlertCircle, className: 'text-sky-700 dark:text-sky-300', href: ticketHref('&status=NEW,OPEN') },
         { label: 'Pending', value: stats.pending, icon: Clock, className: 'text-amber-700 dark:text-amber-300', href: ticketHref('&status=pending') },
         { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, className: 'text-emerald-700 dark:text-emerald-300', href: ticketHref('&status=RESOLVED,CLOSED') },
-        { label: 'Urgent', value: stats.urgent, icon: Flame, className: 'text-rose-700 dark:text-rose-300', href: ticketHref('&priority=URGENT') },
+        { label: 'Urgent', value: stats.urgent, icon: Flame, className: 'text-rose-700 dark:text-rose-300', href: ticketHref('&priority=URGENT&status=NEW,OPEN,PENDING_USER,PENDING_AGENT') },
     ];
     const dateFormatter = new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-GB', { dateStyle: 'short' });
 
     return (
         <div className="space-y-8">
+            {error ? <div role="alert" className="rounded-lg border p-4">{error instanceof Error ? error.message : t('Request failed')}<Button className="ml-3" onClick={() => void refetch()}>{t('Try again')}</Button></div> : null}
             <PageHeader eyebrow={t('Overview')} title={t('Dashboard')} description={t('A snapshot of activity across {name}', { name: branding.shortApplicationName })}>
                 <Button asChild><Link href="/tickets/new"><Plus className="mr-2 h-4 w-4" />{t('New Ticket')}</Link></Button>
             </PageHeader>
