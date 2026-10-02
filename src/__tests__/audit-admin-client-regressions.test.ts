@@ -3,17 +3,20 @@ import path from 'node:path';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function harness(file: string, values: any[] = [], initialUrl = '') {
+function harness(file: string, values: any[] = [], initialUrl = '', deferTimers = false) {
     const state: any[] = [], refs: any[] = [], dependencies: any[][] = [];
     let cursor = 0, refCursor = 0, effectCursor = 0, queryCursor = 0, mutationCursor = 0;
     let effects: Array<() => void> = [];
+    const timers = new Map<number, () => void>();
+    const cleanups: Array<void | (() => void)> = [];
+    let nextTimerId = 0;
     const params = new URLSearchParams(initialUrl), queries: any[] = [], mutations: any[] = [], queryErrors: any[] = [];
     const replace = jest.fn(), invalidateQueries = jest.fn(), fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
     const react = {
         createElement: (type: any, props: any, ...children: any[]) => ({ type, props: { ...props, children } }),
         useState: (initial: any) => { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial; return [state[i], (value: any) => { state[i] = typeof value === 'function' ? value(state[i]) : value; }]; },
         useRef: (initial: any) => { const i = refCursor++; return refs[i] ?? (refs[i] = { current: initial }); },
-        useEffect: (effect: () => void, deps: any[]) => { const i = effectCursor++; if (!dependencies[i] || deps.some((value, index) => value !== dependencies[i][index])) { dependencies[i] = deps; effects.push(effect); } },
+        useEffect: (effect: () => void | (() => void), deps: any[]) => { const i = effectCursor++; if (!dependencies[i] || deps.some((value, index) => value !== dependencies[i][index])) { dependencies[i] = deps; effects.push(() => { const cleanup = cleanups[i]; if (cleanup) cleanup(); cleanups[i] = effect(); }); } },
         useMemo: (factory: () => unknown) => factory(), useDeferredValue: (value: any) => value,
     };
     const router = { replace, push: jest.fn(), refresh: jest.fn() };
@@ -31,10 +34,10 @@ function harness(file: string, values: any[] = [], initialUrl = '') {
     };
     const compiledModule = { exports: {} as any };
     const code = ts.transpileModule(fs.readFileSync(path.join(process.cwd(), file), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React, esModuleInterop: true } }).outputText;
-    vm.runInNewContext(code, { module: compiledModule, exports: compiledModule.exports, require: (name: string) => imports[name] ?? new Proxy({}, { get: (_, key) => key === '__esModule' ? true : String(key) }), React: react, URLSearchParams, Error, fetch: fetchMock, localStorage: { getItem: () => null, setItem: jest.fn() }, window: { setTimeout: (callback: () => void) => { effects.push(callback); }, clearTimeout: jest.fn() }, console });
+    vm.runInNewContext(code, { module: compiledModule, exports: compiledModule.exports, require: (name: string) => imports[name] ?? new Proxy({}, { get: (_, key) => key === '__esModule' ? true : String(key) }), React: react, URLSearchParams, Error, fetch: fetchMock, localStorage: { getItem: () => null, setItem: jest.fn() }, window: { setTimeout: (callback: () => void) => { const id = ++nextTimerId; timers.set(id, callback); if (!deferTimers) effects.push(() => { if (timers.delete(id)) callback(); }); return id; }, clearTimeout: (id: number) => timers.delete(id) }, console });
     const render = (exportName = 'default', props = {}) => { cursor = refCursor = effectCursor = queryCursor = mutationCursor = 0; return compiledModule.exports[exportName](props); };
     const settle = () => { for (let i = 0; i < 4; i++) { render(); const pending = effects; effects = []; pending.forEach((effect) => effect()); } return render(); };
-    return { render, settle, params, queries, mutations, queryErrors, replace, invalidateQueries, fetchMock };
+    return { render, settle, flushEffects: () => { const pending = effects; effects = []; pending.forEach((effect) => effect()); }, flushTimers: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((callback) => callback()); }, params, queries, mutations, queryErrors, replace, invalidateQueries, fetchMock };
 }
 function find(tree: any, predicate: (node: any) => boolean): any {
     if (!tree || typeof tree !== 'object') return;
@@ -164,4 +167,28 @@ test('a deleted help article hides its old cached body after the server returns 
     const tree = h.render();
     expect(find(tree, (node) => node.type === 'MarkdownArticle')).toBeUndefined();
     expect(find(tree, (node) => node.type === 'Button' && node.props.children.includes('Try again'))).toBeDefined();
+});
+
+
+test.each(['tickets', 'queue'])('%s preserves newer search drafts on local URL acknowledgments and applies external navigation', (page) => {
+    const values = page === 'tickets' ? [[], [], [], { tickets: [], pagination: { page: 1, pages: 1, total: 0 } }] : [[{ id: 'department' }], { tickets: [], pagination: { page: 1, pages: 1, total: 0 } }];
+    const h = harness('src/app/(dashboard)/'+page+'/page.tsx', values, '', true);
+    const input = (tree: any) => find(tree, (node) => node.type === 'Input' && (page === 'tickets' ? node.props['aria-label'] === 'Search tickets' : node.props.placeholder === 'Search...'));
+    let tree = h.settle();
+    input(tree).props.onChange({ target: { value: 'pending search' } });
+    tree = h.render(); h.flushEffects();
+    // Change another filter while the ticket search debounce is still pending.
+    find(tree, (node) => node.type === 'Select' && node.props.value === 'all').props.onValueChange('OPEN');
+    tree = h.render(); h.flushEffects();
+    const earlierOwnUrl = h.replace.mock.calls.at(-1)![0];
+    input(tree).props.onChange({ target: { value: 'pending search longer' } });
+    h.render(); h.flushEffects();
+    const navigate = (url: string) => { for (const [key] of [...h.params]) h.params.delete(key); for (const [key, value] of new URL(url, 'http://localhost').searchParams) h.params.set(key, value); return h.settle(); };
+    tree = navigate(earlierOwnUrl);
+    expect(input(tree).props.value).toBe('pending search longer');
+    tree = navigate('/'+page+'?status=CLOSED&search=from-history&page=3');
+    expect(input(tree).props.value).toBe('from-history');
+    const query = h.queries.find((q) => q.queryKey[0] === (page === 'tickets' ? 'tickets' : 'queue-tickets'));
+    expect(JSON.stringify(query.queryKey)).toContain('CLOSED');
+    expect(JSON.stringify(query.queryKey)).toContain('from-history');
 });

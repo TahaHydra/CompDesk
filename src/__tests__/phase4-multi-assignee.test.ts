@@ -162,7 +162,7 @@ describe('Phase 4 migration and workflow contracts', () => {
     });
 
     it('uses assignment membership for My Tickets, search, filters, and unassigned', () => {
-        expect(buildTicketVisibilityWhere(agent1, 'AGENT', 'my', ['queue-1'])).toEqual({ OR: [{ assignments: { some: { userId: agent1 } } }, { requesterId: agent1 }] });
+        expect(buildTicketVisibilityWhere(agent1, 'AGENT', 'my', ['queue-1'])).toEqual({ AND: [{ queueId: { in: ['queue-1'] } }, { OR: [{ assignments: { some: { userId: agent1 } } }, { requesterId: agent1 }] }] });
         const search = JSON.stringify(buildTicketTextSearch(agent2));
         expect(search).toContain('"assignments"');
         expect(search).toContain('"userId"');

@@ -15,9 +15,9 @@ let running = false;
 export async function processTicketReminders() {
     const leaseToken = randomUUID();
     const claimed = await prisma.$queryRaw<Array<{ id: string }>>`
-        UPDATE "ticket_reminders" SET "lease_token" = ${leaseToken}, "lease_until" = NOW() + INTERVAL '5 minutes', "attempts" = "attempts" + 1
-        WHERE "id" IN (SELECT "id" FROM "ticket_reminders" WHERE "status" = 'PENDING' AND "scheduled_at" <= NOW()
-        AND "next_attempt_at" <= NOW() AND ("lease_until" IS NULL OR "lease_until" < NOW()) ORDER BY "scheduled_at" FOR UPDATE SKIP LOCKED LIMIT 10)
+        UPDATE "ticket_reminders" SET "lease_token" = ${leaseToken}, "lease_until" = timezone('UTC', NOW()) + INTERVAL '5 minutes', "attempts" = "attempts" + 1
+        WHERE "id" IN (SELECT "id" FROM "ticket_reminders" WHERE "status" = 'PENDING' AND "scheduled_at" <= timezone('UTC', NOW())
+        AND "next_attempt_at" <= timezone('UTC', NOW()) AND ("lease_until" IS NULL OR "lease_until" < timezone('UTC', NOW())) ORDER BY "scheduled_at" FOR UPDATE SKIP LOCKED LIMIT 10)
         RETURNING "id"`;
     for (const { id } of claimed) {
         const reminder = await prisma.ticketReminder.findUnique({ where: { id }, include: { user: { select: { id: true, email: true, role: true, isActive: true, preferredLanguage: true } }, ticket: { select: { id: true, key: true, title: true, status: true, queueId: true, requesterId: true } } } });

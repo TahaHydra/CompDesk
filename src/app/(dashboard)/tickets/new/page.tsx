@@ -46,8 +46,8 @@ function compatibleValues(current: Record<string, unknown>, previousFields: Tick
         const oldField = previous.get(field.fieldKey);
         if (oldField?.type === field.type && Object.prototype.hasOwnProperty.call(current, field.fieldKey)) {
             const value = current[field.fieldKey];
-            if (field.type === 'DROPDOWN' && field.options.length && !field.options.includes(String(value))) return [];
-            if (field.type === 'MULTISELECT' && field.options.length && Array.isArray(value)) return [[field.fieldKey, value.filter((item) => field.options.includes(item))]];
+            if (field.type === 'DROPDOWN' && !field.options.includes(String(value))) return [];
+            if (field.type === 'MULTISELECT' && field.builtIn !== 'TAGS' && Array.isArray(value)) return [[field.fieldKey, value.filter((item) => field.options.includes(item))]];
             return [[field.fieldKey, value]];
         }
         return field.defaultValue === undefined || field.defaultValue === null ? [] : [[field.fieldKey, field.defaultValue]];

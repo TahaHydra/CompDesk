@@ -16,4 +16,5 @@ test('routing keeps compatible answers but removes obsolete select options', () 
     const previous = [{ fieldKey: 'type', type: 'DROPDOWN' }, { fieldKey: 'tags', type: 'MULTISELECT' }, { fieldKey: 'summary', type: 'TEXT' }];
     const next = previous.map((field) => ({ ...field, options: ['allowed'] }));
     expect(compatibleValues({ type: 'obsolete', tags: ['allowed', 'obsolete'], summary: 'Preserved' }, previous, next)).toEqual({ tags: ['allowed'], summary: 'Preserved' });
+    expect(compatibleValues({ type: 'obsolete', tags: ['old'] }, previous, next.map((field) => ({ ...field, options: [] })))).toEqual({ tags: [] });
 });

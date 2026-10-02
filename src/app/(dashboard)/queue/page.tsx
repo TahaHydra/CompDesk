@@ -39,9 +39,17 @@ export default function QueueInboxPage() {
     const urlSnapshot = searchParams.toString();
     const previousUrl = useRef(urlSnapshot);
     const reconcilingUrl = useRef(false);
+    const pendingUrls = useRef(new Set<string>());
+    const latestOwnUrl = useRef<string | null>(null);
     useEffect(() => {
         if (previousUrl.current === urlSnapshot) return;
         previousUrl.current = urlSnapshot;
+        // An earlier router acknowledgment may arrive after the user types again.
+        if (pendingUrls.current.delete(urlSnapshot)) {
+            if (latestOwnUrl.current === urlSnapshot) { pendingUrls.current.clear(); latestOwnUrl.current = null; }
+            return;
+        }
+        pendingUrls.current.clear(); latestOwnUrl.current = null;
         reconcilingUrl.current = true;
         const incoming = new URLSearchParams(urlSnapshot);
         setQueueId(incoming.get('queueId') ?? 'all'); setSearch(incoming.get('search') ?? '');
@@ -66,7 +74,10 @@ export default function QueueInboxPage() {
         if (page > 1) params.set('page', String(page));
         if (limit !== DEFAULT_LIMIT) params.set('limit', String(limit));
         const query = params.toString();
-        if (query !== urlSnapshot) router.replace(query ? `/queue?${query}` : '/queue', { scroll: false });
+        if (query !== urlSnapshot) {
+            pendingUrls.current.add(query); latestOwnUrl.current = query;
+            router.replace(query ? `/queue?${query}` : '/queue', { scroll: false });
+        }
     }, [router, queueId, status, priority, search, page, limit, urlSnapshot]);
 
     const { data: queues, isLoading: isLoadingQueues, error: queuesError, refetch: retryQueues } = useQuery({

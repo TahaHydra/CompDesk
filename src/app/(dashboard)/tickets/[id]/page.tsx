@@ -306,7 +306,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         } catch (err: any) {
             toast({ title: t('Upload failed'), description: err.message, variant: 'destructive' });
         }
-    }, [id, isInternal, queryClient, toast]);
+    }, [id, isInternal, queryClient, toast, t]);
 
     const deleteAttachment = async (attachmentId: string) => {
         try {

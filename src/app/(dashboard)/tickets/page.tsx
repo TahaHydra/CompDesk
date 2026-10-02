@@ -59,9 +59,17 @@ export default function TicketsPage() {
     const urlSnapshot = params.toString();
     const previousUrl = useRef(urlSnapshot);
     const reconcilingUrl = useRef(false);
+    const pendingUrls = useRef(new Set<string>());
+    const latestOwnUrl = useRef<string | null>(null);
     useEffect(() => {
         if (previousUrl.current === urlSnapshot) return;
         previousUrl.current = urlSnapshot;
+        // Router acknowledgments must not replace newer local edits or search drafts.
+        if (pendingUrls.current.delete(urlSnapshot)) {
+            if (latestOwnUrl.current === urlSnapshot) { pendingUrls.current.clear(); latestOwnUrl.current = null; }
+            return;
+        }
+        pendingUrls.current.clear(); latestOwnUrl.current = null;
         reconcilingUrl.current = true;
         const incoming = new URLSearchParams(urlSnapshot);
         const incomingSearch = incoming.get('search') ?? '';
@@ -112,7 +120,11 @@ export default function TicketsPage() {
         if (ticketRef.trim()) next.set(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(ticketRef.trim()) ? 'ticketId' : 'ticketKey', ticketRef.trim());
         if (page > 1) next.set('page', String(page));
         if (limit !== DEFAULT_LIMIT) next.set('limit', String(limit));
-        if (next.toString() !== urlSnapshot) router.replace(next.size ? `/tickets?${next}` : '/tickets', { scroll: false });
+        if (next.toString() !== urlSnapshot) {
+            const query = next.toString();
+            pendingUrls.current.add(query); latestOwnUrl.current = query;
+            router.replace(next.size ? `/tickets?${next}` : '/tickets', { scroll: false });
+        }
     }, [assigneeId, categoryId, limit, page, priority, queueId, requesterId, role, router, search, status, tagIds, ticketRef, view, urlSnapshot]);
 
     const queryValues = { view, search, status, priority, queueId, categoryId, requesterId, assigneeId, tagIds: tagIds.join(','), ticketRef: ticketRef.trim(), page, limit };
