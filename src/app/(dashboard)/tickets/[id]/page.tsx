@@ -26,6 +26,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
+import { useLanguage } from '@/components/providers/language-provider';
 import { parseTicketContent } from '@/lib/ticket-content';
 
 function formatFileSize(bytes: number) {
@@ -65,6 +66,7 @@ function RenderDescription({ text }: { text: string }) {
 }
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
+    const { t, language } = useLanguage();
     const { data: session } = useSession();
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -389,8 +391,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         return (
             <div
                 key={event.id}
+                data-conversation-author={compact ? undefined : event.userId === session?.user?.id ? 'self' : 'other'}
                 className={cn(
                     'flex gap-3 animate-fade-in',
+                    !compact && 'w-full sm:max-w-[90%] rounded-lg border p-3',
+                    !compact && (event.userId === session?.user?.id ? 'ml-auto bg-primary/5 border-primary/20 flex-row-reverse' : 'mr-auto bg-muted/30'),
                     event.type === 'INTERNAL_NOTE' && 'bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800',
                     compact && event.type !== 'INTERNAL_NOTE' && 'rounded-lg border bg-muted/20 p-3'
                 )}
@@ -402,10 +407,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </Avatar>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{event.user?.name}</span>
+                        <span className="text-sm font-medium">{event.user?.name}</span>{!compact && event.userId === session?.user?.id ? <Badge variant="outline" className="text-xs">{t('You')}</Badge> : null}
                         {event.type === 'INTERNAL_NOTE' && (
                             <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                                <Eye className="h-3 w-3 mr-1" /> Internal
+                                <Eye className="h-3 w-3 mr-1" /> {t("Internal")}
                             </Badge>
                         )}
                         {event.type === 'ESCALATED' && (
@@ -420,7 +425,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <Badge variant="secondary" className="text-xs">Assignment</Badge>
                         )}
                         {event.type === 'PRIORITY_CHANGE' && (
-                            <Badge variant="secondary" className="text-xs">Priority</Badge>
+                            <Badge variant="secondary" className="text-xs">{t("Priority")}</Badge>
                         )}
                         {isEdited && (
                             <span className="text-xs text-muted-foreground italic">(edited)</span>
@@ -463,11 +468,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <div className="flex gap-2">
                                 <Button size="sm" className="gap-1" disabled={editComment.isPending}
                                     onClick={() => editComment.mutate({ eventId: event.id, content: editContent })}>
-                                    <Check className="h-3 w-3" /> Save
+                                    <Check className="h-3 w-3" /> {t("Save")}
                                 </Button>
                                 <Button size="sm" variant="ghost" className="gap-1"
                                     onClick={() => { setEditingEventId(null); setEditContent(''); }}>
-                                    <X className="h-3 w-3" /> Cancel
+                                    <X className="h-3 w-3" /> {t("Cancel")}
                                 </Button>
                             </div>
                         </div>
@@ -504,12 +509,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 <div className="flex shrink-0 flex-wrap items-center gap-2 pl-11 sm:pl-0">
                     {isAgent && ticket.status !== 'WITHDRAWN' && !assignedToCurrentUser ? (
                         <Button onClick={() => runAssignment('claim')} className="gap-2 bg-emerald-600 shadow-lg hover:bg-emerald-700" disabled={assignmentMutation.isPending}>
-                            <Hand className="h-4 w-4" /> Claim Ticket
+                            <Hand className="h-4 w-4" /> {t("Claim Ticket")}
                         </Button>
                     ) : null}
                     {isAgent && ticket.status !== 'WITHDRAWN' && assignedToCurrentUser ? (
                         <Button variant="outline" onClick={() => runAssignment('unclaim')} className="gap-2" disabled={assignmentMutation.isPending}>
-                            <Check className="h-4 w-4" /> Assigned · Unclaim myself
+                            <Check className="h-4 w-4" /> {t("Assigned · Unclaim myself")}
                         </Button>
                     ) : null}
 
@@ -522,7 +527,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             onConfirm={() => deleteTicket.mutate()}
                             trigger={
                                 <Button variant="destructive" size="sm" className="gap-1.5">
-                                    <Trash2 className="h-3.5 w-3.5" /> Withdraw
+                                    <Trash2 className="h-3.5 w-3.5" /> {t("Withdraw")}
                                 </Button>
                             }
                         />
@@ -542,15 +547,41 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Main content */}
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Description with inline images */}
-                    {ticket.description && (
+                    {/* Opening request: author and original submitted content */}
+                    <Card className="overflow-hidden border border-primary/15 shadow-sm">
+                        <CardHeader className="flex flex-row items-center gap-3 bg-primary/5 pb-4">
+                            <Avatar className="h-10 w-10 shrink-0"><AvatarFallback className="bg-primary text-primary-foreground">{ticket.requester?.name?.split(' ').map((name: string) => name[0]).join('') || '?'}</AvatarFallback></Avatar>
+                            <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Requested by')}</p><p className="break-words font-semibold text-primary">{ticket.requester?.name}</p><time className="text-xs text-muted-foreground" dateTime={ticket.createdAt}>{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</time></div>
+                        </CardHeader>
+                        <CardContent className="space-y-2 p-5"><h2 className="text-sm font-semibold">{t('Description')}</h2>{ticket.description ? <RenderDescription text={ticket.description} /> : <p className="text-sm text-muted-foreground">{t('No description provided')}</p>}</CardContent>
+                    </Card>
+
+                    {/* Immutable historical form submission */}
+                    {ticket.historicalForm && ticket.historicalForm.fields.some((field: { builtIn: string | null }) => !field.builtIn) ? (
                         <Card className="border-0 shadow-sm">
-                            <CardContent className="p-5">
-                                <RenderDescription text={ticket.description} />
+                            <CardHeader className="pb-3">
+                                <CardTitle className="text-base">{t('Submitted answers')}</CardTitle>
+                                <p className="text-xs text-muted-foreground">{ticket.historicalForm.templateName} · version {ticket.historicalForm.version}</p>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                {ticket.historicalForm.fields
+                                    .filter((field: { builtIn: string | null }) => !field.builtIn)
+                                    .map((field: { id: string; fieldKey: string; label: string }) => {
+                                        const value = ticket.historicalForm.values[field.fieldKey];
+                                        if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) return null;
+                                        const display = typeof value === 'boolean' ? (value ? t('Yes') : t('No')) : Array.isArray(value)
+                                            ? value.map((item) => typeof item === 'object' && item && 'filename' in item ? String(item.filename) : String(item)).join(', ')
+                                            : String(value);
+                                        return (
+                                            <div key={field.id} className="flex flex-col text-sm">
+                                                <span className="text-xs text-muted-foreground">{field.label}</span>
+                                                <span className="mt-0.5 whitespace-pre-wrap font-medium">{display}</span>
+                                            </div>
+                                        );
+                                    })}
                             </CardContent>
                         </Card>
-                    )}
-
+                    ) : null}
                     {/* Attachments */}
                     {(ticket.attachments ?? []).length > 0 && (
                         <Card className="border-0 shadow-sm">
@@ -592,7 +623,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     <Card className="border-0 shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-base flex items-center gap-2">
-                                <MessageSquare className="h-4 w-4 text-primary" /> Conversation
+                                <MessageSquare className="h-4 w-4 text-primary" /> {t("Conversation")}
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -600,7 +631,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 conversationEvents.map((event: any) => renderTimelineEntry(event))
                             ) : (
                                 <div className="rounded-lg border border-dashed py-8 text-center">
-                                    <p className="text-sm text-muted-foreground">No conversation yet.</p>
+                                    <p className="text-sm text-muted-foreground">{t("No conversation yet.")}</p>
                                 </div>
                             )}
 
@@ -666,17 +697,65 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                 {/* Sidebar */}
                 <div className="space-y-4">
+                    {/* Details */}
+                    <Card className="border-0 shadow-sm">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base">{t("Details")}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{t("Department")}</span>
+                                <span className="font-medium">{ticket.queue?.name}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{t("Category")}</span>
+                                <span className="font-medium">{ticket.category?.name ?? '—'}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{t("Requester")}</span>
+                                <span className="font-semibold text-primary">{ticket.requester?.name}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{t("Assignees")}</span>
+                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : 'Unassigned'}</span>
+                            </div>
+                            {ticket.historicalForm ? (
+                                <div className="flex justify-between gap-4 text-sm">
+                                    <span className="text-muted-foreground">{t("Ticket form")}</span>
+                                    <span className="text-right font-medium">{ticket.historicalForm.templateName} v{ticket.historicalForm.version}</span>
+                                </div>
+                            ) : null}
+                            <Separator />
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{t("Created")}</span>
+                                <span className="text-xs">{new Date(ticket.createdAt).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{t("Updated")}</span>
+                                <span className="text-xs">{new Date(ticket.updatedAt).toLocaleString()}</span>
+                            </div>
+                            {ticket.dueAt && (
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">{t("Due")}</span>
+                                    <span className={`text-xs ${ticket.slaInfo?.resolutionBreached ? 'text-destructive font-bold' : ''}`}>
+                                        {new Date(ticket.dueAt).toLocaleString()}
+                                    </span>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     {/* Actions */}
                     {isAgent && ticket.status !== 'WITHDRAWN' && (
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base flex items-center gap-2">
-                                    <Shield className="h-4 w-4 text-primary" /> Actions
+                                    <Shield className="h-4 w-4 text-primary" /> {t("Actions")}
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground">Status</label>
+                                    <label className="text-xs font-medium text-muted-foreground">{t("Status")}</label>
                                     <Select
                                         value={ticket.status}
                                         onValueChange={(v) => updateTicket.mutate({ status: v })}
@@ -695,7 +774,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
 
                                 <div className="space-y-3">
-                                    <label className="text-xs font-medium text-muted-foreground">Assignees</label>
+                                    <label className="text-xs font-medium text-muted-foreground">{t("Assignees")}</label>
                                     {assignments.length === 0 ? <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Unassigned</p> : (
                                         <div className="space-y-2">
                                             {assignments.map((assignment: any) => (
@@ -726,7 +805,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground">Priority</label>
+                                    <label className="text-xs font-medium text-muted-foreground">{t("Priority")}</label>
                                     <Select
                                         value={ticket.priority}
                                         onValueChange={(v) => updateTicket.mutate({ priority: v })}
@@ -746,7 +825,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                                 {/* Category selector for agents */}
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-muted-foreground">Category</label>
+                                    <label className="text-xs font-medium text-muted-foreground">{t("Category")}</label>
                                     <Select
                                         value={ticket.categoryId ?? 'none'}
                                         onValueChange={(v) => updateTicket.mutate({ categoryId: v === 'none' ? null : v })}
@@ -801,7 +880,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                 </div>
                                             </div>
                                             <DialogFooter>
-                                                <Button variant="outline" onClick={() => setEscalateOpen(false)}>Cancel</Button>
+                                                <Button variant="outline" onClick={() => setEscalateOpen(false)}>{t("Cancel")}</Button>
                                                 <Button variant="destructive" onClick={() => escalateTicket.mutate()}
                                                     disabled={escalateTicket.isPending} className="gap-2">
                                                     <ArrowUpCircle className="h-4 w-4" />
@@ -845,80 +924,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         )}
                     </Card>
 
-                    {/* Details */}
-                    <Card className="border-0 shadow-sm">
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-base">Details</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Department</span>
-                                <span className="font-medium">{ticket.queue?.name}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Category</span>
-                                <span className="font-medium">{ticket.category?.name ?? '—'}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Requester</span>
-                                <span className="font-medium">{ticket.requester?.name}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Assignees</span>
-                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : 'Unassigned'}</span>
-                            </div>
-                            {ticket.historicalForm ? (
-                                <div className="flex justify-between gap-4 text-sm">
-                                    <span className="text-muted-foreground">Ticket form</span>
-                                    <span className="text-right font-medium">{ticket.historicalForm.templateName} v{ticket.historicalForm.version}</span>
-                                </div>
-                            ) : null}
-                            <Separator />
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Created</span>
-                                <span className="text-xs">{new Date(ticket.createdAt).toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Updated</span>
-                                <span className="text-xs">{new Date(ticket.updatedAt).toLocaleString()}</span>
-                            </div>
-                            {ticket.dueAt && (
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Due</span>
-                                    <span className={`text-xs ${ticket.slaInfo?.resolutionBreached ? 'text-destructive font-bold' : ''}`}>
-                                        {new Date(ticket.dueAt).toLocaleString()}
-                                    </span>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Immutable historical form submission */}
-                    {ticket.historicalForm && ticket.historicalForm.fields.some((field: { builtIn: string | null }) => !field.builtIn) ? (
-                        <Card className="border-0 shadow-sm">
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-base">Submitted form data</CardTitle>
-                                <p className="text-xs text-muted-foreground">{ticket.historicalForm.templateName} · version {ticket.historicalForm.version}</p>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                                {ticket.historicalForm.fields
-                                    .filter((field: { builtIn: string | null }) => !field.builtIn)
-                                    .map((field: { id: string; fieldKey: string; label: string }) => {
-                                        const value = ticket.historicalForm.values[field.fieldKey];
-                                        if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) return null;
-                                        const display = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : Array.isArray(value)
-                                            ? value.map((item) => typeof item === 'object' && item && 'filename' in item ? String(item.filename) : String(item)).join(', ')
-                                            : String(value);
-                                        return (
-                                            <div key={field.id} className="flex flex-col text-sm">
-                                                <span className="text-xs text-muted-foreground">{field.label}</span>
-                                                <span className="mt-0.5 whitespace-pre-wrap font-medium">{display}</span>
-                                            </div>
-                                        );
-                                    })}
-                            </CardContent>
-                        </Card>
-                    ) : null}
                     {/* Watchers */}
                     <Card className="border-0 shadow-sm">
                         <CardHeader className="pb-3">

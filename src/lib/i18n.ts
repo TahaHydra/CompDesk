@@ -7,6 +7,15 @@ export const LANGUAGE_LABELS: Record<AppLanguage, string> = {
 };
 
 const french: Record<string, string> = {
+    "Requested by": "Demandé par",
+    "Submitted answers": "Réponses soumises",
+    "No description provided": "Aucune description fournie",
+    "You": "Vous",
+    "(read only)": "(lecture seule)",
+    "No options available": "Aucune option disponible",
+    "Uploading…": "Téléchargement…",
+    "Choose files": "Choisir des fichiers",
+    "File input preview": "Aperçu du champ fichier",
     'Dashboard': 'Tableau de bord',
     'My Tickets': 'Mes tickets',
     'New Ticket': 'Nouveau ticket',
