@@ -109,7 +109,7 @@ export function DynamicTicketForm({
                     <div key={field.id} className={cn('space-y-2 md:col-span-12', WIDTH_CLASSES[field.width] ?? 'md:col-span-12')}>
                         {field.type !== 'CHECKBOX' ? <Label id={`${inputId}-label`} htmlFor={field.type === 'MULTISELECT' ? undefined : inputId} className="flex items-center gap-1.5">
                             {field.label}{field.required && editable ? <span className="text-destructive" aria-hidden="true">*</span> : null}{!editable ? <span className="text-xs font-normal text-muted-foreground">{t('(read only)')}</span> : null}
-                        </Label> : null}
+                        </Label> : <div aria-hidden="true" className="hidden h-3.5 md:block" />}
 
                         {field.type === 'TEXT' ? (
                             <Input id={inputId} value={typeof value === 'string' ? value : ''} placeholder={field.placeholder ?? undefined}
@@ -143,7 +143,7 @@ export function DynamicTicketForm({
                             </div>
                         ) : null}
                         {field.type === 'CHECKBOX' ? (
-                            <label htmlFor={inputId} className="flex cursor-pointer items-center gap-2 rounded-md border p-3 text-sm">
+                            <label htmlFor={inputId} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm">
                                 <input id={inputId} type="checkbox" aria-invalid={Boolean(error)} aria-describedby={descriptionIds} checked={value === true} disabled={fieldDisabled}
                                     onChange={(event) => onChange(field.fieldKey, event.target.checked)} />
                                 <span>{field.label}{field.required && editable ? <span className="ml-1 text-destructive" aria-hidden="true">*</span> : null}{!editable ? <span className="ml-1 text-muted-foreground">{t('(read only)')}</span> : null}</span>
