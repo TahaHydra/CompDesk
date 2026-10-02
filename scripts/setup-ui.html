@@ -310,6 +310,18 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
         }
     };
 })();
+const smtpTlsPort = document.querySelector('[name="smtpPort"]');
+const smtpImplicitTls = document.querySelector('[name="smtpSecure"]');
+const smtpStartTls = document.querySelector('[name="smtpRequireTls"]');
+function syncSmtpTls() {
+  if (smtpTlsPort.value === '465') smtpImplicitTls.checked = true;
+  else if (smtpTlsPort.value === '587') smtpImplicitTls.checked = false;
+  smtpStartTls.disabled = smtpImplicitTls.checked;
+  smtpStartTls.checked = !smtpImplicitTls.checked;
+}
+smtpTlsPort.addEventListener('change', syncSmtpTls);
+smtpImplicitTls.addEventListener('change', () => { smtpTlsPort.value = smtpImplicitTls.checked ? '465' : '587'; syncSmtpTls(); });
+syncSmtpTls();
 </script>
 </body>
 </html>

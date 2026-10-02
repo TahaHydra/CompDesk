@@ -26,7 +26,7 @@ jest.mock('@/lib/branding', () => ({
 }));
 jest.mock('@/lib/audit', () => ({ auditLog: mockAuditLog }));
 
-import { sendEmail } from '@/lib/email';
+import { getSmtpConfig, sendEmail } from '@/lib/email';
 
 describe('email delivery', () => {
     beforeEach(() => {
@@ -69,4 +69,10 @@ describe('email delivery', () => {
             metadata: expect.objectContaining({ error: expect.stringContaining('operating system or container network policy') }),
         }));
     });
+});
+test('an environment password bypasses decryption of unused saved credentials', async () => {
+ const prior=process.env.SMTP_PASS;process.env.SMTP_PASS='synthetic-override';
+ mockFindMany.mockResolvedValue([{key:'smtp_password',value:'enc:v1:unavailable-old-key'}]);
+ try { expect((await getSmtpConfig({} as any)).pass).toBe('synthetic-override'); }
+ finally { if(prior===undefined)delete process.env.SMTP_PASS;else process.env.SMTP_PASS=prior; }
 });

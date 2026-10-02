@@ -134,7 +134,7 @@ export async function PATCH(request: Request) {
             const existing = Object.fromEntries(existingRows.map((setting) => [setting.key, setting.value]));
             const port = Number.parseInt(smtpEntries.get('smtp_port') ?? existing.smtp_port ?? process.env.SMTP_PORT ?? '587', 10);
             const secure = (smtpEntries.get('smtp_secure') ?? existing.smtp_secure ?? process.env.SMTP_SECURE ?? 'false') === 'true';
-            const requireTLS = (smtpEntries.get('smtp_require_tls') ?? existing.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? 'true') === 'true';
+            const requireTLS = (smtpEntries.get('smtp_require_tls') ?? existing.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? (secure ? 'false' : 'true')) === 'true';
             validateSmtpSecurityCombination({ port, secure, requireTLS });
         }
         const enablingEmail = normalizedEntries.some(([key, value]) => key.startsWith('email_on_') && value === 'true');

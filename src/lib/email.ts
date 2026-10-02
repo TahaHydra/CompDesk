@@ -47,8 +47,8 @@ export async function getSmtpConfig(branding: BrandingConfig): Promise<SmtpConfi
     }
     const secure = booleanSetting(config.smtp_secure ?? process.env.SMTP_SECURE, false);
     const requireTLS = booleanSetting(config.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS, !secure);
-    const storedPassword = config.smtp_password ? decryptSettingSecret(config.smtp_password) : undefined;
     const environmentPassword = getEnvironmentSmtpPassword();
+    const storedPassword = !environmentPassword && config.smtp_password ? decryptSettingSecret(config.smtp_password) : undefined;
     return {
         host: config.smtp_host || process.env.SMTP_HOST || 'smtp.office365.com',
         port: Number.parseInt(config.smtp_port || process.env.SMTP_PORT || '587', 10),

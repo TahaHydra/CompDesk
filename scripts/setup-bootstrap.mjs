@@ -385,7 +385,7 @@ function smtpTransport(smtp) {
         host: smtp.host,
         port: smtp.port,
         secure: smtp.port === 465,
-        requireTLS: smtp.port === 587 ? true : Boolean(smtp.requireTls),
+        requireTLS: smtp.port === 465 ? false : smtp.port === 587 ? true : Boolean(smtp.requireTls),
         auth: smtp.username ? { user: smtp.username, pass: smtp.password } : undefined,
         tls: { rejectUnauthorized: true },
         connectionTimeout: 8000,
@@ -608,7 +608,7 @@ async function install(input) {
                     smtp_password: encryptEnvelope(config.smtp.password || '', settingsEncryptionKey),
                     smtp_from: config.smtp.from || '',
                     smtp_secure: String(config.smtp.port === 465),
-                    smtp_require_tls: String(config.smtp.port === 587 ? true : config.smtp.requireTls),
+                    smtp_require_tls: String(config.smtp.port === 465 ? false : config.smtp.port === 587 ? true : config.smtp.requireTls),
                 });
             }
             for (const [key, value] of Object.entries(settings)) {
