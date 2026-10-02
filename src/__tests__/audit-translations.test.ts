@@ -8,6 +8,9 @@ test.each([
     ['Email delivery provider', 'Fournisseur d’envoi des e-mails'],
     ['Sender mailbox', 'Boîte expéditrice'],
     ['Pending User', 'En attente de l’utilisateur'],
+    ['Public Reply', 'Réponse publique'],
+    ['Internal Note', 'Note interne'],
+    ['Send Reply', 'Envoyer la réponse'],
 ])('audited UI translates %s while preserving English', (key, french) => {
     expect(translate('fr', key)).toBe(french);
     expect(translate('en', key)).toBe(key);

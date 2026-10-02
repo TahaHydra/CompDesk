@@ -7,6 +7,20 @@ export const LANGUAGE_LABELS: Record<AppLanguage, string> = {
 };
 
 const french: Record<string, string> = {
+    "Malware scan passed": "Analyse antivirus réussie",
+    "Malware scanner not configured": "Antivirus non configuré",
+    "Internal Note": "Note interne",
+    "Public Reply": "Réponse publique",
+    "Write an internal note... (Paste screenshots with Ctrl+V)": "Rédigez une note interne… (Collez les captures avec Ctrl+V)",
+    "Write a reply... (Paste screenshots with Ctrl+V)": "Rédigez une réponse… (Collez les captures avec Ctrl+V)",
+    "Add Note": "Ajouter une note",
+    "Send Reply": "Envoyer la réponse",
+    "Escalating...": "Escalade…",
+    "Escalate": "Escalader",
+    "The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators.": "L’événement sera masqué dans la conversation ; son contenu et les preuves de suppression resteront accessibles aux administrateurs autorisés.",
+    "Remove {name}": "Retirer {name}",
+    "Download {name}": "Télécharger {name}",
+    " (Currently L{level})": " (actuellement N{level})",
     "Remote image blocked.": "Image distante bloquée.",
     "Open link": "Ouvrir le lien",
     "Unsafe image reference blocked": "Référence d’image non sûre bloquée",

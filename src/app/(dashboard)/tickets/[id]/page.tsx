@@ -442,7 +442,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <Badge variant="outline" className="text-xs text-muted-foreground">{t("Deleted · history retained")}</Badge>
                         )}
                         <span className="text-xs text-muted-foreground">
-                            {new Date(event.createdAt).toLocaleString()}
+                            {new Date(event.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}
                         </span>
 
                         {(showEditBtn || showDeleteBtn) && !isEditing && (
@@ -456,7 +456,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 {showDeleteBtn && (
                                     <ConfirmDestructiveAction
                                         title={t("Remove timeline entry?")}
-                                        description="The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators."
+                                        description={t("The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators.")}
                                         pending={deleteComment.isPending}
                                         onConfirm={() => deleteComment.mutate(event.id)}
                                         trigger={
@@ -604,14 +604,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <FileIcon className="h-8 w-8 text-muted-foreground p-1 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}{att.isInternal ? <Badge variant="outline" className="ml-2 text-amber-700">{t('Internal')}</Badge> : null}</p>
-                                            <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured'}</p>
+                                            <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {t(att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured')}</p>
                                         </div>
-                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
+                                        <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={t("Download {name}", { name: att.filename })}><Download className="h-3.5 w-3.5" /></a></Button>
                                         <ConfirmDestructiveAction
                                             title={t("Remove attachment?")}
                                             description={<>{t("The stored file")} <strong>{att.filename}</strong> {t("will be removed, while its history record and audit evidence are retained.")}</>}
                                             onConfirm={() => void deleteAttachment(att.id)}
-                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={`Remove ${att.filename}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={t("Remove {name}", { name: att.filename })}><Trash2 className="h-3.5 w-3.5" /></Button>}
                                         />
                                     </div>
                                 ))}
@@ -656,12 +656,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             className={isInternal ? 'bg-amber-500 hover:bg-amber-600' : ''}
                                         >
                                             <Eye className="h-3.5 w-3.5 mr-1" />
-                                            {isInternal ? 'Internal Note' : 'Public Reply'}
+                                            {t(isInternal ? 'Internal Note' : 'Public Reply')}
                                         </Button>
                                     </div>
                                 )}
                                 <Textarea
-                                    placeholder={isInternal ? 'Write an internal note... (Paste screenshots with Ctrl+V)' : 'Write a reply... (Paste screenshots with Ctrl+V)'}
+                                    placeholder={t(isInternal ? 'Write an internal note... (Paste screenshots with Ctrl+V)' : 'Write a reply... (Paste screenshots with Ctrl+V)')}
                                     value={comment}
                                     disabled={addComment.isPending}
                                     onChange={(e) => setComment(e.target.value)}
@@ -695,7 +695,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         size="sm"
                                     >
                                         <Send className="h-3.5 w-3.5" />
-                                        {isInternal ? 'Add Note' : 'Send Reply'}
+                                        {t(isInternal ? 'Add Note' : 'Send Reply')}
                                     </Button>
                                 </div>
                             </div>
@@ -725,7 +725,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">{t("Assignees")}</span>
-                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : 'Unassigned'}</span>
+                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : t('Unassigned')}</span>
                             </div>
                             {ticket.historicalForm ? (
                                 <div className="flex justify-between gap-4 text-sm">
@@ -736,17 +736,17 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <Separator />
                             <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">{t("Created")}</span>
-                                <span className="text-xs">{new Date(ticket.createdAt).toLocaleString()}</span>
+                                <span className="text-xs">{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">{t("Updated")}</span>
-                                <span className="text-xs">{new Date(ticket.updatedAt).toLocaleString()}</span>
+                                <span className="text-xs">{new Date(ticket.updatedAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</span>
                             </div>
                             {ticket.dueAt && (
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">{t("Due")}</span>
                                     <span className={`text-xs ${ticket.slaInfo?.resolutionBreached ? 'text-destructive font-bold' : ''}`}>
-                                        {new Date(ticket.dueAt).toLocaleString()}
+                                        {new Date(ticket.dueAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}
                                     </span>
                                 </div>
                             )}
@@ -791,7 +791,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                         <p className="truncate text-sm font-medium">{assignment.user.name}</p>
                                                         <p className="truncate text-xs text-muted-foreground">{assignment.user.email} · {assignment.user.role}</p>
                                                     </div>
-                                                    <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${assignment.user.name}`} disabled={assignmentMutation.isPending} onClick={() => runAssignment('remove', assignment.userId)}>
+                                                    <Button type="button" size="icon" variant="ghost" aria-label={t("Remove {name}", { name: assignment.user.name })} disabled={assignmentMutation.isPending} onClick={() => runAssignment('remove', assignment.userId)}>
                                                         <X className="h-4 w-4" />
                                                     </Button>
                                                 </div>
@@ -854,7 +854,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <DialogTrigger asChild>
                                             <Button variant="destructive" size="sm" className="w-full gap-2">
                                                 <ArrowUpCircle className="h-3.5 w-3.5" />
-                                                {t("Escalate Ticket")}{ticket.escalationLevel > 0 ? ` (Currently L${ticket.escalationLevel})` : ''}
+                                                {t("Escalate Ticket")}{ticket.escalationLevel > 0 ? t(' (Currently L{level})', { level: ticket.escalationLevel }) : ''}
                                             </Button>
                                         </DialogTrigger>
                                         <DialogContent>
@@ -892,7 +892,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                 <Button variant="destructive" onClick={() => escalateTicket.mutate()}
                                                     disabled={escalateTicket.isPending} className="gap-2">
                                                     <ArrowUpCircle className="h-4 w-4" />
-                                                    {escalateTicket.isPending ? 'Escalating...' : 'Escalate'}
+                                                    {t(escalateTicket.isPending ? 'Escalating...' : 'Escalate')}
                                                 </Button>
                                             </DialogFooter>
                                         </DialogContent>
