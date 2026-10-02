@@ -42,26 +42,29 @@ const STATUS_OPTIONS = ['NEW', 'OPEN', 'PENDING_USER', 'PENDING_AGENT', 'RESOLVE
 const PRIORITY_OPTIONS = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 
 function StatusBadge({ value }: { value: string }) {
+    const { t } = useLanguage();
     return (
         <Badge className={cn('text-xs', getStatusBadgeClass(value))}>
-            {formatTicketValue(value)}
+            {t(formatTicketValue(value))}
         </Badge>
     );
 }
 
 function PriorityBadge({ value }: { value: string }) {
+    const { t } = useLanguage();
     return (
         <Badge variant="outline" className={cn('text-xs', getPriorityBadgeClass(value))}>
-            {formatTicketValue(value)}
+            {t(formatTicketValue(value))}
         </Badge>
     );
 }
 
 function RenderDescription({ text }: { text: string }) {
+    const { t } = useLanguage();
     return <div className="space-y-2 text-sm">{parseTicketContent(text).map((part, index) => {
         if (part.kind === 'inline-image') return <div key={index} className="my-2"><img src={part.url} alt={part.alt} className="max-h-96 max-w-full rounded-lg border shadow-sm" />{part.alt ? <p className="mt-1 text-xs text-muted-foreground">{part.alt}</p> : null}</div>;
-        if (part.kind === 'external-image-link') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs">Remote image blocked. <a href={part.url} target="_blank" rel="noopener noreferrer" className="underline">Open link</a>{part.alt ? `: ${part.alt}` : ''}</p>;
-        if (part.kind === 'blocked-image') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">Unsafe image reference blocked{part.alt ? `: ${part.alt}` : ''}.</p>;
+        if (part.kind === 'external-image-link') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs">{t("Remote image blocked.")} <a href={part.url} target="_blank" rel="noopener noreferrer" className="underline">{t("Open link")}</a>{part.alt ? `: ${part.alt}` : ''}</p>;
+        if (part.kind === 'blocked-image') return <p key={index} className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">{t("Unsafe image reference blocked")}{part.alt ? `: ${part.alt}` : ''}.</p>;
         return part.value ? <p key={index} className="whitespace-pre-wrap">{part.value}</p> : null;
     })}</div>;
 }
@@ -148,10 +151,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         },
         onSuccess: () => {
             for (const queryKey of [['ticket', id], ['tickets'], ['queue-tickets'], ['dashboard-stats']]) void queryClient.invalidateQueries({ queryKey });
-            toast({ title: 'Ticket updated' });
+            toast({ title: t('Ticket updated') });
         },
         onError: (e: Error) => {
-            toast({ title: 'Error', description: e.message, variant: 'destructive' });
+            toast({ title: t('Error'), description: e.message, variant: 'destructive' });
         },
     });
 
@@ -178,9 +181,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             queryClient.invalidateQueries({ queryKey: ['tickets'] });
             queryClient.invalidateQueries({ queryKey: ['queue-tickets'] });
             queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-            toast({ title: payload.alreadyAssigned ? 'Already assigned' : operation === 'remove' || operation === 'unclaim' ? 'Assignee removed' : 'Assignee added' });
+            toast({ title: t(payload.alreadyAssigned ? 'Already assigned' : operation === 'remove' || operation === 'unclaim' ? 'Assignee removed' : 'Assignee added') });
         },
-        onError: (error: Error) => toast({ title: 'Assignment failed', description: error.message, variant: 'destructive' }),
+        onError: (error: Error) => toast({ title: t('Assignment failed'), description: error.message, variant: 'destructive' }),
         onSettled: () => { assignmentRequestLock.current = false; },
     });
     const runAssignment = (operation: 'add' | 'remove' | 'claim' | 'unclaim', userId?: string) => {
@@ -204,9 +207,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         onSuccess: () => {
             setComment('');
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: isInternal ? 'Internal note added' : 'Comment added' });
+            toast({ title: t(isInternal ? 'Internal note added' : 'Comment added') });
         },
-        onError: (error: Error) => toast({ title: 'Reply could not be sent', description: error.message, variant: 'destructive' }),
+        onError: (error: Error) => toast({ title: t('Reply could not be sent'), description: error.message, variant: 'destructive' }),
     });
 
     const editComment = useMutation({
@@ -226,10 +229,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             setEditingEventId(null);
             setEditContent('');
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Timeline entry updated' });
+            toast({ title: t('Timeline entry updated') });
         },
         onError: (e: Error) => {
-            toast({ title: 'Error', description: e.message, variant: 'destructive' });
+            toast({ title: t('Error'), description: e.message, variant: 'destructive' });
         },
     });
 
@@ -246,10 +249,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Timeline entry removed from conversation' });
+            toast({ title: t('Timeline entry removed from conversation') });
         },
         onError: (e: Error) => {
-            toast({ title: 'Error', description: e.message, variant: 'destructive' });
+            toast({ title: t('Error'), description: e.message, variant: 'destructive' });
         },
     });
 
@@ -263,11 +266,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             return res.json();
         },
         onSuccess: () => {
-            toast({ title: 'Ticket withdrawn' });
+            toast({ title: t('Ticket withdrawn') });
             router.push('/tickets');
         },
         onError: (e: Error) => {
-            toast({ title: 'Error', description: e.message, variant: 'destructive' });
+            toast({ title: t('Error'), description: e.message, variant: 'destructive' });
         },
     });
 
@@ -286,7 +289,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
             toast({ title: `Ticket escalated to level ${data.escalationLevel}` });
         },
-        onError: (e: Error) => toast({ title: 'Escalation failed', description: e.message, variant: 'destructive' }),
+        onError: (e: Error) => toast({ title: t('Escalation failed'), description: e.message, variant: 'destructive' }),
     });
 
     // File upload to existing ticket
@@ -299,9 +302,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             const res = await fetch('/api/upload', { method: 'POST', body: fd });
             if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'File uploaded' });
+            toast({ title: t('File uploaded') });
         } catch (err: any) {
-            toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
+            toast({ title: t('Upload failed'), description: err.message, variant: 'destructive' });
         }
     }, [id, isInternal, queryClient, toast]);
 
@@ -310,9 +313,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             const res = await fetch(`/api/upload/${attachmentId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed');
             queryClient.invalidateQueries({ queryKey: ['ticket', id] });
-            toast({ title: 'Attachment removed' });
+            toast({ title: t('Attachment removed') });
         } catch {
-            toast({ title: 'Failed to delete', variant: 'destructive' });
+            toast({ title: t('Failed to delete'), variant: 'destructive' });
         }
     };
 
@@ -372,7 +375,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <XCircle className="h-12 w-12 text-destructive mb-4" />
                 <h2 className="text-xl font-bold">{t(isError && (error as Error & { status?: number })?.status !== 404 ? 'Ticket could not be loaded' : 'Ticket not found')}</h2>{isError ? <Button variant="outline" onClick={() => void refetch()}>{t('Retry')}</Button> : null}
-                <Button asChild variant="outline" className="mt-4"><Link href="/tickets">Back to tickets</Link></Button>
+                <Button asChild variant="outline" className="mt-4"><Link href="/tickets">{t("Back to tickets")}</Link></Button>
             </div>
         );
     }
@@ -420,23 +423,23 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         )}
                         {event.type === 'ESCALATED' && (
                             <Badge variant="destructive" className="text-xs gap-1">
-                                <ArrowUpCircle className="h-3 w-3" /> Escalated
+                                <ArrowUpCircle className="h-3 w-3" /> {t("Escalated")}
                             </Badge>
                         )}
                         {event.type === 'STATUS_CHANGE' && (
-                            <Badge variant="secondary" className="text-xs">Status Change</Badge>
+                            <Badge variant="secondary" className="text-xs">{t("Status Change")}</Badge>
                         )}
                         {event.type === 'ASSIGNMENT_CHANGE' && (
-                            <Badge variant="secondary" className="text-xs">Assignment</Badge>
+                            <Badge variant="secondary" className="text-xs">{t("Assignment")}</Badge>
                         )}
                         {event.type === 'PRIORITY_CHANGE' && (
                             <Badge variant="secondary" className="text-xs">{t("Priority")}</Badge>
                         )}
                         {isEdited && (
-                            <span className="text-xs text-muted-foreground italic">(edited)</span>
+                            <span className="text-xs text-muted-foreground italic">{t("(edited)")}</span>
                         )}
                         {isDeleted && (
-                            <Badge variant="outline" className="text-xs text-muted-foreground">Deleted · history retained</Badge>
+                            <Badge variant="outline" className="text-xs text-muted-foreground">{t("Deleted · history retained")}</Badge>
                         )}
                         <span className="text-xs text-muted-foreground">
                             {new Date(event.createdAt).toLocaleString()}
@@ -452,12 +455,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 )}
                                 {showDeleteBtn && (
                                     <ConfirmDestructiveAction
-                                        title="Remove timeline entry?"
+                                        title={t("Remove timeline entry?")}
                                         description="The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators."
                                         pending={deleteComment.isPending}
                                         onConfirm={() => deleteComment.mutate(event.id)}
                                         trigger={
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label="Remove timeline entry">
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" aria-label={t("Remove timeline entry")}>
                                                 <Trash2 className="h-3 w-3" />
                                             </Button>
                                         }
@@ -494,17 +497,17 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 items-start gap-2 sm:gap-3">
-<Button asChild variant="ghost" size="icon" className="shrink-0"><Link href="/tickets" aria-label="Back to tickets"><ArrowLeft className="h-4 w-4" /></Link></Button>
+<Button asChild variant="ghost" size="icon" className="shrink-0"><Link href="/tickets" aria-label={t("Back to tickets")}><ArrowLeft className="h-4 w-4" /></Link></Button>
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono text-sm text-muted-foreground">{ticket.key}</span>
                             <StatusBadge value={ticket.status} />
                             <PriorityBadge value={ticket.priority} />
                             {ticket.escalationLevel > 0 && (
-                                <Badge variant="destructive" className="gap-1"><ArrowUpCircle className="h-3 w-3" /> Escalated L{ticket.escalationLevel}</Badge>
+                                <Badge variant="destructive" className="gap-1"><ArrowUpCircle className="h-3 w-3" /> {t("Escalated L")}{ticket.escalationLevel}</Badge>
                             )}
                             {ticket.slaInfo?.resolutionBreached && (
-                                <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> SLA Breached</Badge>
+                                <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> {t("SLA Breached")}</Badge>
                             )}
                         </div>
                         <h1 className="mt-1.5 text-xl font-bold sm:text-2xl">{ticket.title}</h1>
@@ -526,8 +529,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     {/* Super administrators can delete any ticket; requesters can withdraw unassigned tickets. */}
                     {canDeleteTicket && (
                         <ConfirmDestructiveAction
-                            title="Withdraw ticket?"
-                            description={<>Ticket <strong>{ticket.key}</strong> will be marked withdrawn. Its conversation, attachments, and audit history will be retained.</>}
+                            title={t("Withdraw ticket?")}
+                            description={<>{t("Ticket")} <strong>{ticket.key}</strong> {t("will be marked withdrawn. Its conversation, attachments, and audit history will be retained.")}</>}
                             pending={deleteTicket.isPending}
                             onConfirm={() => deleteTicket.mutate()}
                             trigger={
@@ -540,10 +543,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                     {Array.isArray(ticket.presenceInfo?.viewers) && ticket.presenceInfo.viewers.some((viewer: { id: string }) => viewer.id !== session?.user?.id) && (
                         <Badge variant="outline" className="gap-1 text-muted-foreground">
-                            <Eye className="h-3 w-3" /> Viewing now: {ticket.presenceInfo.viewers
+                            <Eye className="h-3 w-3" /> {t("Viewing now:")} {ticket.presenceInfo.viewers
                                 .filter((viewer: { id: string }) => viewer.id !== session?.user?.id)
                                 .map((viewer: { name: string }) => viewer.name)
-                                .join(', ')} · non-exclusive presence
+                                .join(', ')} {t("· non-exclusive presence")}
                         </Badge>
                     )}
                 </div>
@@ -566,7 +569,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base">{t('Submitted answers')}</CardTitle>
-                                <p className="text-xs text-muted-foreground">{ticket.historicalForm.templateName} · version {ticket.historicalForm.version}</p>
+                                <p className="text-xs text-muted-foreground">{ticket.historicalForm.templateName} {t("· version")} {ticket.historicalForm.version}</p>
                             </CardHeader>
                             <CardContent className="space-y-3">
                                 {ticket.historicalForm.fields
@@ -592,7 +595,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                         <Card className="border-0 shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base flex items-center gap-2">
-                                    <Paperclip className="h-4 w-4 text-primary" /> Attachments ({activeAttachments.length})
+                                    <Paperclip className="h-4 w-4 text-primary" /> {t("Attachments (")}{activeAttachments.length})
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
@@ -605,8 +608,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         </div>
                                         <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>
                                         <ConfirmDestructiveAction
-                                            title="Remove attachment?"
-                                            description={<>The stored file <strong>{att.filename}</strong> will be removed, while its history record and audit evidence are retained.</>}
+                                            title={t("Remove attachment?")}
+                                            description={<>{t("The stored file")} <strong>{att.filename}</strong> {t("will be removed, while its history record and audit evidence are retained.")}</>}
                                             onConfirm={() => void deleteAttachment(att.id)}
                                             trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={`Remove ${att.filename}`}><Trash2 className="h-3.5 w-3.5" /></Button>}
                                         />
@@ -617,7 +620,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <FileIcon className="h-8 w-8 p-1 shrink-0" />
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs">Removed · history retained</p>
+                                            <p className="text-xs">{t("Removed · history retained")}</p>
                                         </div>
                                     </div>
                                 ))}                            </CardContent>
@@ -674,7 +677,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             className="gap-1.5"
                                             onClick={() => fileInputRef.current?.click()}
                                         >
-                                            <Upload className="h-3.5 w-3.5" /> Attach file
+                                            <Upload className="h-3.5 w-3.5" /> {t("Attach file")}
                                         </Button>
                                         <input
                                             ref={fileInputRef}
@@ -780,7 +783,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                                 <div className="space-y-3">
                                     <label className="text-xs font-medium text-muted-foreground">{t("Assignees")}</label>
-                                    {assignments.length === 0 ? <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Unassigned</p> : (
+                                    {assignments.length === 0 ? <p className="text-sm font-medium text-amber-700 dark:text-amber-300">{t("Unassigned")}</p> : (
                                         <div className="space-y-2">
                                             {assignments.map((assignment: any) => (
                                                 <div key={assignment.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
@@ -799,7 +802,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         kind="assignee"
                                         queueId={ticket.queueId}
                                         value={assignmentCandidateId}
-                                        placeholder="Search to add an assignee"
+                                        placeholder={t("Search to add an assignee")}
                                         disabled={assignmentMutation.isPending}
                                         onValueChange={(value) => {
                                             if (!value || assignments.some((assignment: any) => assignment.userId === value) || assignmentMutation.isPending) return;
@@ -837,7 +840,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     >
                                         <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="none">No category</SelectItem>
+                                            <SelectItem value="none">{t("No category")}</SelectItem>
                                             {(categories ?? []).map((cat: any) => (
                                                 <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                                             ))}
@@ -851,16 +854,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <DialogTrigger asChild>
                                             <Button variant="destructive" size="sm" className="w-full gap-2">
                                                 <ArrowUpCircle className="h-3.5 w-3.5" />
-                                                Escalate Ticket{ticket.escalationLevel > 0 ? ` (Currently L${ticket.escalationLevel})` : ''}
+                                                {t("Escalate Ticket")}{ticket.escalationLevel > 0 ? ` (Currently L${ticket.escalationLevel})` : ''}
                                             </Button>
                                         </DialogTrigger>
                                         <DialogContent>
-                                            <DialogHeader><DialogTitle>Escalate Ticket</DialogTitle></DialogHeader>
+                                            <DialogHeader><DialogTitle>{t("Escalate Ticket")}</DialogTitle></DialogHeader>
                                             <div className="space-y-4">
                                                 <div className="space-y-2">
-                                                    <Label>Escalate To (optional)</Label>
+                                                    <Label>{t("Escalate To (optional)")}</Label>
                                                     <Select value={escalateToId} onValueChange={setEscalateToId}>
-                                                        <SelectTrigger><SelectValue placeholder="Select agent/admin" /></SelectTrigger>
+                                                        <SelectTrigger><SelectValue placeholder={t("Select agent/admin")} /></SelectTrigger>
                                                         <SelectContent>
                                                             {(users ?? []).filter((u: any) => u.role !== 'USER').map((u: any) => (
                                                                 <SelectItem key={u.id} value={u.id}>{u.name} ({u.role})</SelectItem>
@@ -869,18 +872,18 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                     </Select>
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <Label>Reason</Label>
-                                                    <Textarea placeholder="Why is this ticket being escalated?" value={escalateReason}
+                                                    <Label>{t("Reason")}</Label>
+                                                    <Textarea placeholder={t("Why is this ticket being escalated?")} value={escalateReason}
                                                         onChange={(e) => setEscalateReason(e.target.value)} rows={3} />
                                                 </div>
                                                 <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                                                    <p>Escalating will:</p>
+                                                    <p>{t("Escalating will:")}</p>
                                                     <ul className="list-disc ml-4 mt-1 space-y-0.5">
-                                                        <li>Increase escalation level to L{(ticket.escalationLevel ?? 0) + 1}</li>
-                                                        <li>Re-assign to selected agent (if chosen)</li>
-                                                        {(ticket.escalationLevel ?? 0) >= 1 && <li>Auto-upgrade priority to URGENT</li>}
-                                                        <li>Add escalation event to timeline</li>
-                                                        <li>Notify the escalation target via email</li>
+                                                        <li>{t("Increase escalation level to L")}{(ticket.escalationLevel ?? 0) + 1}</li>
+                                                        <li>{t("Re-assign to selected agent (if chosen)")}</li>
+                                                        {(ticket.escalationLevel ?? 0) >= 1 && <li>{t("Auto-upgrade priority to URGENT")}</li>}
+                                                        <li>{t("Add escalation event to timeline")}</li>
+                                                        <li>{t("Notify the escalation target via email")}</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -912,7 +915,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             >
                                 <CardTitle className="text-base flex items-center gap-2">
                                     <MessageSquare className="h-4 w-4 text-primary" />
-                                    Timeline
+                                    {t("Timeline")}
                                     <Badge variant="secondary" className="text-xs">{timelineEvents.length}</Badge>
                                 </CardTitle>
                                 <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', timelineOpen && 'rotate-180')} />
@@ -924,7 +927,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     timelineEvents.map((event: any) => renderTimelineEntry(event, true))
                                 ) : (
                                     <p className="rounded-lg border border-dashed py-6 text-center text-xs text-muted-foreground">
-                                        No status, priority, assignment, or escalation events yet.
+                                        {t("No status, priority, assignment, or escalation events yet.")}
                                     </p>
                                 )}
                             </CardContent>
@@ -935,7 +938,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     <Card className="border-0 shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-base flex items-center gap-2">
-                                <User className="h-4 w-4 text-primary" /> Watchers ({ticket.watchers?.length ?? 0})
+                                <User className="h-4 w-4 text-primary" /> {t("Watchers (")}{ticket.watchers?.length ?? 0})
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -946,7 +949,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     </Badge>
                                 ))}
                                 {(!ticket.watchers || ticket.watchers.length === 0) && (
-                                    <p className="text-xs text-muted-foreground">No watchers</p>
+                                    <p className="text-xs text-muted-foreground">{t("No watchers")}</p>
                                 )}
                             </div>
                         </CardContent>
