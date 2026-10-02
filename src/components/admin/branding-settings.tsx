@@ -269,9 +269,9 @@ export function BrandingSettings() {
                 </CardContent>
             </Card>
 
-            <div className="flex flex-wrap justify-end gap-3">
+            <div className="flex flex-wrap items-center gap-3 border-t pt-4">
                 <ConfirmDestructiveAction title="Reset all branding?" description="All branding values will return to their defaults and every uploaded brand asset will be permanently removed." confirmLabel="Yes, reset all" pendingLabel="Resetting…" pending={resetMutation.isPending} disabled={saveMutation.isPending || uploading !== null} onConfirm={() => resetMutation.mutate()} trigger={<Button type="button" variant="outline"><RotateCcw className="mr-2 h-4 w-4" /> Reset all defaults</Button>} />
-                <Button type="button" disabled={savePending || hasFieldErrors} onClick={() => saveMutation.mutate()}><Save className="mr-2 h-4 w-4" /> {saveMutation.isPending ? 'Saving…' : 'Save branding'}</Button>
+                <Button type="button" className="ml-auto" disabled={savePending || hasFieldErrors} onClick={() => saveMutation.mutate()}><Save className="mr-2 h-4 w-4" /> {saveMutation.isPending ? 'Saving…' : 'Save branding'}</Button>
             </div>
         </div>
     );
