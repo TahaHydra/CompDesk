@@ -8,7 +8,7 @@ import { handleLoginOrRegister } from '../node_modules/next-auth/node_modules/@a
 const databaseUrl = process.env.ENTRA_LINK_TEST_DATABASE_URL || process.env.DATABASE_URL;
 const integrationTest = databaseUrl ? test : test.skip;
 
-integrationTest('links an existing normalized local user to Entra and reuses it on subsequent SSO', async () => {
+integrationTest('requires authenticated local ownership to link Entra and reuses the linked identity', async () => {
     const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
     const adapter = PrismaAdapter(prisma);
     const suffix = crypto.randomUUID();
@@ -29,19 +29,21 @@ integrationTest('links an existing normalized local user to Entra and reuses it 
         localUserId = localUser.id;
         const options = {
             adapter,
-            jwt: { decode: async () => null },
+            jwt: { decode: async () => ({ sub: localUser.id }) },
             events: {},
             session: { strategy: 'jwt', generateSessionToken: () => crypto.randomUUID(), maxAge: 3600 },
             cookies: { sessionToken: { name: 'authjs.session-token' } },
             provider: {
-                allowDangerousEmailAccountLinking: true,
+                allowDangerousEmailAccountLinking: false,
                 account: (tokenSet) => tokenSet,
             },
         };
         const profile = { id: providerAccountId, name: 'Entra User', email: normalizedEmail, image: null };
         const account = { type: 'oidc', provider: 'microsoft-entra-id', providerAccountId };
 
-        const firstLogin = await handleLoginOrRegister(null, profile, account, options);
+        await assert.rejects(handleLoginOrRegister(null, profile, account, options), { name: 'OAuthAccountNotLinked' });
+        assert.equal(await prisma.account.count({ where: { provider: 'microsoft-entra-id', providerAccountId } }), 0);
+        const firstLogin = await handleLoginOrRegister('authenticated-local-session', profile, account, options);
         assert.equal(firstLogin.user.id, localUser.id);
         assert.equal(firstLogin.isNewUser, false);
         assert.equal(await prisma.user.count({ where: { normalizedEmail } }), 1);

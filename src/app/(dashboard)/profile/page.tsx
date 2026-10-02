@@ -9,6 +9,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { PageHeader } from '@/components/layout/page-header';
 import { LanguagePreference } from '@/components/profile-language-preference';
 import { cn } from '@/lib/utils';
+import { isLoginMethodEnabled } from '@/lib/login-policy';
+import { MicrosoftAccountLink } from '@/components/microsoft-account-link';
 
 export default async function ProfilePage() {
     const session = await auth();
@@ -28,6 +30,8 @@ export default async function ProfilePage() {
     if (!user) redirect('/auth/signin');
 
     const language = normalizeLanguage(user.preferredLanguage);
+    const microsoftLinkAvailable = Boolean(process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID)
+        && await isLoginMethodEnabled('login_microsoft_enabled');
     const t = (key: string) => translate(language, key);
     const assignedQueues = [...new Map([
         ...user.queueMemberships.map((membership) => membership.queue),
@@ -76,6 +80,7 @@ export default async function ProfilePage() {
 
                 <div className="space-y-6 md:col-span-2">
                     <LanguagePreference initialLanguage={language} />
+                    {microsoftLinkAvailable ? <Card><CardContent className="pt-6"><MicrosoftAccountLink /></CardContent></Card> : null}
 
                     <Card className="border shadow-sm">
                         <CardHeader className="bg-muted/30 pb-4">
