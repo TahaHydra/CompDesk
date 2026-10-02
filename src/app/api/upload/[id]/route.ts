@@ -25,6 +25,7 @@ export async function GET(
             include: { ticket: { select: { id: true, requesterId: true, queueId: true } } },
         });
         if (!attachment) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
+        if (attachment.isInternal && session.user.role === 'USER') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         if (!(await canAccessTicket(session.user.id, session.user.role, attachment.ticket))) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
@@ -72,6 +73,7 @@ export async function DELETE(
             include: { ticket: { select: { id: true, requesterId: true, queueId: true } } },
         });
         if (!attachment) return NextResponse.json({ error: 'Attachment not found' }, { status: 404 });
+        if (attachment.isInternal && session.user.role === 'USER') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const hasTicketAccess = await canAccessTicket(session.user.id, session.user.role, attachment.ticket);
         const isOwner = attachment.ticket.requesterId === session.user.id;

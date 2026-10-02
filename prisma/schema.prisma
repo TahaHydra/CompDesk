@@ -439,6 +439,7 @@ model TimelineEvent {
 // ── Attachments ────────────────────────────────────────────────
 
 model Attachment {
+  isInternal       Boolean              @default(false) @map("is_internal")
   id               String               @id @default(uuid())
   ticketId         String               @map("ticket_id")
   uploaderId       String?              @map("uploader_id")

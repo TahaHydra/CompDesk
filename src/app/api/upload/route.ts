@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
 
         const body = await readUploadFormData(req, attachmentLimits().maxFileBytes + 64 * 1024);
         const fileValue = body.get('file');
+        const isInternal = body.get('isInternal') === 'true';
+        if (isInternal && session.user.role === 'USER') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         const ticketIdValue = body.get('ticketId');
         const ticketId = typeof ticketIdValue === 'string' && ticketIdValue ? ticketIdValue : null;
         if (!(fileValue instanceof File)) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -114,6 +116,7 @@ export async function POST(req: NextRequest) {
                     return tx.attachment.create({
                         data: {
                             ticketId: ticket!.id,
+                            isInternal,
                             uploaderId: session.user.id,
                             filename: inspection.filename,
                             mimetype: inspection.declaredMimetype,

@@ -290,6 +290,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         const fd = new FormData();
         fd.append('file', file);
         fd.append('ticketId', id);
+        fd.append('isInternal', String(isInternal));
         try {
             const res = await fetch('/api/upload', { method: 'POST', body: fd });
             if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
@@ -298,7 +299,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         } catch (err: any) {
             toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
         }
-    }, [id, queryClient, toast]);
+    }, [id, isInternal, queryClient, toast]);
 
     const deleteAttachment = async (attachmentId: string) => {
         try {
@@ -595,7 +596,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     <div key={att.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
                                         <FileIcon className="h-8 w-8 text-muted-foreground p-1 shrink-0" />
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{att.filename}</p>
+                                            <p className="text-sm font-medium truncate">{att.filename}{att.isInternal ? <Badge variant="outline" className="ml-2 text-amber-700">{t('Internal')}</Badge> : null}</p>
                                             <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured'}</p>
                                         </div>
                                         <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={`Download ${att.filename}`}><Download className="h-3.5 w-3.5" /></a></Button>

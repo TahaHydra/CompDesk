@@ -154,8 +154,9 @@ export async function GET(
                 id: watcher.id,
                 user: { id: watcher.user.id, name: watcher.user.name },
             })),
-            attachments: ticket.attachments.map((attachment) => ({
+            attachments: ticket.attachments.filter((attachment) => session.user.role !== 'USER' || !attachment.isInternal).map((attachment) => ({
                 id: attachment.id,
+                isInternal: attachment.isInternal,
                 filename: attachment.filename,
                 mimetype: attachment.detectedMimetype,
                 size: attachment.size,
