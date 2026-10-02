@@ -1,3 +1,4 @@
+import { getMailSettings, mailProvider, graphMailConfig, sendGraphMail } from '@/lib/graph-mail';
 import nodemailer from 'nodemailer';
 import logger from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -131,8 +132,22 @@ function brandedEmail(branding: BrandingConfig, heading: string, content: string
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
     let smtp: Awaited<ReturnType<typeof getSmtpConfig>> | undefined;
+    let provider: 'smtp' | 'graph' = 'smtp';
     const recipients = [...new Set((Array.isArray(options.to) ? options.to : [options.to]).map((email) => email.trim()).filter(Boolean))];
     try {
+        const mailSettings = await getMailSettings();
+        provider = mailProvider(mailSettings);
+        if (provider === 'graph') {
+            if (!recipients.length) return false;
+            const graph = graphMailConfig(mailSettings);
+            let accepted = 0;
+            for (const to of recipients) {
+                try { await sendGraphMail({ ...options, to }, graph); accepted++; }
+                catch { logger.error('Microsoft 365 did not accept a mail request'); }
+            }
+            await auditLog({ action: accepted === recipients.length ? 'email.provider_accepted' : 'email.delivery_failed', entity: 'email', metadata: { provider: 'graph', acceptedCount: accepted, recipientCount: recipients.length } });
+            return accepted === recipients.length;
+        }
         const branding = await getBrandingConfig();
         smtp = await getSmtpConfig(branding);
         requireValidSmtpFrom(smtp);
@@ -180,12 +195,12 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
         await auditLog({ action: 'email.delivery_succeeded', entity: 'email', metadata: { subject: options.subject, recipientCount: sentCount } });
         return true;
     } catch (error) {
-        const message = formatSmtpError(error, smtp);
-        logger.error('Failed to send email', { error: message, subject: options.subject, recipientCount: recipients.length });
+        const message = provider === 'graph' ? 'Microsoft 365 mail configuration or delivery failed' : formatSmtpError(error, smtp);
+        logger.error('Failed to send email', { error: message, ...(provider === 'smtp' ? { subject: options.subject } : {}), recipientCount: recipients.length });
         await auditLog({
             action: 'email.delivery_failed',
             entity: 'email',
-            metadata: { subject: options.subject, host: smtp?.host, port: smtp?.port, failedCount: recipients.length, error: message },
+            metadata: { ...(provider === 'smtp' ? { subject: options.subject } : {}), provider, host: smtp?.host, port: smtp?.port, failedCount: recipients.length, error: message },
         });
         return false;
     }

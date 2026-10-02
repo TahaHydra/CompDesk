@@ -25,6 +25,7 @@ function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Rec
     const passwordSource = environmentPassword ? 'environment' : dbSettings.smtp_password ? 'database' : 'missing';
     return {
         ...dbSettings,
+        mail_graph_secret: '',
         azure_ad_client_id: managedEnv.azure_ad_client_id || process.env.AZURE_AD_CLIENT_ID || dbSettings.azure_ad_client_id || '',
         azure_ad_tenant_id: managedEnv.azure_ad_tenant_id || process.env.AZURE_AD_TENANT_ID || dbSettings.azure_ad_tenant_id || '',
         azure_ad_client_secret: '',

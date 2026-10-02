@@ -1,4 +1,5 @@
 'use client';
+import { GraphMailSettings } from '@/components/admin/graph-mail-settings';
 
 import Image from 'next/image';
 
@@ -849,7 +850,7 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="webhooks" className="gap-1 min-w-max"><Webhook className="h-3.5 w-3.5" /> Webhooks</TabsTrigger>
                 </TabsList>
                 <TabsContent value="branding"><BrandingSettings /></TabsContent>
-                <TabsContent value="smtp"><SmtpSettingsTab /></TabsContent>
+                <TabsContent value="smtp"><GraphMailSettings /><SmtpSettingsTab /></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
                 <TabsContent value="entra"><EntraSettingsTab /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
