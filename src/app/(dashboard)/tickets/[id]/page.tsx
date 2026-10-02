@@ -25,6 +25,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
+import { TicketReminders } from '@/components/tickets/ticket-reminders';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
 import { useLanguage } from '@/components/providers/language-provider';
 import { parseTicketContent } from '@/lib/ticket-content';
@@ -897,6 +898,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             </CardContent>
                         </Card>
                     )}
+
+                    <TicketReminders ticketId={id} status={ticket.status} />
 
                     {/* Collapsible audit timeline */}
                     <Card className="border-0 shadow-sm">

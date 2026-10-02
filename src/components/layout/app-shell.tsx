@@ -86,6 +86,7 @@ const adminItems: NavigationItem[] = [
 
 const notificationIcon = (type: string) => {
     switch (type) {
+        case 'REMINDER': return <Bell className="h-4 w-4 text-primary" />;
         case 'COMMENT': case 'INTERNAL_NOTE': return <MessageSquare className="h-4 w-4 text-blue-500" />;
         case 'STATUS_CHANGE': return <ArrowRightLeft className="h-4 w-4 text-amber-500" />;
         case 'ASSIGNMENT_CHANGE': return <UserCheck className="h-4 w-4 text-indigo-500" />;
@@ -384,7 +385,7 @@ export default function AppShell({
                                                     <div className="mt-0.5 shrink-0">{notificationIcon(n.type)}</div>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm font-medium">{n.ticketKey}: {n.ticketTitle}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">{n.content || n.type.replace(/_/g, ' ').toLowerCase()}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{n.content || (n.type === 'REMINDER' ? t('Ticket reminder') : n.type.replace(/_/g, ' ').toLowerCase())}</p>
                                                         <p className="mt-0.5 text-[11px] text-muted-foreground/70">
                                                             {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: language === 'fr' ? fr : undefined })}
                                                         </p>

@@ -127,6 +127,7 @@ model User {
   accounts             Account[]
   uploadedAttachments  Attachment[]          @relation("AttachmentUploader")
   temporaryAttachments TemporaryAttachment[]
+  ticketReminders      TicketReminder[]
 
   @@map("users")
 }
@@ -357,6 +358,7 @@ model Ticket {
   timeline         TimelineEvent[]
   attachments      Attachment[]
   presence         TicketPresence[]
+  reminders        TicketReminder[]
 
   @@unique([requesterId, idempotencyKey])
   @@index([status])
@@ -716,6 +718,30 @@ model AppSetting {
 }
 
 // ── Ticket Counter ─────────────────────────────────────────────
+
+model TicketReminder {
+  id            String    @id @default(uuid())
+  ticketId      String    @map("ticket_id")
+  userId        String    @map("user_id")
+  scheduledAt   DateTime  @map("scheduled_at")
+  note          String    @default("")
+  email         Boolean   @default(false)
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at")
+  leaseToken    String?   @map("lease_token")
+  leaseUntil    DateTime? @map("lease_until")
+  deliveredAt   DateTime? @map("delivered_at")
+  emailAccepted Boolean   @default(false) @map("email_accepted")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  ticket        Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledAt, nextAttemptAt])
+  @@index([userId, deliveredAt])
+  @@map("ticket_reminders")
+}
 
 model TicketCounter {
   id    String @id @default("singleton")

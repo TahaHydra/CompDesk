@@ -33,7 +33,7 @@ export async function GET() {
             userId: { not: userId },
             ...(role === 'USER' ? { type: { not: 'INTERNAL_NOTE' as const } } : {}),
         };
-        const [items, unreadCount] = await Promise.all([
+        const [items, unreadCount, reminders, reminderUnread] = await Promise.all([
             prisma.timelineEvent.findMany({
                 where: eventFilter,
                 include: {
@@ -46,10 +46,12 @@ export async function GET() {
             prisma.timelineEvent.count({
                 where: { ...eventFilter, createdAt: { gt: lastReadAt } },
             }),
+            prisma.ticketReminder.findMany({ where: { userId, deliveredAt: { not: null }, status: { not: 'CANCELLED' }, ticket: ticketFilter }, include: { ticket: { select: { id: true, key: true, title: true } } }, orderBy: { deliveredAt: 'desc' }, take: 20 }),
+            prisma.ticketReminder.count({ where: { userId, deliveredAt: { gt: lastReadAt }, status: { not: 'CANCELLED' }, ticket: ticketFilter } }),
         ]);
 
         return NextResponse.json({
-            items: items.map((item) => ({
+            items: [...items.map((item) => ({
                 id: item.id,
                 type: item.type,
                 content: item.deletedAt && role !== 'SUPER_ADMIN' ? '[Deleted comment]' : item.content,
@@ -58,8 +60,8 @@ export async function GET() {
                 ticketId: item.ticket.id,
                 ticketKey: item.ticket.key,
                 ticketTitle: item.ticket.title,
-            })),
-            unreadCount,
+            })), ...reminders.map((reminder) => ({ id: reminder.id, type: 'REMINDER', content: reminder.note, createdAt: reminder.deliveredAt, userName: session.user.name || '', ticketId: reminder.ticketId, ticketKey: reminder.ticket.key, ticketTitle: reminder.ticket.title }))].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()).slice(0, 20),
+            unreadCount: unreadCount + reminderUnread,
         });
     } catch (error) {
         console.error('Failed to fetch notifications', error);

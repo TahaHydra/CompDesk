@@ -2,6 +2,7 @@ const mockAuth = jest.fn();
 const mockGetQueueInboxQueueIds = jest.fn();
 const mockGetAgentAccessibleQueueIds = jest.fn();
 const mockPrisma = {
+    ticketReminder: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
     appSetting: { findUnique: jest.fn(), upsert: jest.fn() },
     timelineEvent: { findMany: jest.fn(), count: jest.fn() },
 };
