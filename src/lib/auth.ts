@@ -13,6 +13,7 @@ import { normalizeEmail } from '@/lib/email-identity';
 import { applyLoginFailureDelay, checkLoginThrottle, clearLoginFailures, recordLoginFailure } from '@/lib/login-throttle';
 import { isSessionTokenCurrent } from '@/lib/session-security';
 import { requestSourceIp } from '@/lib/request-ip';
+import { GENERIC_OIDC_PROVIDER_ID, genericOidcEmailAccepted, genericOidcProvider, isGenericOidcConfigured } from '@/lib/oidc-provider';
 scheduleEntraStartupDiagnostic();
 
 const DUMMY_PASSWORD_HASH = '$2b$12$VjAsOWYkTDNoqAiLrdLiKe7cDytL3er7DkCV.wXN5TQAXsF3csbLC';
@@ -81,6 +82,9 @@ export const authConfig: NextAuthConfig = {
                 },
             })]
             : []),
+
+        // ── Generic OpenID Connect SSO (only if configured) ─────
+        ...(isGenericOidcConfigured() ? [genericOidcProvider()] : []),
 
         // ── Local Credentials (email + password) ────────────────
         Credentials({
@@ -151,18 +155,24 @@ export const authConfig: NextAuthConfig = {
         }),
     ],
     callbacks: {
-        async signIn({ user, account }) {
+        async signIn({ user, account, profile }) {
             const normalizedEmail = user.email ? normalizeEmail(user.email) : null;
             if (normalizedEmail) user.email = normalizedEmail;
-            if (account?.provider === 'microsoft-entra-id' && !normalizedEmail) {
-                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { reason: 'missing_email_claim', method: 'sso' } });
+            const provider = account?.provider;
+            const isSso = provider === 'microsoft-entra-id' || provider === GENERIC_OIDC_PROVIDER_ID;
+            if (isSso && !normalizedEmail) {
+                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { reason: 'missing_email_claim', method: 'sso', provider } });
                 return false;
             }
-            if (account?.provider === 'microsoft-entra-id' && !(await isLoginMethodEnabled('login_microsoft_enabled'))) {
+            if (provider === 'microsoft-entra-id' && !(await isLoginMethodEnabled('login_microsoft_enabled'))) {
                 void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'microsoft_login_disabled', method: 'sso' } });
                 return false;
             }
-            if (account?.provider === 'microsoft-entra-id' && normalizedEmail) {
+            if (provider === GENERIC_OIDC_PROVIDER_ID && !genericOidcEmailAccepted(profile as Record<string, unknown> | undefined)) {
+                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'email_not_verified', method: 'sso', provider } });
+                return false;
+            }
+            if (isSso && normalizedEmail) {
                 const existingUser = await prisma.user.findUnique({ where: { normalizedEmail } });
                 if (existingUser) {
                     if (!existingUser.isActive) {
@@ -176,19 +186,28 @@ export const authConfig: NextAuthConfig = {
                     }
                     await prisma.user.update({
                         where: { id: existingUser.id },
-                        data: { entraObjectId: user.entraObjectId, name: user.name ?? existingUser.name, email: normalizedEmail },
+                        data: {
+                            entraObjectId: user.entraObjectId,
+                            name: user.name ?? existingUser.name,
+                            email: normalizedEmail,
+                            // OIDC_ROLE_MAP: a matching IdP group sets the role; no match leaves it unchanged.
+                            ...(provider === GENERIC_OIDC_PROVIDER_ID && user.role ? { role: user.role } : {}),
+                        },
                     });
                     void auditLog({
                         userId: existingUser.id,
                         action: 'auth.login',
                         entity: 'auth',
-                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: normalizedEmail },
+                        metadata: {
+                            method: 'sso', provider, email: normalizedEmail,
+                            ...(provider === GENERIC_OIDC_PROVIDER_ID && user.role && user.role !== existingUser.role ? { roleFrom: existingUser.role, roleTo: user.role } : {}),
+                        },
                     });
                 } else {
                     void auditLog({
                         action: 'auth.login',
                         entity: 'auth',
-                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: normalizedEmail, newUser: true },
+                        metadata: { method: 'sso', provider, email: normalizedEmail, newUser: true },
                     });
                 }
             }

@@ -4,7 +4,7 @@ import { Suspense, useRef, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import { ArrowRight, Lock, Mail } from 'lucide-react';
+import { ArrowRight, KeyRound, Lock, Mail } from 'lucide-react';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { useBranding } from '@/components/providers/branding-provider';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
@@ -32,7 +32,8 @@ function SignInForm() {
     const submissionLock = useRef(false);
     const [localError, setLocalError] = useState('');
     const microsoftVisible = branding.showMicrosoftLogin && branding.microsoftLoginConfigured;
-    const showDivider = microsoftVisible && branding.showLocalLogin;
+    const oidcVisible = branding.oidcLoginConfigured === true;
+    const showDivider = (microsoftVisible || oidcVisible) && branding.showLocalLogin;
 
     const handleCredentials = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -67,6 +68,17 @@ function SignInForm() {
                 <CardDescription className="mt-2 whitespace-pre-line text-base">{branding.loginDescription}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 pt-4">
+                {oidcVisible ? (
+                    <Button
+                        onClick={() => signIn('oidc', { callbackUrl: '/dashboard' })}
+                        className="h-12 w-full gap-3 text-base shadow-lg shadow-primary/25"
+                    >
+                        <KeyRound className="h-5 w-5" aria-hidden="true" />
+                        {branding.oidcButtonText}
+                        <ArrowRight className="ml-auto h-4 w-4" />
+                    </Button>
+                ) : null}
+
                 {microsoftVisible ? (
                     <Button
                         onClick={() => signIn('microsoft-entra-id', { callbackUrl: '/dashboard' })}
@@ -120,13 +132,13 @@ function SignInForm() {
                                 <Input id="password" name="password" type="password" autoComplete="current-password" placeholder="••••••••" className="h-11 pl-9" required />
                             </div>
                         </div>
-                        <Button type="submit" variant={microsoftVisible ? 'outline' : 'default'} className="h-11 w-full text-base" disabled={loading}>
+                        <Button type="submit" variant={microsoftVisible || oidcVisible ? 'outline' : 'default'} className="h-11 w-full text-base" disabled={loading}>
                             {loading ? <span className="h-4 w-4 animate-spin rounded-full border-b-2 border-current" aria-label="Signing in" /> : 'Sign In'}
                         </Button>
                     </form>
                 ) : null}
 
-                {!branding.showLocalLogin && !microsoftVisible ? (
+                {!branding.showLocalLogin && !microsoftVisible && !oidcVisible ? (
                     <div role="alert" className="rounded-lg border p-4 text-center text-sm text-muted-foreground">
                         No sign-in method is currently available. {branding.supportEmail ? <a className="text-primary underline" href={`mailto:${branding.supportEmail}`}>Contact support</a> : 'Contact an administrator.'}
                     </div>

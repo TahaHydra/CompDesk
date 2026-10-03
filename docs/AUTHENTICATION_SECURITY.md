@@ -1,6 +1,8 @@
 # Authentication and account security
 
-CompDesk supports local credentials and Microsoft Entra ID. At least one method must remain enabled. Login-method database read failures use the documented recovery policy in `docs/PRODUCTION_HARDENING.md`.
+CompDesk supports local credentials, Microsoft Entra ID, and a generic OpenID Connect provider configured by environment (`OIDC_*`, see `docs/CONFIGURATION.md`). At least one method must remain enabled.
+
+The generic OIDC provider uses discovery, PKCE, state and nonce, and the same JWT session handling as Entra. An OIDC sign-in links to an existing account with the same normalized email only when the IdP asserts `email_verified=true` (unless `OIDC_REQUIRE_VERIFIED_EMAIL=false`); otherwise a new `USER` account is provisioned. `OIDC_ROLE_MAP` can assign roles from IdP groups. Local credentials remain the break-glass method. Login-method database read failures use the documented recovery policy in `docs/PRODUCTION_HARDENING.md`.
 
 ## Canonical email identities
 

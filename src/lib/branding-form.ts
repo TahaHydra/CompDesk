@@ -48,5 +48,7 @@ export function mergeSavedPublicBranding(
         ...branding,
         demoAccountInfo: branding.showDemoAccounts ? branding.demoAccountInfo : '',
         microsoftLoginConfigured: current?.microsoftLoginConfigured ?? false,
+        oidcLoginConfigured: current?.oidcLoginConfigured ?? false,
+        oidcButtonText: current?.oidcButtonText,
     };
 }

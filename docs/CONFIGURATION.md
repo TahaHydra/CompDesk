@@ -11,6 +11,11 @@ The first-run setup writes one runtime environment file. Container deployments u
 | `TRUST_PROXY` | Enables trusted forwarded client IPs only when exactly `true`; the proxy must overwrite client headers. |
 | `LOGIN_LOCAL_ENABLED`, `LOGIN_MICROSOFT_ENABLED` | Break-glass login-policy defaults when the database cannot be read. At least one method remains available. |
 | `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, `AZURE_AD_TENANT_ID` | Microsoft Entra provider and diagnostics. |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Generic OpenID Connect provider (any standards-compliant IdP), enabled when all three are set. Endpoints come from the issuer's discovery document; PKCE, state and nonce are enforced. Callback: `<AUTH_URL>/api/auth/callback/oidc`. |
+| `OIDC_DISPLAY_NAME`, `OIDC_SCOPES` | Sign-in button label ("Sign in with <name>") and requested scopes (default `openid email profile`). |
+| `OIDC_ID_CLAIM`, `OIDC_EMAIL_CLAIM`, `OIDC_NAME_CLAIM`, `OIDC_GROUPS_CLAIM` | Optional claim names (defaults `sub`, `email`, `name`, `groups`). |
+| `OIDC_ROLE_MAP` | Optional `group=ROLE` pairs (`USER`, `AGENT`, `ADMIN`, `SUPER_ADMIN`); the highest matching role is applied at each OIDC sign-in, no match leaves the role unchanged. |
+| `OIDC_REQUIRE_VERIFIED_EMAIL` | Default `true`: OIDC sign-in (and linking to an existing account by email) requires `email_verified=true`. |
 | `APP_SETTINGS_ENCRYPTION_KEY` | Required 32-byte base64/hex key for database SMTP/webhook secrets. |
 | `APP_SETTINGS_ENCRYPTION_KEY_PREVIOUS` | Previous key accepted only during controlled rotation. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_REQUIRE_TLS`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Environment SMTP source; environment password overrides the encrypted database password. Port 465 is implicit TLS; port 587 requires STARTTLS. |

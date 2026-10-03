@@ -4,12 +4,16 @@ import {
     type BrandingAssetField,
     type BrandingConfig,
 } from '@/lib/branding-schema';
+import { genericOidcDisplayName, isGenericOidcConfigured } from '@/lib/oidc-provider';
 
 export { brandingConfigSchema } from '@/lib/branding-schema';
 export type { BrandingAssetField, BrandingConfig } from '@/lib/branding-schema';
 
 export interface PublicBranding extends BrandingConfig {
     microsoftLoginConfigured: boolean;
+    /** Generic OIDC sign-in (OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET); configured by environment only. */
+    oidcLoginConfigured?: boolean;
+    oidcButtonText?: string;
 }
 
 export const BRANDING_ASSET_FIELDS: readonly BrandingAssetField[] = [
@@ -75,6 +79,8 @@ export function toPublicBranding(config: BrandingConfig): PublicBranding {
             process.env.AZURE_AD_CLIENT_SECRET &&
             process.env.AZURE_AD_TENANT_ID
         ),
+        oidcLoginConfigured: isGenericOidcConfigured(),
+        oidcButtonText: `Sign in with ${genericOidcDisplayName()}`,
     };
 }
 
