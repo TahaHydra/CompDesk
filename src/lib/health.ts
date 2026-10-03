@@ -3,6 +3,7 @@ import path from 'path';
 import { constants } from 'fs';
 import { prisma } from '@/lib/prisma';
 import { attachmentStorageRoot } from '@/lib/attachment-storage';
+import { verifyDatabaseSchema } from '../../scripts/database-schema.mjs';
 
 export interface ReadinessChecks {
     database: boolean;
@@ -36,6 +37,7 @@ async function migrationCheck(): Promise<boolean> {
             WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
         `;
         const appliedNames = new Set(applied.map((migration) => migration.migration_name));
+        await verifyDatabaseSchema(sql => prisma.$queryRawUnsafe(sql));
         return expected.length > 0 && expected.every((migration) => appliedNames.has(migration));
     } catch {
         return false;

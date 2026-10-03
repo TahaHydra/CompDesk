@@ -202,6 +202,19 @@ test('startProduction runs migrate -> attachment migration -> start server in or
     assert.equal(result.stage, 'server');
 });
 
+test('startProduction refuses schema drift before attachment processing and startup', async () => {
+    const order = [];
+    const result = await startProduction({
+        runMigrations: async () => { order.push('migrate'); return { ok: true }; },
+        verifySchema: async () => { order.push('schema'); return { ok: false, code: 1 }; },
+        runAttachmentMigration: async () => { order.push('attachments'); return { ok: true }; },
+        startServer: async () => { order.push('server'); return { ok: true }; },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.stage, 'schema');
+    assert.deepEqual(order, ['migrate', 'schema']);
+});
+
 test('startProduction reports a production server crash as a failure at the server stage', async () => {
     const result = await startProduction({
         runMigrations: async () => ({ ok: true }),

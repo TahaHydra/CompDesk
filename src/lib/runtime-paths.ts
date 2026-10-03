@@ -12,5 +12,8 @@ export function resolveApplicationRoot(cwd = process.cwd()): string {
 }
 
 export function resolveRuntimeEnvFiles(cwd = process.cwd()): string[] {
+    if (process.env.COMPDESK_CONFIG_DIR) {
+        return [path.resolve(process.env.COMPDESK_CONFIG_DIR, 'secrets', 'runtime.env')];
+    }
     return [path.join(resolveApplicationRoot(cwd), '.env')];
 }

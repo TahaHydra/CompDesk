@@ -31,6 +31,7 @@ import {
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { copyText } from '@/lib/browser-clipboard';
+import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { useLanguage } from '@/components/providers/language-provider';
 
 export default function AdminUsersPage() {
@@ -286,9 +287,9 @@ export default function AdminUsersPage() {
                                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(u)} disabled={!canManageUser} title={t("Edit user")}>
                                         <Pencil className="h-3.5 w-3.5" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => resetPassword.mutate(u.id)} disabled={!canManageUser} title={t("Reset password")}>
-                                        <RotateCcw className="h-3.5 w-3.5" />
-                                    </Button>
+                                    <ConfirmDestructiveAction title={t('Reset password')} description={t('Reset the CompDesk password for {email}? Existing sessions will be revoked. This does not change their Microsoft password.', { email: u.email })} confirmLabel={t('Reset password')} cancelLabel={t('Cancel')} pendingLabel={t('Please wait…')} pending={resetPassword.isPending} disabled={!isSuperAdmin} onConfirm={() => resetPassword.mutate(u.id)} trigger={<Button variant="outline" size="sm" className="gap-2" disabled={!isSuperAdmin || resetPassword.isPending} title={!isSuperAdmin ? t('Super Admin privileges required') : t('Reset password')}>
+                                        <RotateCcw className="h-3.5 w-3.5" />{t('Reset password')}
+                                    </Button>} />
                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteUser(u)} disabled={!canManageUser || u.id === session?.user?.id} title={t("Deactivate user")}>
                                         <Trash2 className="h-3.5 w-3.5" />
                                     </Button>

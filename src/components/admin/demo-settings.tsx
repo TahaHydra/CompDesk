@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { useLanguage } from '@/components/providers/language-provider';
 import { copyText } from '@/lib/browser-clipboard';
+import { DemoLoginSettings } from './demo-login-settings';
 import type { DemoCredentials, DemoState } from '../../../scripts/demo-data.mjs';
 
 async function demoRequest<T>(method = 'GET'): Promise<T> {
@@ -69,6 +70,7 @@ export function DemoSettings() {
                     confirmLabel={t('Delete demo data')} cancelLabel={t('Cancel')} pendingLabel={t('Deleting…')} pending={busy} disabled={!state.data?.installed}
                     onConfirm={() => { setError(''); setMessage(''); remove.mutate(); }} />
             </div>
+            <DemoLoginSettings />
             {busy && <p role="status">{t('Please wait…')}</p>}
             {message && <p role="status">{t(message)}</p>}
             {(error || state.error) && <p role="alert" className="text-destructive">{t(error || state.error?.message || '')}</p>}

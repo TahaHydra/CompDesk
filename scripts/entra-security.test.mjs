@@ -67,6 +67,16 @@ test('existing linked Microsoft accounts continue signing into the same local ac
     assert.equal(f.updates.length, 0);
 });
 
+test('a Microsoft identity linked to another user cannot merge into the current session', async () => {
+    const f = fixture({ linked: true });
+    f.options.adapter.getUser = async () => ({ ...f.existing, id: 'different-local-user' });
+    await assert.rejects(handleLoginOrRegister(
+        JSON.stringify({ sub: 'different-local-user', sessionVersion: 2 }), f.profile, f.account, f.options,
+    ), { name: 'OAuthAccountNotLinked', message: /^The account is already associated with another user/ });
+    assert.equal(f.links.length, 0);
+    assert.equal(f.updates.length, 0);
+});
+
 test('deactivated linked Microsoft accounts remain denied despite a different email claim', async () => {
     const f = fixture({ linked: true, active: false });
     f.profile.email = 'changed@example.test';

@@ -10,6 +10,6 @@ External SMTP/Graph delivery is at least once: a crash or ambiguous network fail
 
 ## Old requester-reminder branch
 
-`origin/codex/ticket-reminders` contains a different feature: staff send a nudge to the requester of a `PENDING_USER` ticket, governed by role policy, a cooldown and per-cycle limit. It can add value alongside personal reminders. Preserve the branch, but do not merge it directly: it uses the same `/reminders` route, `TicketReminder` model/table and library names with incompatible recipient/sender and delivery fields, and includes many unrelated changes from its older base.
+The historical requester-reminder branch contains a different feature: staff send a nudge to the requester of a `PENDING_USER` ticket, governed by role policy, a cooldown and per-cycle limit. It can add value alongside personal reminders. Preserve that work, but do not merge it directly: it uses the same `/reminders` route, `TicketReminder` model/table and library names with incompatible recipient/sender and delivery fields, and includes many unrelated changes from its older base.
 
 If approved as a later feature, port only its requester-nudge behavior into a separate `/requester-reminders` route/model, reuse the durable mail delivery machinery, and retain its pending-cycle/cooldown policy. Its requester communication must stay clearly separate from private personal notes. Recheck the privacy/access fixes when porting it. No automatic requester-nudge behavior was enabled in this implementation.

@@ -166,6 +166,7 @@ async function transitionToProduction() {
     log(productionAccessGuidance(runtimeEnv.AUTH_URL, port));
     return startProduction({
         runMigrations: () => runMigrations(env),
+        verifySchema: () => spawnStep(process.execPath, [path.join(root, 'scripts', 'validate-runtime-schema.mjs')], env),
         runAttachmentMigration: () => runAttachmentMigration(env),
         startServer: () => runProductionServer(env),
         log,

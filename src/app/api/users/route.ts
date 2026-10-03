@@ -239,7 +239,7 @@ export async function PATCH(req: NextRequest) {
             role: user.role,
             isActive: user.isActive,
             ...(generatedPassword ? { generatedPassword } : {}),
-        });
+        }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
         if (error instanceof Error) {
             const expected: Record<string, [string, number]> = {

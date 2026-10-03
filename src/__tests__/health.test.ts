@@ -1,5 +1,7 @@
 const mockQueryRaw = jest.fn();
 const mockInstallationFindUnique = jest.fn();
+import { readdirSync } from 'fs';
+import path from 'path';
 
 jest.mock('@/lib/prisma', () => ({
     prisma: {
@@ -14,6 +16,10 @@ jest.mock('@/lib/attachment-storage', () => ({
 
 import { GET as live } from '@/app/api/health/live/route';
 import { isReady } from '@/lib/health';
+import { readinessChecks } from '@/lib/health';
+jest.mock('../../scripts/database-schema.mjs', () => ({
+    verifyDatabaseSchema: async () => { throw new Error('temporary_attachments.blob_removed_at is missing'); },
+}));
 
 describe('health endpoints', () => {
     it('keeps liveness independent from database readiness', async () => {
@@ -28,5 +34,15 @@ describe('health endpoints', () => {
         expect(isReady({ database: true, installation: false, migrations: true, privateStorage: true })).toBe(false);
         expect(isReady({ database: true, installation: true, migrations: false, privateStorage: true })).toBe(false);
         expect(isReady({ database: true, installation: true, migrations: true, privateStorage: false })).toBe(false);
+    });
+
+    it('does not declare a migrated but incompatible schema ready', async () => {
+        mockInstallationFindUnique.mockResolvedValue({ id: 'primary' });
+        mockQueryRaw.mockResolvedValue(readdirSync(path.join(process.cwd(), 'prisma', 'migrations'), { withFileTypes: true })
+            .filter(entry => entry.isDirectory()).map(entry => ({ migration_name: entry.name })));
+        const checks = await readinessChecks();
+        expect(checks.database).toBe(true);
+        expect(checks.migrations).toBe(false);
+        expect(isReady(checks)).toBe(false);
     });
 });

@@ -16,3 +16,4 @@ public/uploads/*
 !.env.example
 tsconfig.tsbuildinfo
 node_modules.broken-*
+docker-compose.acceptance.yml

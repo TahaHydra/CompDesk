@@ -1,6 +1,8 @@
 # Runtime configuration reference
 
-The first-run setup writes one runtime environment file. Container deployments use `.compdesk/compdesk.env`; standalone deployments load one restricted `.env` at the application root or one systemd/Windows service environment file. `COMPDESK_ENV_FILE` selects the setup/backup file but is not a second runtime source. Do not maintain conflicting copies.
+The first-run setup writes one runtime environment file. Managed Docker Compose deployments use `/config/secrets/runtime.env` in the persistent configuration volume; standalone deployments load one restricted `.env` at the application root or one systemd/Windows service environment file. Legacy two-stack Docker deployments used `.compdesk/compdesk.env`. Do not maintain conflicting copies.
+
+Super Admins can save Entra credentials from Settings in managed Docker or local standalone deployments. Credentials remain server-side in the restricted runtime file. Restart the CompDesk application/container after saving; the status distinguishes saved settings from the running configuration. Containers without a managed config volume require deployment-managed environment variables. The server never receives Docker daemon access to restart itself.
 
 | Variable | Runtime behavior |
 |---|---|

@@ -1,4 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
+import './runtime-network.cjs';
+import { verifyDatabaseSchema } from './database-schema.mjs';
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
@@ -448,6 +450,12 @@ function validateInstall(input) {
     const url = validatePublicUrl(input.identity?.applicationUrl);
     if (!url.valid) throw Object.assign(new Error(url.error), { statusCode: 400 });
     const auth = input.authentication || {};
+    if (auth.microsoftEnabled || auth.clientId || auth.tenantId || auth.clientSecret) {
+        const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!guid.test(auth.clientId || '') || !guid.test(auth.tenantId || '') || !auth.clientSecret?.trim()) {
+            throw Object.assign(new Error('Provide a valid Entra Client ID, Tenant ID, and Client Secret together.'), { statusCode: 400 });
+        }
+    }
     if (!auth.localEnabled && !auth.microsoftEnabled) throw Object.assign(new Error('At least one authentication method must remain enabled.'), { statusCode: 400 });
     const email = normalizeEmail(auth.adminEmail);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw Object.assign(new Error('Enter a valid administrator email address.'), { statusCode: 400 });
@@ -555,6 +563,7 @@ async function install(input) {
         const database = new PrismaClient({ datasourceUrl: databaseUrl });
         let demoCredentials = null;
         try {
+            await verifyDatabaseSchema(sql => database.$queryRawUnsafe(sql));
             await database.$transaction(async (tx) => {
                 const client = { query: async (statement, values = []) => {
                     if (/^\s*SELECT\b/i.test(statement)) {

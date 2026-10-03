@@ -167,6 +167,7 @@ function EmailTogglesTab() {
 }
 
 function EntraSettingsTab() {
+    const { t } = useLanguage();
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -181,6 +182,7 @@ function EntraSettingsTab() {
     });
     const entraSecretConfigured = settings?.azure_ad_client_secret_configured === 'true';
     const entraRuntimeConfigured = settings?.azure_ad_runtime_configured === 'true';
+    const entraSettingsEditable = settings?.azure_ad_settings_editable !== 'false';
     const entraSavedConfigured = Boolean(settings?.azure_ad_client_id && settings?.azure_ad_tenant_id && entraSecretConfigured);
 
     useEffect(() => {
@@ -229,19 +231,20 @@ function EntraSettingsTab() {
                     <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2">
                         <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                         <p className="text-xs text-amber-800 dark:text-amber-200">
-                            Changes to Entra ID settings require an <strong>application restart</strong> to take effect.
-                            Local standalone changes are saved persistently. Container deployments must be configured through their environment.
+                            {t('Changes to Entra ID settings require an application restart to take effect.')}
+                            {' '}{t(entraSettingsEditable ? 'Changes are saved persistently. Managed Docker installations store them in the private configuration volume; restart the CompDesk container after saving.' : 'This deployment manages Entra through environment variables. Configure the deployment and restart CompDesk; these fields are read-only.')}
                         </p>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="entra-client-id">Client ID</Label>
-                        <Input id="entra-client-id" autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_client_id}
+                        <Input id="entra-client-id" disabled={!entraSettingsEditable} autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_client_id}
                             onChange={(e) => setEntra({ ...entra, azure_ad_client_id: e.target.value })} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="entra-client-secret">Client Secret</Label>
                         <Input
                             id="entra-client-secret"
+                            disabled={!entraSettingsEditable}
                             type="password"
                             autoComplete="new-password"
                             placeholder={entraSecretConfigured ? 'Saved secret configured. Enter a new one to replace it.' : '••••••••'}
@@ -250,11 +253,11 @@ function EntraSettingsTab() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="entra-tenant-id">Tenant ID</Label>
-                        <Input id="entra-tenant-id" autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_tenant_id}
+                        <Input id="entra-tenant-id" disabled={!entraSettingsEditable} autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_tenant_id}
                             onChange={(e) => setEntra({ ...entra, azure_ad_tenant_id: e.target.value })} />
                     </div>
                     <div className="flex justify-end border-t pt-4">
-                        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="gap-2">
+                        <Button onClick={() => saveMutation.mutate()} disabled={!entraSettingsEditable || saveMutation.isPending} className="gap-2">
                             <Save className="h-4 w-4" /> Save Entra Settings
                         </Button>
                     </div>
@@ -268,7 +271,7 @@ function EntraSettingsTab() {
                 <CardContent className="space-y-3 text-sm">
                     <div className="flex items-center gap-2">
                         {entraRuntimeConfigured ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
-                        <span>{entraRuntimeConfigured ? 'Active in the running application' : entraSavedConfigured ? 'Saved; application restart required' : 'Incomplete configuration'}</span>
+                        <span>{settings?.azure_ad_restart_required === 'true' ? 'Saved; application restart required' : entraRuntimeConfigured ? 'Active in the running application' : entraSavedConfigured ? 'Saved; application restart required' : 'Incomplete configuration'}</span>
                     </div>
                     <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
                         <span>Client ID: {settings?.azure_ad_client_id ? 'configured' : 'missing'}</span>

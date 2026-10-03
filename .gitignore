@@ -71,3 +71,6 @@ test-results/
 
 # Local CI artifacts
 ci-e2e-artifacts/
+
+# Acceptance-only deployment overrides may contain private credentials.
+/docker-compose.acceptance.yml

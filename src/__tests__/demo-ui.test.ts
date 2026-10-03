@@ -24,6 +24,7 @@ it.each(['USER', 'AGENT', 'ADMIN'])('does not expose demo management to %s', (ro
 it('shows counts and confirmed management controls to Super Admin', () => {
     const html = render();
     expect(html).toContain('Demo accounts');
+    expect(html).toContain('Show demo account information');
     expect(html).toContain('Example tickets');
     expect(html).toContain('Install demo data');
     expect(html).toContain('Delete demo data');

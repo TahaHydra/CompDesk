@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { useLanguage } from '@/components/providers/language-provider';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { brandingConfigSchema } from '@/lib/branding-schema';
 import {
@@ -52,6 +53,7 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 export function BrandingSettings() {
+    const { t } = useLanguage();
     const { toast } = useToast();
     const router = useRouter();
     const queryClient = useQueryClient();
@@ -179,7 +181,6 @@ export function BrandingSettings() {
     const clientFieldErrors = getBrandingFieldErrors(preparedForm);
     const fieldErrors = { ...clientFieldErrors, ...serverFieldErrors };
     const hasFieldErrors = Object.keys(fieldErrors).length > 0;
-    const demoInformationMissing = form.showDemoAccounts && !form.demoAccountInfo.trim();
     const microsoftLoginConfigured = publicBrandingQuery.data?.microsoftLoginConfigured === true;
     const savePending = saveMutation.isPending || resetMutation.isPending || uploading !== null;
     const colorPattern = /^#[0-9a-fA-F]{6}$/;
@@ -258,14 +259,7 @@ export function BrandingSettings() {
                         </div>
                     ) : null}
                     <TextSetting label="Microsoft button text" value={form.microsoftButtonText} error={fieldErrors.microsoftButtonText} onChange={(value) => update('microsoftButtonText', value)} />
-                    <ToggleSetting label="Show demo account information" description="Keep this disabled in production." checked={form.showDemoAccounts} onChange={(checked) => update('showDemoAccounts', checked)} />
-                    {form.showDemoAccounts ? <div className="space-y-2"><Label htmlFor="demo-info">Demo account information</Label><Textarea id="demo-info" value={form.demoAccountInfo} aria-invalid={Boolean(fieldErrors.demoAccountInfo)} onChange={(event) => update('demoAccountInfo', event.target.value)} placeholder="Demo instructions shown verbatim on the login page" /><FieldError message={fieldErrors.demoAccountInfo} /></div> : null}
-                    {demoInformationMissing ? (
-                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                            <p>The demo toggle is enabled, but there is no information to display. Saving will keep the demo section hidden until safe instructions are provided.</p>
-                        </div>
-                    ) : null}
+                    <p className="text-xs text-muted-foreground">{t('Demo login information is managed in the Demo data tab.')}</p>
                 </CardContent>
             </Card>
 

@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import { normalizeDashboardLinks, parseDashboardLinks } from '@/lib/dashboard-links';
 import logger from '@/lib/logger';
-import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
+import { canEditManagedEnvironment, ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
 import { isValidSmtpFrom, normalizeSettingValue, SettingsValidationError, validateSmtpSecurityCombination } from '@/lib/settings-validation';
@@ -29,8 +29,11 @@ function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Rec
         azure_ad_client_id: managedEnv.azure_ad_client_id || process.env.AZURE_AD_CLIENT_ID || dbSettings.azure_ad_client_id || '',
         azure_ad_tenant_id: managedEnv.azure_ad_tenant_id || process.env.AZURE_AD_TENANT_ID || dbSettings.azure_ad_tenant_id || '',
         azure_ad_client_secret: '',
+        azure_ad_settings_editable: canEditManagedEnvironment() ? 'true' : 'false',
         azure_ad_client_secret_configured: process.env.AZURE_AD_CLIENT_SECRET || managedEnv.azure_ad_client_secret ? 'true' : 'false',
         azure_ad_runtime_configured: process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID ? 'true' : 'false',
+        azure_ad_restart_required: Object.entries({ azure_ad_client_id: 'AZURE_AD_CLIENT_ID', azure_ad_client_secret: 'AZURE_AD_CLIENT_SECRET', azure_ad_tenant_id: 'AZURE_AD_TENANT_ID' })
+            .some(([key, envKey]) => Boolean(managedEnv[key]) && managedEnv[key] !== process.env[envKey]) ? 'true' : 'false',
         smtp_host: dbSettings.smtp_host || process.env.SMTP_HOST || '',
         smtp_port: dbSettings.smtp_port || process.env.SMTP_PORT || '587',
         smtp_user: dbSettings.smtp_user || process.env.SMTP_USER || '',

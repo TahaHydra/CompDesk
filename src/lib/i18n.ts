@@ -7,6 +7,11 @@ export const LANGUAGE_LABELS: Record<AppLanguage, string> = {
 };
 
 const french: Record<string, string> = {
+    'Support contact': 'Contact du support',
+    'Microsoft sign-in unavailable. Try again.': 'Connexion Microsoft indisponible. Réessayez.',
+    'Authentication failed. Please try again or contact an administrator.': 'Échec de l’authentification. Réessayez ou contactez un administrateur.',
+    'Microsoft sign-in could not use the current CompDesk account. Try Microsoft sign-in again to start a fresh session. To link an existing local account, sign in with its password, then use My Profile → Link my Microsoft account.': 'La connexion Microsoft ne peut pas utiliser le compte CompDesk actuel. Réessayez la connexion Microsoft pour démarrer une nouvelle session. Pour associer un compte local existant, connectez-vous avec son mot de passe, puis utilisez Mon profil → Associer mon compte Microsoft.',
+    'Microsoft sign-in could not use the current CompDesk account. Try Microsoft sign-in again to start a fresh session. If the problem continues, contact an administrator.': 'La connexion Microsoft ne peut pas utiliser le compte CompDesk actuel. Réessayez la connexion Microsoft pour démarrer une nouvelle session. Si le problème persiste, contactez un administrateur.',
     "Malware scan passed": "Analyse antivirus réussie",
     "Malware scanner not configured": "Antivirus non configuré",
     "Internal Note": "Note interne",
@@ -539,6 +544,16 @@ const french: Record<string, string> = {
     'Wait for file uploads to finish': 'Attendez la fin du chargement des fichiers',
     'Complete the required fields': 'Remplissez les champs obligatoires',
     '{field} is required': 'Le champ {field} est obligatoire',
+    'Keep this disabled in production. Only publish safe demo instructions; this text is visible before sign-in.': 'Gardez cette option désactivée en production. Publiez uniquement des instructions de démonstration sûres : ce texte est visible avant connexion.',
+    'Demo account information': 'Informations des comptes de démonstration',
+    'Show demo account information': 'Afficher les informations des comptes de démonstration',
+    'Demo visibility saved': 'Visibilité de la démonstration enregistrée',
+    'Save demo settings': 'Enregistrer les paramètres de démonstration',
+    'Reset the CompDesk password for {email}? Existing sessions will be revoked. This does not change their Microsoft password.': 'Réinitialiser le mot de passe CompDesk de {email} ? Les sessions existantes seront révoquées. Le mot de passe Microsoft reste inchangé.',
+    'Demo login information is managed in the Demo data tab.': 'Les informations de connexion de démonstration sont gérées dans l’onglet Données de démonstration.',
+    'Changes to Entra ID settings require an application restart to take effect.': 'Les modifications des paramètres Entra ID nécessitent un redémarrage de l’application pour prendre effet.',
+    'Changes are saved persistently. Managed Docker installations store them in the private configuration volume; restart the CompDesk container after saving.': 'Les modifications sont enregistrées durablement. Les installations Docker gérées les stockent dans le volume de configuration privé ; redémarrez le conteneur CompDesk après l’enregistrement.',
+    'This deployment manages Entra through environment variables. Configure the deployment and restart CompDesk; these fields are read-only.': 'Ce déploiement gère Entra via les variables d’environnement. Configurez le déploiement et redémarrez CompDesk ; ces champs sont en lecture seule.',
 };
 
 export function normalizeLanguage(value: unknown): AppLanguage {
