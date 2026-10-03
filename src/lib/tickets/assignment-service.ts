@@ -4,6 +4,7 @@ import { auditLog } from '@/lib/audit';
 import { sendTicketAssignedEmail } from '@/lib/email';
 import { fireWebhook } from '@/lib/webhooks';
 import { canAccessQueue, canAccessTicket, isAgentRole } from '@/lib/permissions';
+import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
 
 export interface AssignmentActor {
     id: string;
@@ -24,7 +25,7 @@ const assignmentInclude = {
 async function accessibleTicket(actor: AssignmentActor, ticketId: string) {
     const ticket = await prisma.ticket.findUnique({
         where: { id: ticketId },
-        select: { id: true, key: true, title: true, queueId: true, requesterId: true, firstAssignedAt: true, version: true },
+        select: { id: true, key: true, title: true, formSchemaSnapshot: true, queueId: true, requesterId: true, firstAssignedAt: true, version: true },
     });
     if (!ticket) throw new AssignmentServiceError('Ticket not found', 404);
     if (!(await canAccessTicket(actor.id, actor.role, ticket))) throw new AssignmentServiceError('Forbidden', 403);
@@ -130,7 +131,7 @@ export async function addAssignee(
     });
     const resultingAssignmentIds = [...previousAssignmentIds, userId];
     await recordAudit(actor.id, ticketId, 'ticket.assignment_added', { addedUserId: userId, source, previousAssignmentIds, resultingAssignmentIds, expectedVersion, resultingVersion: expectedVersion + 1 });
-    void sendTicketAssignedEmail(candidate.email, ticket.key, ticket.title);
+    void sendTicketAssignedEmail(candidate.email, ticket.key, ticketPublicTitle(ticket));
     fireWebhook('ticket.assignment_added', { ticketId, key: ticket.key, addedUserId: userId, source, assigneeIds: resultingAssignmentIds });
     return { assignment, alreadyAssigned: false, previousAssignmentIds, resultingAssignmentIds, version: expectedVersion + 1 };
 }
@@ -213,7 +214,7 @@ export async function replaceAssignmentSet(
     });
     for (const userId of changed.createdIds) {
         const candidate = candidateById.get(userId);
-        if (candidate) void sendTicketAssignedEmail(candidate.email, ticket.key, ticket.title);
+        if (candidate) void sendTicketAssignedEmail(candidate.email, ticket.key, ticketPublicTitle(ticket));
     }
     await recordAudit(actor.id, ticketId, 'ticket.assignments_replaced', { source, previousAssignmentIds, resultingAssignmentIds: changed.resultingAssignmentIds, addedUserIds: changed.createdIds, removedUserIds: removedIds, expectedVersion, resultingVersion: expectedVersion + 1 });
     fireWebhook('ticket.assignments_replaced', { ticketId, key: ticket.key, source, assigneeIds: changed.resultingAssignmentIds });

@@ -14,6 +14,7 @@ const booleanKeys = new Set([
     'feature_dashboard_links_enabled',
     'feature_external_api_enabled',
     'feature_webhooks_enabled',
+    'updates_automatic',
 ]);
 
 const smtpHostSchema = z.string().trim().min(1, 'SMTP host is required').max(253, 'SMTP host is too long')

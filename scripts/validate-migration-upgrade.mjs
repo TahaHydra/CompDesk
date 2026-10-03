@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import pg from 'pg';
+import { verifyDatabaseSchema } from './database-schema.mjs';
 
 const { Client } = pg;
 const previousReleaseMigration = '20260727130000_add_multiple_ticket_assignees';
@@ -34,15 +35,14 @@ function quoteIdentifier(value) {
 }
 
 function migrate(schemaPath, targetUrl) {
-    const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const result = spawnSync(command, ['exec', '--', 'prisma', 'migrate', 'deploy', '--schema', schemaPath], {
+    const result = spawnSync(process.execPath, [path.resolve('node_modules/prisma/build/index.js'), 'migrate', 'deploy', '--schema', schemaPath], {
         cwd: process.cwd(),
         env: { ...process.env, DATABASE_URL: targetUrl },
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (result.status !== 0) {
-        const safeOutput = `${result.stdout}\n${result.stderr}`
+        const safeOutput = `${result.error?.code || ''}\n${result.stdout || ''}\n${result.stderr || ''}`
             .replaceAll(targetUrl, '[REDACTED_DATABASE_URL]')
             .replaceAll(adminUrl.toString(), '[REDACTED_DATABASE_URL]');
         throw new Error(`Prisma migration failed:\n${safeOutput.trim()}`);
@@ -131,6 +131,7 @@ async function verifyUpgrade() {
     const client = new Client({ connectionString: databaseUrl.toString() });
     await client.connect();
     try {
+        await verifyDatabaseSchema(async sql => (await client.query(sql)).rows);
         const result = await client.query(`
             SELECT
                 (SELECT COUNT(*)::int FROM "tickets" WHERE "id" = 'migration-ticket') AS ticket_count,

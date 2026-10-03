@@ -1,3 +1,4 @@
+import { reserveNextTicketCount } from '@/lib/ticket-counter';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { mkdir, readFile, rename, stat } from 'fs/promises';
@@ -23,6 +24,7 @@ import type { TicketFormFieldDefinition, UploadedFieldFile } from '@/lib/ticket-
 import logger from '@/lib/logger';
 import { authenticatedAttachmentUrl, privateAttachmentLocation, resolveTemporaryAttachmentPath } from '@/lib/attachment-storage';
 import { attachmentLimits, isAttachmentDownloadable } from '@/lib/attachment-security';
+import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
 
 export interface TicketCreationActor {
     id: string;
@@ -48,18 +50,6 @@ interface PreparedAttachment {
     sha256: string;
     scanStatus: 'NOT_CONFIGURED' | 'CLEAN' | 'INFECTED' | 'ERROR';
     scannedAt: Date | null;
-}
-
-async function reserveNextTicketCount(tx: Prisma.TransactionClient, year: number): Promise<number> {
-    const current = await tx.ticketCounter.findUnique({ where: { id: 'singleton' } });
-    if (!current) {
-        await tx.ticketCounter.create({ data: { id: 'singleton', year, count: 1 } });
-        return 1;
-    }
-    if (current.year !== year) {
-        return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { year, count: 1 } })).count;
-    }
-    return (await tx.ticketCounter.update({ where: { id: 'singleton' }, data: { count: { increment: 1 } } })).count;
 }
 
 function submissionValues(input: CreateTicketInput): Record<string, unknown> {
@@ -236,11 +226,11 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
             where: { queueId_priority: { queueId: input.queueId, priority: validated.priority } },
         }),
         prisma.groupMember.findMany({
-            where: { group: { queueAssignments: { some: { queueId: input.queueId, role: 'agent' } } } },
+            where: { user: { isActive: true, role: { in: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] } }, group: { queueAssignments: { some: { queueId: input.queueId, role: 'agent' } } } },
             include: { user: { select: { id: true, email: true } } },
         }),
         prisma.queueMember.findMany({
-            where: { queueId: input.queueId, role: 'agent' },
+            where: { queueId: input.queueId, role: 'agent', user: { isActive: true, role: { in: ['AGENT', 'ADMIN', 'SUPER_ADMIN'] } } },
             include: { user: { select: { id: true, email: true } } },
         }),
     ]);
@@ -327,7 +317,7 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
                     ticketId,
                     userId: requester.id,
                     type: 'CREATED',
-                    content: source === 'api' ? `Ticket created via API: ${validated.title}` : `Ticket created: ${validated.title}`,
+                    content: source === 'api' ? `Ticket created via API: ${ticketPublicTitle({ title: validated.title, formSchemaSnapshot: snapshot })}` : `Ticket created: ${ticketPublicTitle({ title: validated.title, formSchemaSnapshot: snapshot })}`,
                     metadata: { templateId: resolved.template.id, templateVersion: resolved.template.version, resolutionSource: resolved.source, ...(apiClient ? { apiClientId: apiClient.id, apiClientName: apiClient.name } : {}) },
                 },
             });
@@ -349,9 +339,9 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
         throw error;
     }
 
-    void sendTicketCreatedEmail(requester.email, ticket.key, ticket.title);
+    void sendTicketCreatedEmail(requester.email, ticket.key, ticketPublicTitle(ticket));
     const agentEmails = [...agentMap.values()].filter(Boolean);
-    if (agentEmails.length > 0) void sendNewTicketForDepartmentEmail(agentEmails, ticket.key, ticket.title, ticket.queue.name);
+    if (agentEmails.length > 0) void sendNewTicketForDepartmentEmail(agentEmails, ticket.key, ticketPublicTitle(ticket), ticket.queue.name);
     void fireWebhook('ticket.created', {
         ticketId: ticket.id,
         key: ticket.key,

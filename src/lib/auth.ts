@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
+import { decode as decodeSessionJwt } from 'next-auth/jwt';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
 import Credentials from 'next-auth/providers/credentials';
@@ -54,6 +55,24 @@ export const authConfig: NextAuthConfig = {
     // compatibility fallback, but both must resolve to one stable key.
     secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
     session: { strategy: 'jwt' },
+    jwt: {
+        async decode(params) {
+            const token = await decodeSessionJwt(params);
+            if (!token) return null;
+            // Auth.js also decodes cookies directly when linking OAuth accounts,
+            // before the normal jwt callback checks revocation.
+            const userId = typeof token.sub === 'string' ? token.sub : typeof token.id === 'string' ? token.id : null;
+            if (!userId) return null;
+            const user = await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, sessionVersion: true, credentialsChangedAt: true } });
+            return user?.isActive && isSessionTokenCurrent({
+                isInitialSignIn: false,
+                tokenSessionVersion: token.sessionVersion,
+                tokenIssuedAtSeconds: token.iat,
+                databaseSessionVersion: user.sessionVersion,
+                credentialsChangedAt: user.credentialsChangedAt,
+            }) ? token : null;
+        },
+    },
     trustHost: true,
     providers: [
         // ── Microsoft Entra ID SSO (only if configured) ─────────
@@ -67,9 +86,9 @@ export const authConfig: NextAuthConfig = {
                         scope: 'openid profile email User.Read',
                     },
                 },
-                // This tenant-specific OIDC provider validates Microsoft-issued tokens before
-                // Auth.js sees the normalized email. Linking avoids duplicate local/Entra users.
-                allowDangerousEmailAccountLinking: true,
+                // Signed Microsoft email claims are mutable, not proof of local-account
+                // ownership. Existing accounts link only from an authenticated session.
+                allowDangerousEmailAccountLinking: false,
                 profile(profile) {
                     return {
                         id: profile.sub,
@@ -163,7 +182,11 @@ export const authConfig: NextAuthConfig = {
                 return false;
             }
             if (account?.provider === 'microsoft-entra-id' && normalizedEmail) {
-                const existingUser = await prisma.user.findUnique({ where: { normalizedEmail } });
+                const linked = await prisma.account.findUnique({
+                    where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+                    select: { user: { select: { id: true, isActive: true } } },
+                });
+                const existingUser = linked?.user ?? await prisma.user.findUnique({ where: { normalizedEmail }, select: { id: true, isActive: true } });
                 if (existingUser) {
                     if (!existingUser.isActive) {
                         void auditLog({
@@ -174,22 +197,6 @@ export const authConfig: NextAuthConfig = {
                         });
                         return false;
                     }
-                    await prisma.user.update({
-                        where: { id: existingUser.id },
-                        data: { entraObjectId: user.entraObjectId, name: user.name ?? existingUser.name, email: normalizedEmail },
-                    });
-                    void auditLog({
-                        userId: existingUser.id,
-                        action: 'auth.login',
-                        entity: 'auth',
-                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: normalizedEmail },
-                    });
-                } else {
-                    void auditLog({
-                        action: 'auth.login',
-                        entity: 'auth',
-                        metadata: { method: 'sso', provider: 'microsoft-entra-id', email: normalizedEmail, newUser: true },
-                    });
                 }
             }
             return true;
@@ -236,6 +243,16 @@ export const authConfig: NextAuthConfig = {
                 session.user.sessionVersion = token.sessionVersion as number;
             }
             return session;
+        },
+    },
+    events: {
+        async signIn({ user, account, profile }) {
+            if (account?.provider !== 'microsoft-entra-id') return;
+            // This event runs after Auth.js has resolved/linked the stable provider
+            // account. Never update another local identity by an email claim.
+            const objectId = typeof profile?.oid === 'string' ? profile.oid : undefined;
+            if (objectId) await prisma.user.update({ where: { id: user.id }, data: { entraObjectId: objectId } });
+            void auditLog({ userId: user.id, action: 'auth.login', entity: 'auth', metadata: { method: 'sso', provider: account.provider } });
         },
     },
     pages: {

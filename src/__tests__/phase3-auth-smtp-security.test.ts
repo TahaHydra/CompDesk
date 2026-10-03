@@ -13,7 +13,7 @@ jest.mock('@/lib/audit', () => ({ auditLog: mockAuditLog }));
 jest.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 jest.mock('@/lib/logger', () => ({ __esModule: true, default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('@/lib/branding', () => ({ getBrandingConfig: jest.fn().mockResolvedValue({ applicationName: 'CompDesk' }) }));
-jest.mock('@/lib/managed-env', () => ({ readManagedEnvironment: jest.fn().mockResolvedValue({}), updateManagedEnvironment: jest.fn(), ManagedEnvironmentError: class ManagedEnvironmentError extends Error {} }));
+jest.mock('@/lib/managed-env', () => ({ canEditManagedEnvironment: () => true, readManagedEnvironment: jest.fn().mockResolvedValue({}), updateManagedEnvironment: jest.fn(), ManagedEnvironmentError: class ManagedEnvironmentError extends Error {} }));
 jest.mock('@/lib/uploaded-image', () => ({ removeUploadedImage: jest.fn() }));
 jest.mock('nodemailer', () => ({ __esModule: true, default: { createTransport: (...args: unknown[]) => mockCreateTransport(...args) } }));
 
@@ -220,6 +220,7 @@ describe('Phase 3 SMTP diagnostics and secret protection', () => {
         const envelope = encryptSettingSecret('database-password', keyEnv);
         mockPrisma.appSetting.findMany.mockResolvedValue([{ key: 'smtp_password', value: envelope }]);
         const response = await getSettings(); const payload = await response.json(); const serialized = JSON.stringify(payload);
+        expect(response.status).toBe(200);
         expect(payload.smtp_password).toBe('');
         expect(serialized).not.toContain(envelope);
         expect(serialized).not.toContain('database-password');

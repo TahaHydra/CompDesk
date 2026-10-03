@@ -1,0 +1,15 @@
+# Private ticket reminders
+
+Open an accessible active ticket and use **Remind me**, below Actions. Choose a date/time (the dialog shows your browser timezone), add an optional private note, and optionally request email. UTC schedules are saved in PostgreSQL. The reminder always appears in your notification bell; email requires configured SMTP or Microsoft 365 delivery. Edit/cancel upcoming reminders from the same card. A user can have at most 20 pending reminders and schedule at most one year ahead.
+
+Reminders belong to their creator. Other ticket participants and administrators do not receive the private note or inspect another user's reminders. The worker rechecks the owner's active account, current ticket access and ticket status. Resolved, closed or withdrawn tickets and revoked access cancel pending delivery. Reminder notes are not posted in the shared timeline. Deleting a ticket or user cascades their reminder records.
+
+The Node application starts one worker per process through existing instrumentation. Each minute it claims due database rows atomically using `FOR UPDATE SKIP LOCKED` and five-minute leases. Leases coordinate replicas and expire after a crash. Rows are rechecked and leases renewed before dispatch. Schedules, delivery status, attempts, retry time, lease, bell publication time and provider acceptance survive application restarts. Bell publication is idempotent through the persisted timestamp and the existing per-user notification read watermark. Email retries use exponential delays, capped at one hour, with at most five attempts. Failed email leaves the in-app reminder available.
+
+External SMTP/Graph delivery is at least once: a crash or ambiguous network failure after provider acceptance can cause a duplicate email. Provider acceptance is not proof of arrival. There is no exactly-once claim. The card reports scheduled, delivered, email retry pending or failed state. Already published reminders cannot be rescheduled; create another occurrence instead. No real email is sent unless that reminder's owner selected email or a Super Admin explicitly uses a mail test.
+
+## Old requester-reminder branch
+
+The historical requester-reminder branch contains a different feature: staff send a nudge to the requester of a `PENDING_USER` ticket, governed by role policy, a cooldown and per-cycle limit. It can add value alongside personal reminders. Preserve that work, but do not merge it directly: it uses the same `/reminders` route, `TicketReminder` model/table and library names with incompatible recipient/sender and delivery fields, and includes many unrelated changes from its older base.
+
+If approved as a later feature, port only its requester-nudge behavior into a separate `/requester-reminders` route/model, reuse the durable mail delivery machinery, and retain its pending-cycle/cooldown policy. Its requester communication must stay clearly separate from private personal notes. Recheck the privacy/access fixes when porting it. No automatic requester-nudge behavior was enabled in this implementation.

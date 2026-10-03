@@ -86,7 +86,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             <label>Temporary storage per user (MB)<input name="tempAttachmentMaxMbPerUser" type="number" value="100" min="10" max="10000"></label>
             <label class="choice"><input name="clamavEnabled" type="checkbox"> Connect to a ClamAV daemon (scan errors fail closed)</label><label>ClamAV host<input name="clamavHost" placeholder="127.0.0.1"></label><label>ClamAV port<input name="clamavPort" type="number" value="3310" min="1" max="65535"></label>
         </fieldset><p>Ticket attachments remain outside public static storage. Configure persistent volumes and backups for private attachments and branding assets.</p></section>
-        <section data-step="8" class="hidden"><h2>9. Demo data</h2><label class="choice"><input name="installDemoData" type="checkbox"> Install optional demo data</label><p>Disabled by default. Demo credentials are randomly generated and shown once. Production seeding requires an explicit override.</p></section>
+        <section data-step="8" class="hidden"><h2>9. Demo data</h2><label class="choice"><input name="installDemoData" type="checkbox"> Install optional demo data</label><p>Explore 3 departments, 18 categories, 5 example tickets, 6 demo accounts, templates, and bilingual help articles. Disabled by default. Random demo credentials are shown once; local sign-in must be enabled to use them. Your Super Admin and settings are preserved. Remove seeded content later in Settings → Demo data.</p></section>
         <section data-step="9" class="hidden"><h2>10. Review and install</h2><div id="review"></div><label class="choice"><input id="confirmInstall" type="checkbox"> I confirm these non-secret settings and authorize migrations and installation.</label></section>
         <div class="actions"><button type="button" class="secondary" id="back">Back</button><button type="button" class="primary" id="next">Next</button><button type="button" class="primary hidden" id="install">Install CompDesk</button></div>
     </form>
@@ -260,7 +260,8 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             const children = [element('h2', 'Installation complete'), element('div', autoTransition ? 'Installation complete. CompDesk is starting.' : result.message, 'notice success')];
             if (result.demoCredentials) {
                 const demo = element('div', undefined, 'notice success');
-                const credentialsText=`CompDesk demo credentials\nEmail: ${result.demoCredentials.email}\nPassword: ${result.demoCredentials.password}\n`;
+                const accounts = result.demoCredentials.accounts || [{ email: result.demoCredentials.email, role: 'USER' }];
+                const credentialsText=`CompDesk demo credentials\n${accounts.map(account=>`${account.role}: ${account.email}`).join('\n')}\nPassword: ${result.demoCredentials.password}\n`;
                 const controls=element('div',undefined,'actions');
                 const copyButton=element('button','Copy demo credentials','secondary');copyButton.type='button';
                 const downloadButton=element('button','Download demo credentials','secondary');downloadButton.type='button';
@@ -268,7 +269,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
                 copyButton.onclick=async()=>{try{await copyText(credentialsText);credentialStatus.textContent='Demo credentials copied.';}catch(error){credentialStatus.textContent=error instanceof Error?error.message:'Copy failed. Select the credentials manually.';}};
                 downloadButton.onclick=()=>{const url=URL.createObjectURL(new Blob([credentialsText],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='compdesk-demo-credentials.txt';link.click();URL.revokeObjectURL(url);credentialStatus.textContent='Demo credentials downloaded.';};
                 controls.append(copyButton,downloadButton);
-                demo.append(element('h3', 'Demo credentials (shown once)'), element('p', `Email: ${result.demoCredentials.email}`), element('p', `Password: ${result.demoCredentials.password}`), controls, credentialStatus);
+                demo.append(element('h3', 'Demo credentials (shown once)'), ...accounts.map(account=>element('p', `${account.role}: ${account.email}`)), element('p', `Password: ${result.demoCredentials.password}`), controls, credentialStatus);
                 children.push(demo);
             }
             const continueButton=loginUrl?element('button','Continue to sign in','primary'):null;
@@ -310,6 +311,19 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
         }
     };
 })();
+
+const smtpTlsPort = document.querySelector('[name="smtpPort"]');
+const smtpImplicitTls = document.querySelector('[name="smtpSecure"]');
+const smtpStartTls = document.querySelector('[name="smtpRequireTls"]');
+function syncSmtpTls() {
+  if (smtpTlsPort.value === '465') smtpImplicitTls.checked = true;
+  else if (smtpTlsPort.value === '587') smtpImplicitTls.checked = false;
+  smtpStartTls.disabled = smtpImplicitTls.checked;
+  smtpStartTls.checked = !smtpImplicitTls.checked;
+}
+smtpTlsPort.addEventListener('change', syncSmtpTls);
+smtpImplicitTls.addEventListener('change', () => { smtpTlsPort.value = smtpImplicitTls.checked ? '465' : '587'; syncSmtpTls(); });
+syncSmtpTls();
 </script>
 </body>
 </html>

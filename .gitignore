@@ -16,6 +16,7 @@ dist/
 .env.production.local
 .env.development.local
 .env.staging
+/.env.compdesk-test
 .env*.bak
 .env*.lock
 .env*.tmp
@@ -70,3 +71,6 @@ test-results/
 
 # Local CI artifacts
 ci-e2e-artifacts/
+
+# Acceptance-only deployment overrides may contain private credentials.
+/docker-compose.acceptance.yml

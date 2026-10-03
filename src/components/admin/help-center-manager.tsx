@@ -82,11 +82,11 @@ export function HelpCenterManager() {
 
     const collectionsQuery = useQuery({
         queryKey: ['help-admin-collections'],
-        queryFn: () => requestJson('/api/help/collections?includeDrafts=true&raw=true') as Promise<RawCollection[]>,
+        queryFn: async () => { const payload = await requestJson('/api/help/collections?includeDrafts=true&raw=true'); if (!Array.isArray(payload)) throw new Error('The server returned an invalid help list'); return payload as RawCollection[]; },
     });
     const articlesQuery = useQuery({
         queryKey: ['help-admin-articles'],
-        queryFn: () => requestJson('/api/help/articles?includeDrafts=true&raw=true') as Promise<RawArticle[]>,
+        queryFn: async () => { const payload = await requestJson('/api/help/articles?includeDrafts=true&raw=true'); if (!Array.isArray(payload)) throw new Error('The server returned an invalid help list'); return payload as RawArticle[]; },
     });
     const collections = useMemo(() => collectionsQuery.data ?? [], [collectionsQuery.data]);
     const articles = useMemo(() => articlesQuery.data ?? [], [articlesQuery.data]);
@@ -115,6 +115,7 @@ export function HelpCenterManager() {
             queryClient.invalidateQueries({ queryKey: ['help-admin-articles'] }),
             queryClient.invalidateQueries({ queryKey: ['help-collections'] }),
             queryClient.invalidateQueries({ queryKey: ['help-articles'] }),
+            queryClient.invalidateQueries({ queryKey: ['help-article'] }),
         ]);
     };
 
@@ -164,9 +165,13 @@ export function HelpCenterManager() {
         setArticleDialog(true);
     };
 
+    const readError = collectionsQuery.error || articlesQuery.error;
+    if (readError && !collectionsQuery.data && !articlesQuery.data) return <div role="alert" className="rounded-lg border p-6">{readError instanceof Error ? readError.message : t('Request failed')}<Button className="ml-3" onClick={() => { void collectionsQuery.refetch(); void articlesQuery.refetch(); }}>{t('Try again')}</Button></div>;
+
     return (
         <Tabs defaultValue="articles" className="space-y-5">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            {readError ? <div role="alert" className="rounded-lg border p-4">{readError instanceof Error ? readError.message : t('Request failed')}<Button className="ml-3" onClick={() => { void collectionsQuery.refetch(); void articlesQuery.refetch(); }}>{t('Try again')}</Button></div> : null}
                 <TabsList><TabsTrigger value="articles">{t('Articles')} ({articles.length})</TabsTrigger><TabsTrigger value="collections">{t('Collections')} ({collections.length})</TabsTrigger></TabsList>
             </div>
 

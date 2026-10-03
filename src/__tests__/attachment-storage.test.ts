@@ -68,3 +68,11 @@ describe('private attachment storage', () => {
         }
     });
 });
+
+test('local standalone runtime resolves attachments against the application root', () => {
+ const repositoryRoot = path.resolve('fixture-repository');
+ const cwd = jest.spyOn(process, 'cwd').mockReturnValue(path.join(repositoryRoot, '.next', 'standalone'));
+ const prior = process.env.ATTACHMENT_STORAGE_DIR;
+ try { delete process.env.ATTACHMENT_STORAGE_DIR; expect(attachmentStorageRoot()).toBe(path.join(repositoryRoot, 'storage', 'attachments')); }
+ finally { cwd.mockRestore(); if(prior === undefined) delete process.env.ATTACHMENT_STORAGE_DIR; else process.env.ATTACHMENT_STORAGE_DIR = prior; }
+});

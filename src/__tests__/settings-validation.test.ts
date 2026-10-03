@@ -14,6 +14,7 @@ describe('settings validation', () => {
         ['smtp_port', 'not-a-port'],
         ['smtp_from', 'not-an-email'],
         ['smtp_secure', 'yes'],
+        ['updates_automatic', 'yes'],
         ['email_on_ticket_created', '1'],
         ['azure_ad_client_secret', 'secret\nINJECTED=true'],
     ])('rejects an invalid %s value', (key, value) => {

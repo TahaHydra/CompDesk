@@ -77,7 +77,7 @@ async function writeAtomically(envPath: string, contents: string): Promise<void>
 }
 
 export function canEditManagedEnvironment(cwd = process.cwd()): boolean {
-    return process.env.NODE_ENV !== 'production' || isLocalStandaloneRuntime(cwd);
+    return Boolean(process.env.COMPDESK_CONFIG_DIR) || process.env.NODE_ENV !== 'production' || isLocalStandaloneRuntime(cwd);
 }
 
 export async function updateManagedEnvironment(
@@ -104,7 +104,7 @@ export async function updateManagedEnvironment(
             const envKey = MANAGED_ENV_KEYS[key as keyof typeof MANAGED_ENV_KEYS];
             const line = `${envKey}=${JSON.stringify(value)}`;
             const pattern = new RegExp(`^#?\\s*${envKey}=.*$`, 'm');
-            contents = pattern.test(contents) ? contents.replace(pattern, line) : `${contents.trimEnd()}\n${line}`;
+            contents = pattern.test(contents) ? contents.replace(pattern, () => line) : `${contents.trimEnd()}\n${line}`;
         }
         await writeAtomically(envPath, `${contents.trim()}\n`);
     } finally {

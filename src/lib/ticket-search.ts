@@ -1,4 +1,4 @@
-import type { Prisma, Role } from '@prisma/client';
+import { Prisma, type Role } from '@prisma/client';
 
 export type TicketView = 'my' | 'queue' | 'all';
 export type TicketTagMode = 'any';
@@ -26,26 +26,40 @@ export function ticketScopeLabel(role: Role, view: TicketView): string {
 
 export function buildTicketVisibilityWhere(userId: string, role: Role, view: TicketView, accessibleQueueIds: string[] | null): Prisma.TicketWhereInput {
     if (role === 'USER') return { requesterId: userId };
-    if (view === 'my') return { OR: [{ assignments: { some: { userId } } }, { requesterId: userId }] };
-    if (role === 'SUPER_ADMIN') return {};
+    const personal: Prisma.TicketWhereInput = { OR: [{ assignments: { some: { userId } } }, { requesterId: userId }] };
+    if (role === 'SUPER_ADMIN') return view === 'my' ? personal : {};
     const queueIds = accessibleQueueIds ?? [];
-    return { queueId: { in: queueIds.length > 0 ? queueIds : ['__none__'] } };
+    const departments = { queueId: { in: queueIds.length > 0 ? queueIds : ['__none__'] } };
+    return view === 'my' ? { AND: [departments, personal] } : departments;
 }
 
-export function buildTicketTextSearch(search: string): Prisma.TicketWhereInput {
+/** Gate searchable columns in PostgreSQL so matching/pagination/counts cannot reveal hidden values. */
+export function ticketBuiltInVisibilityWhere(fieldKey: string, role: Role): Prisma.TicketWhereInput {
+    const fieldContains = (field: Prisma.InputJsonValue): Prisma.TicketWhereInput => ({ formSchemaSnapshot: { path: ['fields'], array_contains: [field] } });
+    const gate = (identity: Record<string, string>): Prisma.TicketWhereInput => ({ OR: [
+        { formSchemaSnapshot: { equals: Prisma.DbNull } },
+        { formSchemaSnapshot: { equals: Prisma.JsonNull } },
+        { NOT: fieldContains(identity) },
+        { AND: [fieldContains({ ...identity, visibleTo: [role] }), { NOT: fieldContains({ ...identity, isActive: false }) }] },
+    ] });
+    // Current schemas require canonical field keys; also cover older snapshots identified by builtIn.
+    return { AND: [gate({ fieldKey }), gate({ builtIn: fieldKey.toUpperCase() })] };
+}
+
+export function buildTicketTextSearch(search: string, role: Role = 'USER'): Prisma.TicketWhereInput {
     return {
         OR: [
             { id: search },
             { key: { contains: search, mode: 'insensitive' } },
-            { title: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } },
+            { AND: [ticketBuiltInVisibilityWhere('title', role), { title: { contains: search, mode: 'insensitive' } }] },
+            { AND: [ticketBuiltInVisibilityWhere('description', role), { description: { contains: search, mode: 'insensitive' } }] },
             { requesterId: search },
             { requester: { is: { name: { contains: search, mode: 'insensitive' } } } },
             { requester: { is: { email: { contains: search, mode: 'insensitive' } } } },
             { assignments: { some: { userId: search } } },
             { assignments: { some: { user: { name: { contains: search, mode: 'insensitive' } } } } },
             { assignments: { some: { user: { email: { contains: search, mode: 'insensitive' } } } } },
-            { tags: { some: { tag: { name: { contains: search, mode: 'insensitive' } } } } },
+            { AND: [ticketBuiltInVisibilityWhere('tags', role), { tags: { some: { tag: { name: { contains: search, mode: 'insensitive' } } } } }] },
             { category: { is: { name: { contains: search, mode: 'insensitive' } } } },
             { queue: { is: { name: { contains: search, mode: 'insensitive' } } } },
         ],

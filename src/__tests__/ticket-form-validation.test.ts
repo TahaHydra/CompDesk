@@ -131,3 +131,9 @@ describe('historical form snapshots', () => {
         expect(fieldsVisibleToRoleFromSnapshot(snapshot, Role.USER)).toHaveLength(1);
     });
 });
+test('server rejects normalized impossible calendar dates', () => {
+ const date = field({type:FormFieldType.DATE});
+ expect(validationErrors(resolved([date]), {custom_text:'2026-02-31'})).toHaveProperty('custom_text');
+ expect(validationErrors(resolved([date]), {custom_text:'2025-02-29'})).toHaveProperty('custom_text');
+ expect(validateTicketFormSubmission(resolved([date]), {custom_text:'2024-02-29'}).customValues.custom_text).toBe('2024-02-29');
+});

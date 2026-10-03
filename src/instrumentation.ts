@@ -4,4 +4,6 @@ export async function register() {
         || process.env.NEXT_PHASE === 'phase-production-build') return;
     const { startWebhookDeliveryWorker } = await import('./lib/webhooks');
     startWebhookDeliveryWorker();
+    const { startTicketReminderWorker } = await import('./lib/ticket-reminders');
+    startTicketReminderWorker();
 }

@@ -113,6 +113,7 @@ export function createTransitionGuard() {
 // final outcome of the whole sequence.
 export async function startProduction({
     runMigrations,
+    verifySchema = async () => ({ ok: true }),
     runAttachmentMigration,
     startServer,
     log = () => {},
@@ -120,6 +121,10 @@ export async function startProduction({
     log('Running database migrations.');
     const migration = await runMigrations();
     if (!migration.ok) return { ok: false, stage: 'migrate', detail: migration };
+
+    log('Verifying database schema compatibility.');
+    const schema = await verifySchema();
+    if (!schema.ok) return { ok: false, stage: 'schema', detail: schema };
 
     log('Running private attachment storage migration.');
     const attachments = await runAttachmentMigration();

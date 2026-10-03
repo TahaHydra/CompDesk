@@ -123,7 +123,7 @@ describe('normalized identities and session revocation', () => {
         expect(auth).toContain('isSessionTokenCurrent');
         expect(auth).toContain('recordLoginFailure(email, sourceIp)');
         expect(auth).toContain('DUMMY_PASSWORD_HASH');
-        expect(auth).toContain('allowDangerousEmailAccountLinking: true');
+        expect(auth).toContain('allowDangerousEmailAccountLinking: false');
     });
 });
 

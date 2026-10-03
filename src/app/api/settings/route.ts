@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import { normalizeDashboardLinks, parseDashboardLinks } from '@/lib/dashboard-links';
 import logger from '@/lib/logger';
-import { ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
+import { canEditManagedEnvironment, ManagedEnvironmentError, readManagedEnvironment, updateManagedEnvironment } from '@/lib/managed-env';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
 import { isValidSmtpFrom, normalizeSettingValue, SettingsValidationError, validateSmtpSecurityCombination } from '@/lib/settings-validation';
@@ -17,7 +17,7 @@ const ALLOWED_KEYS = new Set([
     'azure_ad_client_id', 'azure_ad_client_secret', 'azure_ad_tenant_id',
     'dashboard_links', 'login_local_enabled',
     'feature_attachments_enabled', 'feature_dashboard_links_enabled', 'feature_external_api_enabled',
-    'feature_webhooks_enabled',
+    'feature_webhooks_enabled', 'updates_automatic',
 ]);
 
 function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Record<string, string>): Record<string, string> {
@@ -25,11 +25,15 @@ function mergeSettingSources(dbSettings: Record<string, string>, managedEnv: Rec
     const passwordSource = environmentPassword ? 'environment' : dbSettings.smtp_password ? 'database' : 'missing';
     return {
         ...dbSettings,
+        mail_graph_secret: '',
         azure_ad_client_id: managedEnv.azure_ad_client_id || process.env.AZURE_AD_CLIENT_ID || dbSettings.azure_ad_client_id || '',
         azure_ad_tenant_id: managedEnv.azure_ad_tenant_id || process.env.AZURE_AD_TENANT_ID || dbSettings.azure_ad_tenant_id || '',
         azure_ad_client_secret: '',
+        azure_ad_settings_editable: canEditManagedEnvironment() ? 'true' : 'false',
         azure_ad_client_secret_configured: process.env.AZURE_AD_CLIENT_SECRET || managedEnv.azure_ad_client_secret ? 'true' : 'false',
         azure_ad_runtime_configured: process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID ? 'true' : 'false',
+        azure_ad_restart_required: Object.entries({ azure_ad_client_id: 'AZURE_AD_CLIENT_ID', azure_ad_client_secret: 'AZURE_AD_CLIENT_SECRET', azure_ad_tenant_id: 'AZURE_AD_TENANT_ID' })
+            .some(([key, envKey]) => Boolean(managedEnv[key]) && managedEnv[key] !== process.env[envKey]) ? 'true' : 'false',
         smtp_host: dbSettings.smtp_host || process.env.SMTP_HOST || '',
         smtp_port: dbSettings.smtp_port || process.env.SMTP_PORT || '587',
         smtp_user: dbSettings.smtp_user || process.env.SMTP_USER || '',
@@ -134,7 +138,7 @@ export async function PATCH(request: Request) {
             const existing = Object.fromEntries(existingRows.map((setting) => [setting.key, setting.value]));
             const port = Number.parseInt(smtpEntries.get('smtp_port') ?? existing.smtp_port ?? process.env.SMTP_PORT ?? '587', 10);
             const secure = (smtpEntries.get('smtp_secure') ?? existing.smtp_secure ?? process.env.SMTP_SECURE ?? 'false') === 'true';
-            const requireTLS = (smtpEntries.get('smtp_require_tls') ?? existing.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? 'true') === 'true';
+            const requireTLS = (smtpEntries.get('smtp_require_tls') ?? existing.smtp_require_tls ?? process.env.SMTP_REQUIRE_TLS ?? (secure ? 'false' : 'true')) === 'true';
             validateSmtpSecurityCombination({ port, secure, requireTLS });
         }
         const enablingEmail = normalizedEntries.some(([key, value]) => key.startsWith('email_on_') && value === 'true');

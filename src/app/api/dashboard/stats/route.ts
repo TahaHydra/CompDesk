@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { projectTicketFormForRole } from '@/lib/api-dto';
 import logger from '@/lib/logger';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { filterDashboardLinksForQueueAccess, parseDashboardLinks } from '@/lib/dashboard-links';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
-import { broadestTicketView } from '@/lib/ticket-search';
+import { broadestTicketView, ticketBuiltInVisibilityWhere } from '@/lib/ticket-search';
 
 // GET /api/dashboard/stats
 export async function GET() {
@@ -35,7 +36,7 @@ export async function GET() {
             prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['NEW', 'OPEN'] } } }),
             prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['PENDING_USER', 'PENDING_AGENT'] } } }),
             prisma.ticket.count({ where: { ...activeWhereClause, status: { in: ['RESOLVED', 'CLOSED'] } } }),
-            prisma.ticket.count({ where: { ...activeWhereClause, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
+            prisma.ticket.count({ where: { AND: [activeWhereClause, ticketBuiltInVisibilityWhere('priority', role)], priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
             prisma.ticket.findMany({
                 where: activeWhereClause,
                 include: {
@@ -77,7 +78,7 @@ export async function GET() {
 
         return NextResponse.json({
             stats: { total, open, pending, resolved, urgent, escalated },
-            recentTickets,
+            recentTickets: recentTickets.map((ticket) => projectTicketFormForRole(ticket, role)),
             customLinks,
             ticketView: broadestTicketView(role),
         });

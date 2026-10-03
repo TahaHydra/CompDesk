@@ -59,4 +59,27 @@ describe('managed standalone environment', () => {
         await expect(updateManagedEnvironment({ azure_ad_client_id: 'client\nINJECTED=true' }, standalone))
             .rejects.toThrow('cannot contain line breaks');
     });
+
+    it('persists Docker settings in the mounted config volume, preserving other secrets', async () => {
+        const previous = process.env.COMPDESK_CONFIG_DIR;
+        process.env.COMPDESK_CONFIG_DIR = repository;
+        try {
+            const envPath = path.join(repository, 'secrets', 'runtime.env');
+            await fs.mkdir(path.dirname(envPath), { recursive: true });
+            await fs.writeFile(envPath, 'AUTH_SECRET="keep-me"\nDATABASE_URL="keep-db"\n');
+            expect(resolveRuntimeEnvFiles('/app')).toEqual([envPath]);
+            await updateManagedEnvironment({ azure_ad_client_secret: 'new$&secret' }, '/app');
+            expect(await readManagedEnvironment('/app')).toEqual({ azure_ad_client_secret: 'new$&secret' });
+            expect(await fs.readFile(envPath, 'utf8')).toContain('AUTH_SECRET="keep-me"');
+        } finally {
+            if (previous === undefined) delete process.env.COMPDESK_CONFIG_DIR;
+            else process.env.COMPDESK_CONFIG_DIR = previous;
+        }
+    });
+
+    it('replaces secrets literally, including replacement-pattern characters', async () => {
+        await updateManagedEnvironment({ azure_ad_client_secret: 'old-value' }, standalone);
+        await updateManagedEnvironment({ azure_ad_client_secret: 'secret$&value' }, standalone);
+        expect((await readManagedEnvironment(standalone)).azure_ad_client_secret).toBe('secret$&value');
+    });
 });

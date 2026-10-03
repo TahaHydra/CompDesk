@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useRef, useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, signOut } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { submitCredentialsOnce } from '@/lib/signin-submission';
+import { getSignInErrorMessage, startMicrosoftSignIn } from '@/lib/microsoft-signin';
+import { useLanguage } from '@/components/providers/language-provider';
 
 function MicrosoftMark() {
     return (
@@ -26,6 +28,7 @@ function MicrosoftMark() {
 
 function SignInForm() {
     const branding = useBranding();
+    const { t } = useLanguage();
     const searchParams = useSearchParams();
     const authError = searchParams.get('error');
     const [loading, setLoading] = useState(false);
@@ -33,6 +36,24 @@ function SignInForm() {
     const [localError, setLocalError] = useState('');
     const microsoftVisible = branding.showMicrosoftLogin && branding.microsoftLoginConfigured;
     const showDivider = microsoftVisible && branding.showLocalLogin;
+
+    const handleMicrosoft = async () => {
+        if (submissionLock.current) return;
+        submissionLock.current = true;
+        setLoading(true);
+        setLocalError('');
+        try {
+            await startMicrosoftSignIn({
+                endSession: () => signOut({ redirect: false }),
+                authenticate: () => signIn('microsoft-entra-id', { callbackUrl: '/dashboard' }),
+            });
+        } catch {
+            setLocalError(t('Microsoft sign-in unavailable. Try again.'));
+        } finally {
+            submissionLock.current = false;
+            setLoading(false);
+        }
+    };
 
     const handleCredentials = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -67,9 +88,15 @@ function SignInForm() {
                 <CardDescription className="mt-2 whitespace-pre-line text-base">{branding.loginDescription}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 pt-4">
+                {(authError || localError) ? (
+                    <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm text-destructive">
+                        {localError || t(getSignInErrorMessage(authError ?? '', branding.showLocalLogin))}
+                    </div>
+                ) : null}
                 {microsoftVisible ? (
                     <Button
-                        onClick={() => signIn('microsoft-entra-id', { callbackUrl: '/dashboard' })}
+                        onClick={handleMicrosoft}
+                        disabled={loading}
                         className="h-12 w-full gap-3 text-base shadow-lg shadow-primary/25"
                     >
                         <MicrosoftMark />
@@ -101,11 +128,6 @@ function SignInForm() {
 
                 {branding.showLocalLogin ? (
                     <form onSubmit={handleCredentials} className="space-y-4">
-                        {(authError || localError) ? (
-                            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm text-destructive">
-                                {localError || `Authentication failed. Please try again or contact ${branding.supportEmail || 'support'}.`}
-                            </div>
-                        ) : null}
                         <div className="space-y-2">
                             <Label htmlFor="email">Email</Label>
                             <div className="relative">
@@ -145,7 +167,7 @@ function SignInForm() {
                     <p className="text-center text-xs text-muted-foreground">
                         {branding.footerText}
                         {branding.footerText && branding.supportEmail ? ' · ' : ''}
-                        {branding.supportEmail ? <a className="hover:text-primary" href={`mailto:${branding.supportEmail}`}>{branding.supportEmail}</a> : null}
+                        {branding.supportEmail ? <>{t('Support contact')}: <a className="hover:text-primary" href={`mailto:${branding.supportEmail}`}>{branding.supportEmail}</a></> : null}
                     </p>
                 ) : null}
 

@@ -6,6 +6,12 @@ CompDesk supports local credentials and Microsoft Entra ID. At least one method 
 
 Every email is trimmed and lowercased. PostgreSQL stores `normalized_email`, enforces a unique index, and uses a trigger so Auth.js adapter writes, setup SQL, seed data, APIs, and future integrations cannot bypass normalization. The upgrade migration aborts before changing data if two existing accounts normalize to the same value. Operators must choose the correct surviving identity and reconcile its related records before retrying; the migration never guesses.
 
+## Microsoft account ownership
+
+Microsoft sign-in uses the stored provider account identity. An email claim alone never links a Microsoft identity to an existing local account or changes that account's email/name. Existing Microsoft account bindings continue to work.
+
+To link an existing local account, sign in to that account first and use **Link my Microsoft account** in **Profile**. Auth.js requires that authenticated session before creating the binding. A new Microsoft identity whose email does not match an existing account follows the normal new-user flow. If local login is disabled and an account has no Microsoft binding, an administrator must arrange account recovery; matching an email address does not bypass ownership verification.
+
 ## Local-login throttling
 
 Credential failures are stored in PostgreSQL as HMAC-SHA-256 key hashes. Raw passwords are never stored or logged. Records cover the normalized account, trusted source address, and account/source pair:

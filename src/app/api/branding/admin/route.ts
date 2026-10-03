@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest) {
         }
 
         const previous = await getBrandingConfig();
-        const branding = await saveBrandingConfig(parsed.data);
+        const branding = await saveBrandingConfig({ ...parsed.data, showDemoAccounts: previous.showDemoAccounts, demoAccountInfo: previous.demoAccountInfo });
         const changedKeys = Object.keys(branding).filter(
             (key) => branding[key as keyof typeof branding] !== previous[key as keyof typeof previous]
         );
@@ -56,7 +56,7 @@ export async function DELETE(req: NextRequest) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         const previous = await getBrandingConfig();
-        const branding = await saveBrandingConfig(DEFAULT_BRANDING);
+        const branding = await saveBrandingConfig({ ...DEFAULT_BRANDING, showDemoAccounts: previous.showDemoAccounts, demoAccountInfo: previous.demoAccountInfo });
         const assets = new Set(BRANDING_ASSET_FIELDS.map((field) => previous[field]).filter(Boolean));
         await Promise.all([...assets].map((assetUrl) => removeUploadedImage(assetUrl, 'branding')));
         await auditLog({

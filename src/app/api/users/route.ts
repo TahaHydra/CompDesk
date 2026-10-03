@@ -45,7 +45,7 @@ export async function GET() {
             createdAt: true,
             entraObjectId: true,
             passwordHash: true,
-            queueMemberships: { select: { queueId: true } },
+            queueMemberships: { select: { queueId: true, role: true } },
         } as const;
         let users;
         if (session.user.role === 'SUPER_ADMIN') {
@@ -172,8 +172,13 @@ export async function PATCH(req: NextRequest) {
             if (queueIds) {
                 const uniqueQueueIds = [...new Set(queueIds)];
                 if (uniqueQueueIds.length !== queueIds.length) throw new Error('DUPLICATE_QUEUE');
-                const queueCount = await tx.queue.count({ where: { id: { in: uniqueQueueIds }, isActive: true } });
-                if (queueCount !== uniqueQueueIds.length) throw new Error('INVALID_QUEUE');
+                // Existing inactive agent memberships may be retained or removed.
+                // Only new assignments must target active departments.
+                const existing = await tx.queueMember.findMany({ where: { userId, role: 'agent' }, select: { queueId: true } });
+                const existingIds = new Set(existing.map((member) => member.queueId));
+                const addedIds = uniqueQueueIds.filter((id) => !existingIds.has(id));
+                const queueCount = addedIds.length ? await tx.queue.count({ where: { id: { in: addedIds }, isActive: true } }) : 0;
+                if (queueCount !== addedIds.length) throw new Error('INVALID_QUEUE');
             }
 
             const revokesSessions = Boolean(
@@ -234,7 +239,7 @@ export async function PATCH(req: NextRequest) {
             role: user.role,
             isActive: user.isActive,
             ...(generatedPassword ? { generatedPassword } : {}),
-        });
+        }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error) {
         if (error instanceof Error) {
             const expected: Record<string, [string, number]> = {

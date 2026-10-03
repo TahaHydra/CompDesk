@@ -163,7 +163,7 @@ export function renderEnvironment(config) {
             `POSTGRES_PASSWORD=${quoteEnvValue(config.dockerDatabase.password)}`
         );
     }
-    if (config.microsoftEnabled) {
+    if (config.microsoftEnabled || config.clientId || config.tenantId || config.clientSecret) {
         lines.push(
             `AZURE_AD_TENANT_ID=${quoteEnvValue(config.tenantId)}`,
             `AZURE_AD_CLIENT_ID=${quoteEnvValue(config.clientId)}`,

@@ -1,5 +1,6 @@
 import { Prisma, type Role } from '@prisma/client';
 import { fieldsVisibleToRoleFromSnapshot, parseTicketFormSchemaSnapshot } from '@/lib/ticket-form/validation';
+import { projectFormFileValues, projectTicketBuiltIns } from '@/lib/ticket-form/privacy';
 
 /** Apply field visibility at every ticket response boundary, including lists and replays. */
 export function projectTicketFormForRole<T extends { formSchemaSnapshot?: unknown; submittedFormValues?: unknown }>(ticket: T, role: Role) {
@@ -8,11 +9,11 @@ export function projectTicketFormForRole<T extends { formSchemaSnapshot?: unknow
     const values = ticket.submittedFormValues && typeof ticket.submittedFormValues === 'object' && !Array.isArray(ticket.submittedFormValues)
         ? ticket.submittedFormValues as Record<string, unknown> : {};
     return {
-        ...ticket,
+        ...projectTicketBuiltIns(ticket, role),
         formSchemaSnapshot: snapshot ? { ...snapshot, fields } : null,
         submittedFormValues: Object.fromEntries(fields
             .filter((field) => Object.prototype.hasOwnProperty.call(values, field.fieldKey))
-            .map((field) => [field.fieldKey, values[field.fieldKey]])),
+            .map((field) => [field.fieldKey, field.type === 'FILE' ? projectFormFileValues(ticket, values[field.fieldKey], role) : values[field.fieldKey]])),
     };
 }
 

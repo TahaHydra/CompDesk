@@ -52,6 +52,8 @@ import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { BrandLogo } from '@/components/branding/brand-logo';
 import { AboutDialog } from '@/components/layout/about-dialog';
+import { UpdateDialog, UpdateFooterControl } from '@/components/layout/update-dialog';
+import { UpdateProvider } from '@/components/providers/update-provider';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
 import { installInteractionLockGuard } from '@/lib/browser-interaction';
@@ -86,6 +88,7 @@ const adminItems: NavigationItem[] = [
 
 const notificationIcon = (type: string) => {
     switch (type) {
+        case 'REMINDER': return <Bell className="h-4 w-4 text-primary" />;
         case 'COMMENT': case 'INTERNAL_NOTE': return <MessageSquare className="h-4 w-4 text-blue-500" />;
         case 'STATUS_CHANGE': return <ArrowRightLeft className="h-4 w-4 text-amber-500" />;
         case 'ASSIGNMENT_CHANGE': return <UserCheck className="h-4 w-4 text-indigo-500" />;
@@ -209,6 +212,7 @@ export default function AppShell({
         </a>
     );
     return (
+        <UpdateProvider role={userRole} userId={session.user.id} version={version}>
         <div className="fixed inset-0 flex overflow-hidden bg-background">
             {/* Backdrop for mobile drawer */}
             {mobileOpen && (
@@ -269,13 +273,7 @@ export default function AppShell({
 
                 {/* Attribution footer */}
                 <div className={cn('shrink-0 border-t px-3 py-3', collapsed ? 'flex flex-col items-center gap-2' : 'space-y-1')}>
-                    {!collapsed && (
-                        <p className="text-[11px] leading-tight text-muted-foreground">
-                            CompDesk v{version}
-                            <br />
-                            {t('Open source')} · MIT
-                        </p>
-                    )}
+                    <UpdateFooterControl sidebarCollapsed={collapsed} />
                     <div className={cn('flex items-center text-[11px] font-medium text-muted-foreground', collapsed ? 'flex-col gap-2' : 'gap-1.5')}>
                         <a
                             href="https://xhydra.fr"
@@ -384,7 +382,7 @@ export default function AppShell({
                                                     <div className="mt-0.5 shrink-0">{notificationIcon(n.type)}</div>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm font-medium">{n.ticketKey}: {n.ticketTitle}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">{n.content || n.type.replace(/_/g, ' ').toLowerCase()}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">{n.content || (n.type === 'REMINDER' ? t('Ticket reminder') : n.type.replace(/_/g, ' ').toLowerCase())}</p>
                                                         <p className="mt-0.5 text-[11px] text-muted-foreground/70">
                                                             {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: language === 'fr' ? fr : undefined })}
                                                         </p>
@@ -450,6 +448,8 @@ export default function AppShell({
                 </main>
             </div>
             <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} version={version} />
+            <UpdateDialog />
         </div>
+        </UpdateProvider>
     );
 }

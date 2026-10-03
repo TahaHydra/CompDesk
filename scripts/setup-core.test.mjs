@@ -12,6 +12,12 @@ test('generates independent high-entropy secrets', () => {
     assert.notEqual(first, second);
 });
 
+test('keeps supplied Entra configuration even when Microsoft sign-in is not enabled yet', () => {
+    const rendered = core.renderEnvironment({ microsoftEnabled: false, clientId: 'client', tenantId: 'tenant', clientSecret: 'secret' });
+    assert.match(rendered, /LOGIN_MICROSOFT_ENABLED=false/);
+    assert.match(rendered, /AZURE_AD_CLIENT_SECRET="secret"/);
+});
+
 test('keeps bootstrap-token expiry and recovery guidance explicit without exposing a token', () => {
     assert.equal(core.TOKEN_TTL_MS, 30 * 60 * 1000);
     assert.match(core.INVALID_BOOTSTRAP_TOKEN_ERROR, /invalid or has expired/i);

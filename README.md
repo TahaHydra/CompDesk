@@ -19,6 +19,20 @@ Built by [xHydra](https://xhydra.fr).
 
 > **Public beta.** CompDesk is under active development and is not yet claimed as mature, production-hardened software. See [Known limitations](#known-limitations) and the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before deploying it for real users.
 
+## Current release — v0.9.0-beta.3
+
+[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.3) · [Changes and upgrade notes](docs/releases/v0.9.0-beta.3.md)
+
+This beta adds administrator update awareness, managed demo data, personal ticket reminders, and Microsoft 365 Graph mail. It improves ticket/form readability, repairs attachment migrations, and hardens ticket privacy, Microsoft sign-in, deployment configuration, and the packaged runtime.
+
+<details>
+<summary>Previous public betas</summary>
+
+- [v0.9.0-beta.2](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.2) — [historical release notes](docs/releases/v0.9.0-beta.2.md)
+- [v0.9.0-beta.1](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.1) — [historical release notes](docs/releases/v0.9.0-beta.1.md)
+
+</details>
+
 CompDesk is a self-hosted helpdesk for small organizations: department-scoped ticket routing, role-based access, attachments, search and filtering, and fully customizable organization branding — deployed with Docker in minutes, with no mandatory cloud account. Review the [production hardening guide](docs/PRODUCTION_HARDENING.md) before deployment.
 
 ## What it provides

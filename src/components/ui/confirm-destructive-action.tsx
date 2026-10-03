@@ -21,6 +21,7 @@ interface ConfirmDestructiveActionProps {
     description: ReactNode;
     onConfirm: () => void;
     confirmLabel?: string;
+    cancelLabel?: string;
     pendingLabel?: string;
     pending?: boolean;
     disabled?: boolean;
@@ -33,6 +34,7 @@ export function ConfirmDestructiveAction({
     description,
     onConfirm,
     confirmLabel = 'Yes, delete',
+    cancelLabel = 'Cancel',
     pendingLabel = 'Deleting…',
     pending = false,
     disabled = false,
@@ -52,7 +54,7 @@ export function ConfirmDestructiveAction({
                     <AlertDialogDescription>{description}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                    <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
                     <AlertDialogAction
                         className={cn('bg-destructive text-destructive-foreground hover:bg-destructive/90', actionClassName)}
                         disabled={pending}

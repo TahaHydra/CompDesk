@@ -1,4 +1,5 @@
 'use client';
+import { GraphMailSettings } from '@/components/admin/graph-mail-settings';
 
 import Image from 'next/image';
 
@@ -13,8 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook, RefreshCw } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
+import { UpdateSettings } from '@/components/admin/update-settings';
+import { DemoSettings } from '@/components/admin/demo-settings';
+import { useLanguage } from '@/components/providers/language-provider';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
 import { copyText } from '@/lib/browser-clipboard';
@@ -90,7 +94,10 @@ function SmtpSettingsTab() {
         {!encryptionReady ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">APP_SETTINGS_ENCRYPTION_KEY is not available to this running server. Configure a 32-byte key and restart the standalone server or app container before saving a database SMTP password.</div> : null}
         {migrationRequired ? <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><span>An existing plaintext SMTP password requires one-time encryption.</span><Button variant="outline" size="sm" onClick={() => migrateMutation.mutate()} disabled={pending || !encryptionReady}>Encrypt existing password</Button></div> : null}
         {diagnostic ? <div role="status" className={`rounded-lg border p-3 text-sm ${diagnostic.success ? 'border-green-300 bg-green-50 text-green-900' : 'border-destructive/30 bg-destructive/5 text-destructive'}`}><p>{diagnostic.message ?? diagnostic.error}</p><p className="mt-1 text-xs">Correlation ID: {diagnostic.correlationId}{diagnostic.category ? ` · ${diagnostic.category}` : ''}</p>{diagnostic.fromAccepted === null ? <p className="mt-1 text-xs">From address was not tested.</p> : null}{diagnostic.acceptedRecipients ? <p className="mt-1 text-xs">Accepted recipients: {diagnostic.acceptedRecipients.length ? diagnostic.acceptedRecipients.join(', ') : 'none'}</p> : null}{diagnostic.rejectedRecipients?.length ? <p className="mt-1 text-xs">Rejected recipients: {diagnostic.rejectedRecipients.join(', ')}</p> : null}{diagnostic.responseStatus || diagnostic.response ? <p className="mt-1 break-words text-xs">SMTP response{diagnostic.responseStatus ? ` (${diagnostic.responseStatus})` : ''}: {diagnostic.response ?? 'not provided'}</p> : null}{diagnostic.messageId ? <p className="mt-1 break-all text-xs">Message ID: {diagnostic.messageId}</p> : null}</div> : null}
-        <div className="flex flex-wrap gap-3"><Button onClick={() => saveMutation.mutate()} disabled={!settings || pending || Boolean(smtp.smtp_password && !encryptionReady)}><Save className="mr-2 h-4 w-4" />Save Settings</Button><Button variant="outline" onClick={() => verifyMutation.mutate()} disabled={!settings || pending || Boolean(smtp.smtp_password && !encryptionReady)}><Shield className="mr-2 h-4 w-4" />Verify Connection & Authentication</Button><Button variant="outline" onClick={() => sendMutation.mutate()} disabled={!settings || pending || !validFrom || Boolean(smtp.smtp_password && !encryptionReady)}><Send className="mr-2 h-4 w-4" />Send Real Test Message</Button></div>
+        <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+            <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={() => verifyMutation.mutate()} disabled={!settings || pending || Boolean(smtp.smtp_password && !encryptionReady)}><Shield className="mr-2 h-4 w-4" />Verify Connection & Authentication</Button><Button variant="outline" onClick={() => sendMutation.mutate()} disabled={!settings || pending || !validFrom || Boolean(smtp.smtp_password && !encryptionReady)}><Send className="mr-2 h-4 w-4" />Send Real Test Message</Button></div>
+            <Button className="ml-auto" onClick={() => saveMutation.mutate()} disabled={!settings || pending || Boolean(smtp.smtp_password && !encryptionReady)}><Save className="mr-2 h-4 w-4" />Save Settings</Button>
+        </div>
     </CardContent></Card></div>;
 }
 function EmailTogglesTab() {
@@ -160,6 +167,7 @@ function EmailTogglesTab() {
 }
 
 function EntraSettingsTab() {
+    const { t } = useLanguage();
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -174,6 +182,7 @@ function EntraSettingsTab() {
     });
     const entraSecretConfigured = settings?.azure_ad_client_secret_configured === 'true';
     const entraRuntimeConfigured = settings?.azure_ad_runtime_configured === 'true';
+    const entraSettingsEditable = settings?.azure_ad_settings_editable !== 'false';
     const entraSavedConfigured = Boolean(settings?.azure_ad_client_id && settings?.azure_ad_tenant_id && entraSecretConfigured);
 
     useEffect(() => {
@@ -222,19 +231,20 @@ function EntraSettingsTab() {
                     <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2">
                         <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                         <p className="text-xs text-amber-800 dark:text-amber-200">
-                            Changes to Entra ID settings require an <strong>application restart</strong> to take effect.
-                            Local standalone changes are saved persistently. Container deployments must be configured through their environment.
+                            {t('Changes to Entra ID settings require an application restart to take effect.')}
+                            {' '}{t(entraSettingsEditable ? 'Changes are saved persistently. Managed Docker installations store them in the private configuration volume; restart the CompDesk container after saving.' : 'This deployment manages Entra through environment variables. Configure the deployment and restart CompDesk; these fields are read-only.')}
                         </p>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="entra-client-id">Client ID</Label>
-                        <Input id="entra-client-id" autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_client_id}
+                        <Input id="entra-client-id" disabled={!entraSettingsEditable} autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_client_id}
                             onChange={(e) => setEntra({ ...entra, azure_ad_client_id: e.target.value })} />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="entra-client-secret">Client Secret</Label>
                         <Input
                             id="entra-client-secret"
+                            disabled={!entraSettingsEditable}
                             type="password"
                             autoComplete="new-password"
                             placeholder={entraSecretConfigured ? 'Saved secret configured. Enter a new one to replace it.' : '••••••••'}
@@ -243,12 +253,14 @@ function EntraSettingsTab() {
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="entra-tenant-id">Tenant ID</Label>
-                        <Input id="entra-tenant-id" autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_tenant_id}
+                        <Input id="entra-tenant-id" disabled={!entraSettingsEditable} autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_tenant_id}
                             onChange={(e) => setEntra({ ...entra, azure_ad_tenant_id: e.target.value })} />
                     </div>
-                    <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="gap-2">
-                        <Save className="h-4 w-4" /> Save Entra Settings
-                    </Button>
+                    <div className="flex justify-end border-t pt-4">
+                        <Button onClick={() => saveMutation.mutate()} disabled={!entraSettingsEditable || saveMutation.isPending} className="gap-2">
+                            <Save className="h-4 w-4" /> Save Entra Settings
+                        </Button>
+                    </div>
                 </CardContent>
             </Card>
 
@@ -259,7 +271,7 @@ function EntraSettingsTab() {
                 <CardContent className="space-y-3 text-sm">
                     <div className="flex items-center gap-2">
                         {entraRuntimeConfigured ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
-                        <span>{entraRuntimeConfigured ? 'Active in the running application' : entraSavedConfigured ? 'Saved; application restart required' : 'Incomplete configuration'}</span>
+                        <span>{settings?.azure_ad_restart_required === 'true' ? 'Saved; application restart required' : entraRuntimeConfigured ? 'Active in the running application' : entraSavedConfigured ? 'Saved; application restart required' : 'Incomplete configuration'}</span>
                     </div>
                     <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
                         <span>Client ID: {settings?.azure_ad_client_id ? 'configured' : 'missing'}</span>
@@ -342,7 +354,7 @@ function DashboardLinksTab() {
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeLink(index)} aria-label="Remove link"><X className="h-4 w-4" /></Button>
                     </div>;
                 })}</div>}
-                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || uploadingIndex !== null || invalid} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button>
+                <div className="flex justify-end border-t pt-4"><Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || uploadingIndex !== null || invalid} className="gap-2"><Save className="h-4 w-4" /> Save Links</Button></div>
             </CardContent></Card>
     );
 }
@@ -617,9 +629,11 @@ function ApiClientsTab() {
                             })}
                         </div>
                     </div>
-                    <Button onClick={() => createClient.mutate()} disabled={!name.trim() || selectedScopes.length === 0}>
-                        Create API Client
-                    </Button>
+                    <div className="flex justify-end border-t pt-4">
+                        <Button onClick={() => createClient.mutate()} disabled={!name.trim() || selectedScopes.length === 0}>
+                            Create API Client
+                        </Button>
+                    </div>
                     {latestApiKey ? (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-3">
                             <p className="text-sm font-medium">Copy this API key now. It is only shown once.</p>
@@ -811,7 +825,7 @@ function WebhooksTab() {
                     <div className="space-y-2"><Label htmlFor="webhook-url">HTTPS destination</Label><Input id="webhook-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://automation.example.com/compdesk" /></div>
                     <div className="space-y-2"><Label>Events</Label><div className="flex flex-wrap gap-2">{WEBHOOK_EVENTS.map((event) => <Button key={event} type="button" size="sm" variant={events.includes(event) ? 'default' : 'outline'} aria-pressed={events.includes(event)} onClick={() => toggleEvent(event)}>{event}</Button>)}</div></div>
                     <p className="text-xs text-muted-foreground">Destinations must resolve only to public addresses. Deliveries use a timestamped HMAC signature, reject redirects, and retry with bounded exponential backoff.</p>
-                    <Button onClick={() => createWebhook.mutate()} disabled={!name.trim() || !url.trim() || events.length === 0 || createWebhook.isPending}>{createWebhook.isPending ? 'Creating…' : 'Create Webhook'}</Button>
+                    <div className="flex justify-end border-t pt-4"><Button onClick={() => createWebhook.mutate()} disabled={!name.trim() || !url.trim() || events.length === 0 || createWebhook.isPending}>{createWebhook.isPending ? 'Creating…' : 'Create Webhook'}</Button></div>
                     {latestSecret ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:bg-amber-950/30"><p className="text-sm font-medium">Copy this signing secret now. It is shown only once.</p><code className="mt-2 block break-all text-xs">{latestSecret}</code><Button type="button" size="sm" variant="outline" className="mt-2" onClick={async () => {
                         const copied = await copyText(latestSecret);
                         toast(copied ? { title: 'Signing secret copied' } : { title: 'Copy unavailable', description: 'Select the displayed secret and copy it manually.', variant: 'destructive' });
@@ -832,6 +846,7 @@ function WebhooksTab() {
     );
 }
 export default function AdminSettingsPage() {
+    const { t } = useLanguage();
     return (
         <div className="space-y-6">
             <PageHeader icon={Settings} title="Settings" description="Application configuration" />
@@ -847,9 +862,11 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
                     <TabsTrigger value="api" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> API Clients</TabsTrigger>
                     <TabsTrigger value="webhooks" className="gap-1 min-w-max"><Webhook className="h-3.5 w-3.5" /> Webhooks</TabsTrigger>
+                    <TabsTrigger value="updates" className="gap-1 min-w-max"><RefreshCw className="h-3.5 w-3.5" /> {t('Updates')}</TabsTrigger>
+                    <TabsTrigger value="demo" className="gap-1 min-w-max">{t('Demo data')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="branding"><BrandingSettings /></TabsContent>
-                <TabsContent value="smtp"><SmtpSettingsTab /></TabsContent>
+                <TabsContent value="smtp"><div className="space-y-6"><GraphMailSettings /><SmtpSettingsTab /></div></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
                 <TabsContent value="entra"><EntraSettingsTab /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
@@ -857,6 +874,8 @@ export default function AdminSettingsPage() {
                 <TabsContent value="features"><FeatureFlagsTab /></TabsContent>
                 <TabsContent value="api"><ApiClientsTab /></TabsContent>
                 <TabsContent value="webhooks"><WebhooksTab /></TabsContent>
+                <TabsContent value="updates"><UpdateSettings /></TabsContent>
+                <TabsContent value="demo"><DemoSettings /></TabsContent>
             </Tabs>
         </div>
     );

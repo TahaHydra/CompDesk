@@ -1,4 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
+import './runtime-network.cjs';
+import { verifyDatabaseSchema } from './database-schema.mjs';
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
@@ -10,6 +12,8 @@ import { promisify } from 'node:util';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import pg from 'pg';
+import { PrismaClient } from '@prisma/client';
+import { installDemoDataInTransaction } from './demo-data.mjs';
 import {
     SESSION_COOKIE,
     SESSION_TTL_MS,
@@ -385,7 +389,7 @@ function smtpTransport(smtp) {
         host: smtp.host,
         port: smtp.port,
         secure: smtp.port === 465,
-        requireTLS: smtp.port === 587 ? true : Boolean(smtp.requireTls),
+        requireTLS: smtp.port === 465 ? false : smtp.port === 587 ? true : Boolean(smtp.requireTls),
         auth: smtp.username ? { user: smtp.username, pass: smtp.password } : undefined,
         tls: { rejectUnauthorized: true },
         connectionTimeout: 8000,
@@ -446,6 +450,12 @@ function validateInstall(input) {
     const url = validatePublicUrl(input.identity?.applicationUrl);
     if (!url.valid) throw Object.assign(new Error(url.error), { statusCode: 400 });
     const auth = input.authentication || {};
+    if (auth.microsoftEnabled || auth.clientId || auth.tenantId || auth.clientSecret) {
+        const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!guid.test(auth.clientId || '') || !guid.test(auth.tenantId || '') || !auth.clientSecret?.trim()) {
+            throw Object.assign(new Error('Provide a valid Entra Client ID, Tenant ID, and Client Secret together.'), { statusCode: 400 });
+        }
+    }
     if (!auth.localEnabled && !auth.microsoftEnabled) throw Object.assign(new Error('At least one authentication method must remain enabled.'), { statusCode: 400 });
     const email = normalizeEmail(auth.adminEmail);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw Object.assign(new Error('Enter a valid administrator email address.'), { statusCode: 400 });
@@ -550,91 +560,90 @@ async function install(input) {
         });
         writeFileAtomic(envPath, envText, { mode: 0o600, backup: true });
         await runMigrations(environment);
-        const client = new Client(pgConfiguration(config.database));
-        await client.connect();
+        const database = new PrismaClient({ datasourceUrl: databaseUrl });
         let demoCredentials = null;
         try {
-            await client.query('BEGIN');
-            const installed = await client.query('SELECT id FROM installation_records WHERE id = $1 FOR UPDATE', ['primary']);
-            if (installed.rowCount) throw Object.assign(new Error('CompDesk is already installed. Setup cannot be run again.'), { statusCode: 410 });
-            const existing = await client.query('SELECT id, role FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [config.authentication.adminEmail]);
-            if (existing.rowCount && existing.rows[0].role !== 'SUPER_ADMIN') {
-                throw Object.assign(new Error('The administrator email already belongs to a non-Super-Admin account.'), { statusCode: 409 });
-            }
-            const passwordHash = config.authentication.localEnabled ? await bcrypt.hash(config.authentication.adminPassword, 12) : null;
-            const userId = existing.rows[0]?.id || crypto.randomUUID();
-            if (existing.rowCount) {
+            await verifyDatabaseSchema(sql => database.$queryRawUnsafe(sql));
+            await database.$transaction(async (tx) => {
+                const client = { query: async (statement, values = []) => {
+                    if (/^\s*SELECT\b/i.test(statement)) {
+                        const rows = await tx.$queryRawUnsafe(statement, ...values);
+                        return { rows, rowCount: rows.length };
+                    }
+                    return { rows: [], rowCount: await tx.$executeRawUnsafe(statement, ...values) };
+                } };
+                const installed = await client.query('SELECT id FROM installation_records WHERE id = $1 FOR UPDATE', ['primary']);
+                if (installed.rowCount) throw Object.assign(new Error('CompDesk is already installed. Setup cannot be run again.'), { statusCode: 410 });
+                const existing = await client.query('SELECT id, role FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [config.authentication.adminEmail]);
+                if (existing.rowCount && existing.rows[0].role !== 'SUPER_ADMIN') {
+                    throw Object.assign(new Error('The administrator email already belongs to a non-Super-Admin account.'), { statusCode: 409 });
+                }
+                const passwordHash = config.authentication.localEnabled ? await bcrypt.hash(config.authentication.adminPassword, 12) : null;
+                const userId = existing.rows[0]?.id || crypto.randomUUID();
+                if (existing.rowCount) {
+                    await client.query(
+                        'UPDATE users SET name = $1, password_hash = $2, role = $3::"Role", is_active = true, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
+                        [config.authentication.adminName.trim(), passwordHash, 'SUPER_ADMIN', userId]
+                    );
+                } else {
+                    await client.query(
+                        'INSERT INTO users (id, email, name, password_hash, role, is_active, preferred_language, created_at, updated_at) VALUES ($1,$2,$3,$4,$5::"Role",true,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)',
+                        [userId, config.authentication.adminEmail, config.authentication.adminName.trim(), passwordHash, 'SUPER_ADMIN', 'en']
+                    );
+                }
+                const branding = {
+                    applicationName: config.identity.applicationName.trim(),
+                    shortApplicationName: config.identity.applicationName.trim().slice(0, 24),
+                    subtitle: 'Helpdesk',
+                    description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',
+                    mainLogoUrl: '', compactLogoUrl: '', lightLogoUrl: '', darkLogoUrl: '', faviconUrl: '',
+                    primaryColor: config.identity.primaryColor,
+                    accentColor: config.identity.accentColor,
+                    loginHeading: `Welcome to ${config.identity.applicationName.trim()}`,
+                    loginDescription: 'Sign in to access your helpdesk portal.',
+                    loginBackgroundImageUrl: '',
+                    supportEmail: config.identity.supportEmail?.trim() || '',
+                    footerText: '',
+                    showDemoAccounts: false,
+                    demoAccountInfo: '',
+                    microsoftButtonText: 'Sign in with Microsoft',
+                };
+                const settings = {
+                    branding_config: JSON.stringify(branding),
+                    login_local_enabled: String(config.authentication.localEnabled),
+                    login_microsoft_enabled: String(config.authentication.microsoftEnabled),
+                    feature_attachments_enabled: 'true',
+                    feature_dashboard_links_enabled: 'true',
+                    feature_external_api_enabled: 'false',
+                    feature_webhooks_enabled: 'false',
+                };
+                if (config.smtp?.enabled) {
+                    Object.assign(settings, {
+                        smtp_host: config.smtp.host,
+                        smtp_port: String(config.smtp.port),
+                        smtp_user: config.smtp.username || '',
+                        smtp_password: encryptEnvelope(config.smtp.password || '', settingsEncryptionKey),
+                        smtp_from: config.smtp.from || '',
+                        smtp_secure: String(config.smtp.port === 465),
+                        smtp_require_tls: String(config.smtp.port === 465 ? false : config.smtp.port === 587 ? true : config.smtp.requireTls),
+                    });
+                }
+                for (const [key, value] of Object.entries(settings)) {
+                    await client.query(
+                        'INSERT INTO app_settings (id, key, value, updated_at) VALUES ($1,$2,$3,CURRENT_TIMESTAMP) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP',
+                        [crypto.randomUUID(), key, value]
+                    );
+                }
+                if (config.installDemoData) {
+                    demoCredentials = await installDemoDataInTransaction(tx, { protectedUserId: userId });
+                }
                 await client.query(
-                    'UPDATE users SET name = $1, password_hash = $2, role = $3, is_active = true, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
-                    [config.authentication.adminName.trim(), passwordHash, 'SUPER_ADMIN', userId]
+                    'INSERT INTO installation_records (id, installed_at, installed_by_email, deployment_mode, application_url, demo_data_installed, setup_version) VALUES ($1,CURRENT_TIMESTAMP,$2,$3,$4,$5,$6)',
+                    ['primary', config.authentication.adminEmail, config.deploymentMode, config.identity.applicationUrl, Boolean(config.installDemoData), 1]
                 );
-            } else {
-                await client.query(
-                    'INSERT INTO users (id, email, name, password_hash, role, is_active, preferred_language, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,true,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)',
-                    [userId, config.authentication.adminEmail, config.authentication.adminName.trim(), passwordHash, 'SUPER_ADMIN', 'en']
-                );
-            }
-            const branding = {
-                applicationName: config.identity.applicationName.trim(),
-                shortApplicationName: config.identity.applicationName.trim().slice(0, 24),
-                subtitle: 'Helpdesk',
-                description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',
-                mainLogoUrl: '', compactLogoUrl: '', lightLogoUrl: '', darkLogoUrl: '', faviconUrl: '',
-                primaryColor: config.identity.primaryColor,
-                accentColor: config.identity.accentColor,
-                loginHeading: `Welcome to ${config.identity.applicationName.trim()}`,
-                loginDescription: 'Sign in to access your helpdesk portal.',
-                loginBackgroundImageUrl: '',
-                supportEmail: config.identity.supportEmail?.trim() || '',
-                footerText: '',
-                showDemoAccounts: false,
-                demoAccountInfo: '',
-                microsoftButtonText: 'Sign in with Microsoft',
-            };
-            const settings = {
-                branding_config: JSON.stringify(branding),
-                login_local_enabled: String(config.authentication.localEnabled),
-                login_microsoft_enabled: String(config.authentication.microsoftEnabled),
-                feature_attachments_enabled: 'true',
-                feature_dashboard_links_enabled: 'true',
-                feature_external_api_enabled: 'false',
-                feature_webhooks_enabled: 'false',
-            };
-            if (config.smtp?.enabled) {
-                Object.assign(settings, {
-                    smtp_host: config.smtp.host,
-                    smtp_port: String(config.smtp.port),
-                    smtp_user: config.smtp.username || '',
-                    smtp_password: encryptEnvelope(config.smtp.password || '', settingsEncryptionKey),
-                    smtp_from: config.smtp.from || '',
-                    smtp_secure: String(config.smtp.port === 465),
-                    smtp_require_tls: String(config.smtp.port === 587 ? true : config.smtp.requireTls),
-                });
-            }
-            for (const [key, value] of Object.entries(settings)) {
-                await client.query(
-                    'INSERT INTO app_settings (id, key, value, updated_at) VALUES ($1,$2,$3,CURRENT_TIMESTAMP) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP',
-                    [crypto.randomUUID(), key, value]
-                );
-            }
-            if (config.installDemoData) {
-                const demoPassword = `${crypto.randomBytes(9).toString('base64url')}aA1!`;
-                demoCredentials = { email: `demo-user-${crypto.randomBytes(4).toString('hex')}@example.com`, password: demoPassword };
-                await client.query(
-                    'INSERT INTO users (id, email, name, password_hash, role, is_active, is_demo, preferred_language, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,true,true,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)',
-                    [crypto.randomUUID(), demoCredentials.email, 'Demo User', await bcrypt.hash(demoPassword, 12), 'USER', 'en']
-                );
-            }
-            await client.query(
-                'INSERT INTO installation_records (id, installed_at, installed_by_email, deployment_mode, application_url, demo_data_installed, setup_version) VALUES ($1,CURRENT_TIMESTAMP,$2,$3,$4,$5,$6)',
-                ['primary', config.authentication.adminEmail, config.deploymentMode, config.identity.applicationUrl, Boolean(config.installDemoData), 1]
-            );
-            await client.query('COMMIT');
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
+            }, { isolationLevel: 'Serializable', timeout: 60000 });
         } finally {
-            await client.end();
+            await database.$disconnect();
         }
         writeFileAtomic(receiptPath, `${JSON.stringify({
             installedAt: new Date().toISOString(),
