@@ -161,6 +161,26 @@ Focused coverage verifies sign-out ordering, failure handling, account-conflict
 guidance, and rejection of cross-user provider linking. Interactive Microsoft
 sign-in and the clean-session repeat passed after the final deployment.
 
+## Beta.3 packaging regression — 3 October 2026
+
+The beta.3 dependency classification fix retained all locked package versions and
+Tailwind 3 configuration. Clean production installation/audit passed with zero
+production findings; the unpatched development-tool advisory is described in
+[the dependency assessment](audits/2026-10-03-beta3-dependencies.md).
+
+Final local verification passed 76 Jest suites / 565 tests, lint, typecheck,
+production build, 71 runtime/release Node tests, schema validation and the pinned
+Compose parse. The rebuilt Docker runtime excludes the vulnerable build-only
+chain and retains byte-identical compiled CSS. Sixteen live checks covered
+readiness, active Entra configuration/diagnostic, image-cache writes, fresh
+temporary/public/internal uploads, authorized bytes and denied downloads before
+and after restart, and removal of only disposable probe records/files. Runtime
+logs were free of unexpected network/schema/cache/unhandled errors.
+
+These checks preserve the earlier real Microsoft sign-in/repeat evidence; no
+additional human browser tokens were collected. Hosted CI/security, image scan
+and publication are independently required by [the release checklist](PUBLIC_RELEASE_CHECKLIST.md).
+
 ## Full browser acceptance checklist — pending
 
 For every button/link below, test the allowed role, a denied role where applicable, success, invalid input, double click, cancelled confirmation, failed request and retry. Verify saved changes after reload and from another session. Check server responses as well as UI visibility.

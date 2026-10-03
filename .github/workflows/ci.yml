@@ -168,6 +168,10 @@ jobs:
       # build on the fresh GitHub-hosted runner — a second --no-cache
       # rebuild here would not validate anything this one doesn't.)
       - run: docker build -t compdesk-ci .
+      - name: Runtime excludes CSS build tools and the vulnerable brace parser
+        run: >-
+          docker run --rm --network none --entrypoint node compdesk-ci -e
+          "const fs=require('node:fs'); for (const name of ['tailwindcss','tailwindcss-animate','braces','micromatch']) { if (fs.existsSync('/app/node_modules/'+name+'/package.json')) throw new Error('Build-only dependency in runtime: '+name); }"
       - name: config-init fixes ownership on fresh uploads/attachments/config volumes
         run: >-
           docker run --rm --user root
