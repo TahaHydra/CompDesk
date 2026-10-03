@@ -83,4 +83,4 @@ This command refuses to reopen a completed installation and never deletes the da
 
 ## Generated configuration
 
-Standalone setup writes one ignored `.env`. Docker setup writes `.compdesk/compdesk.env`. Generated values include independent `AUTH_SECRET` and `APP_SETTINGS_ENCRYPTION_KEY` values of at least 32 random bytes. Keep the current and previous settings keys during documented rotation and back up them with the database.
+Standalone setup writes one ignored `.env`. Managed Docker Compose setup writes runtime configuration to `/config/secrets/runtime.env` inside the persistent `compdesk_config` volume. Legacy two-stack Docker deployments used `.compdesk/compdesk.env`. Generated values include independent `AUTH_SECRET` and `APP_SETTINGS_ENCRYPTION_KEY` values of at least 32 random bytes. Keep the current and previous settings keys during documented rotation and back up them with the database.
