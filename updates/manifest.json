@@ -1,8 +1,8 @@
 {
-  "latest": "0.9.0-beta.3",
+  "latest": "0.9.0-beta.4",
   "severity": "normal",
-  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.3",
-  "published_at": "2026-10-03T15:17:03Z",
-  "summary": "Ticket and form improvements, administrator update/demo tools, personal reminders, Microsoft 365 mail, and authentication/upload/security fixes.",
+  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4",
+  "published_at": "2026-10-06T22:34:05Z",
+  "summary": "Generic OpenID Connect sign-in and SSO migration, identity-provider and SMTP certificates, guided authentication setup, and clearer Email Delivery settings.",
   "upgrade_notes": "Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together. Use this release's pinned Docker Compose asset, preserve existing volumes and deployment settings, then run docker compose pull and docker compose up -d. Database migrations run automatically; an older image alone is not a recovery point."
 }

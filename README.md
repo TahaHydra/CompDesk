@@ -19,15 +19,16 @@ Built by [xHydra](https://xhydra.fr).
 
 > **Public beta.** CompDesk is under active development and is not yet claimed as mature, production-hardened software. See [Known limitations](#known-limitations) and the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before deploying it for real users.
 
-## Current release — v0.9.0-beta.3
+## Current release — v0.9.0-beta.4
 
-[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.3) · [Changes and upgrade notes](docs/releases/v0.9.0-beta.3.md)
+[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4) · [Changes and upgrade notes](docs/releases/v0.9.0-beta.4.md)
 
-This beta adds administrator update awareness, managed demo data, personal ticket reminders, and Microsoft 365 Graph mail. It improves ticket/form readability, repairs attachment migrations, and hardens ticket privacy, Microsoft sign-in, deployment configuration, and the packaged runtime.
+This beta adds generic OpenID Connect sign-in, guided SSO migration, private-CA and client-certificate support, and authentication setup. Email Delivery settings show the selected SMTP or Microsoft 365 / Graph configuration while preserving both providers' saved settings.
 
 <details>
 <summary>Previous public betas</summary>
 
+- [v0.9.0-beta.3](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.3) — [historical release notes and rollback guidance](docs/releases/v0.9.0-beta.3.md)
 - [v0.9.0-beta.2](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.2) — [historical release notes](docs/releases/v0.9.0-beta.2.md)
 - [v0.9.0-beta.1](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.1) — [historical release notes](docs/releases/v0.9.0-beta.1.md)
 
