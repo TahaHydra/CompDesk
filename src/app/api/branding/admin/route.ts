@@ -4,6 +4,15 @@ import { auditLog } from '@/lib/audit';
 import { BRANDING_ASSET_FIELDS, brandingConfigSchema, DEFAULT_BRANDING, getBrandingConfig, saveBrandingConfig } from '@/lib/branding';
 import logger from '@/lib/logger';
 import { removeUploadedImage } from '@/lib/uploaded-image';
+import type { BrandingConfig } from '@/lib/branding';
+import { isLoginMethodEnabled } from '@/lib/login-policy';
+import { AuthenticationPolicyError } from '../../../../../scripts/auth-policy.mjs';
+
+// The SSO login button is owned by the Single sign-on settings tab; branding saves and resets keep it.
+// The switch follows the effective login policy so an unset value is never persisted as enabled.
+async function ssoLoginFields(previous: BrandingConfig): Promise<Pick<BrandingConfig, 'showMicrosoftLogin' | 'microsoftButtonText'>> {
+    return { showMicrosoftLogin: await isLoginMethodEnabled('login_sso_enabled'), microsoftButtonText: previous.microsoftButtonText };
+}
 
 export async function GET() {
     const session = await auth();
@@ -29,7 +38,7 @@ export async function PATCH(req: NextRequest) {
         }
 
         const previous = await getBrandingConfig();
-        const branding = await saveBrandingConfig({ ...parsed.data, showDemoAccounts: previous.showDemoAccounts, demoAccountInfo: previous.demoAccountInfo });
+        const branding = await saveBrandingConfig({ ...parsed.data, showDemoAccounts: previous.showDemoAccounts, demoAccountInfo: previous.demoAccountInfo, ...(await ssoLoginFields(previous)) });
         const changedKeys = Object.keys(branding).filter(
             (key) => branding[key as keyof typeof branding] !== previous[key as keyof typeof previous]
         );
@@ -46,6 +55,7 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json(branding);
     } catch (error) {
         logger.error('Failed to update branding', { error });
+        if (error instanceof AuthenticationPolicyError) return NextResponse.json({ error: error.message }, { status: 409 });
         return NextResponse.json({ error: 'Failed to update branding' }, { status: 500 });
     }
 }
@@ -56,7 +66,7 @@ export async function DELETE(req: NextRequest) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         const previous = await getBrandingConfig();
-        const branding = await saveBrandingConfig({ ...DEFAULT_BRANDING, showDemoAccounts: previous.showDemoAccounts, demoAccountInfo: previous.demoAccountInfo });
+        const branding = await saveBrandingConfig({ ...DEFAULT_BRANDING, showDemoAccounts: previous.showDemoAccounts, demoAccountInfo: previous.demoAccountInfo, ...(await ssoLoginFields(previous)) });
         const assets = new Set(BRANDING_ASSET_FIELDS.map((field) => previous[field]).filter(Boolean));
         await Promise.all([...assets].map((assetUrl) => removeUploadedImage(assetUrl, 'branding')));
         await auditLog({
@@ -70,6 +80,7 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json(branding);
     } catch (error) {
         logger.error('Failed to reset branding', { error });
+        if (error instanceof AuthenticationPolicyError) return NextResponse.json({ error: error.message }, { status: 409 });
         return NextResponse.json({ error: 'Failed to reset branding' }, { status: 500 });
     }
 }

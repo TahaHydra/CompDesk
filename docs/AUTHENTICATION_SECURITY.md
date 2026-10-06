@@ -12,6 +12,17 @@ Microsoft sign-in uses the stored provider account identity. An email claim alon
 
 To link an existing local account, sign in to that account first and use **Link my Microsoft account** in **Profile**. Auth.js requires that authenticated session before creating the binding. A new Microsoft identity whose email does not match an existing account follows the normal new-user flow. If local login is disabled and an account has no Microsoft binding, an administrator must arrange account recovery; matching an email address does not bypass ownership verification.
 
+## Single sign-on providers
+
+Configuration, migration mode, and certificate options are described in [Single sign-on](SINGLE_SIGN_ON.md).
+
+One SSO provider is active at a time: Microsoft Entra ID (default) or a standards-based OpenID Connect provider selected in **Settings → Single sign-on**. The same ownership rules apply to both. A configured but deselected provider is refused at sign-in, and local login can be disabled only while the selected provider is enabled and configured in the running process.
+
+- **Identity binding.** OpenID Connect accounts are bound to `issuer + subject`, never to `subject` alone. Pointing CompDesk at a different IdP (for example Keycloak → authentik) therefore cannot resolve to an account linked through the previous IdP. Users relink from **Profile** while signed in.
+- **Email claims.** Email claims are never ownership proof. Identities whose `email_verified` claim is `false` are refused, and identities without an email claim are refused.
+- **Request checks.** Authorization requests use PKCE, `state` and `nonce`.
+- **Client authentication.** The default is a client secret. `private_key_jwt` is an advanced option: CompDesk signs its own client assertion with the issuer as the **sole** audience, a 60-second lifetime and a random `jti`, following draft-ietf-oauth-rfc7523bis (the 2025 audience-injection fix). Auth.js's built-in assertion uses `[issuer, token_endpoint]`, which updated servers reject. When a certificate is configured, the assertion header carries its `x5t#S256` thumbprint.
+
 ## Local-login throttling
 
 Credential failures are stored in PostgreSQL as HMAC-SHA-256 key hashes. Raw passwords are never stored or logged. Records cover the normalized account, trusted source address, and account/source pair:

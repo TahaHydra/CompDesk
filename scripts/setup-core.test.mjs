@@ -14,7 +14,7 @@ test('generates independent high-entropy secrets', () => {
 
 test('keeps supplied Entra configuration even when Microsoft sign-in is not enabled yet', () => {
     const rendered = core.renderEnvironment({ microsoftEnabled: false, clientId: 'client', tenantId: 'tenant', clientSecret: 'secret' });
-    assert.match(rendered, /LOGIN_MICROSOFT_ENABLED=false/);
+    assert.match(rendered, /LOGIN_SSO_ENABLED=false/);
     assert.match(rendered, /AZURE_AD_CLIENT_SECRET="secret"/);
 });
 

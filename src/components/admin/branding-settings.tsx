@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, ImageIcon, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, ImageIcon, RotateCcw, Save, Trash2, Upload } from 'lucide-react';
 import type { BrandingAssetField, BrandingConfig, PublicBranding } from '@/lib/branding';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,10 +64,6 @@ export function BrandingSettings() {
     const query = useQuery<BrandingConfig>({
         queryKey: ['branding', 'admin'],
         queryFn: async () => responseJson(await fetch('/api/branding/admin', { cache: 'no-store' })),
-    });
-    const publicBrandingQuery = useQuery<PublicBranding>({
-        queryKey: ['branding', 'public'],
-        queryFn: async () => responseJson(await fetch('/api/branding', { cache: 'no-store' })),
     });
     useEffect(() => { if (query.data && !isDirty) setForm(query.data); }, [isDirty, query.data]);
 
@@ -181,7 +177,6 @@ export function BrandingSettings() {
     const clientFieldErrors = getBrandingFieldErrors(preparedForm);
     const fieldErrors = { ...clientFieldErrors, ...serverFieldErrors };
     const hasFieldErrors = Object.keys(fieldErrors).length > 0;
-    const microsoftLoginConfigured = publicBrandingQuery.data?.microsoftLoginConfigured === true;
     const savePending = saveMutation.isPending || resetMutation.isPending || uploading !== null;
     const colorPattern = /^#[0-9a-fA-F]{6}$/;
     const previewPrimary = colorPattern.test(form.primaryColor) ? form.primaryColor : '#4f46e5';
@@ -249,16 +244,7 @@ export function BrandingSettings() {
                     <TextSetting label="Login heading" value={form.loginHeading} error={fieldErrors.loginHeading} onChange={(value) => update('loginHeading', value)} />
                     <div className="space-y-2"><Label htmlFor="login-description">Login description</Label><Textarea id="login-description" value={form.loginDescription} aria-invalid={Boolean(fieldErrors.loginDescription)} onChange={(event) => update('loginDescription', event.target.value)} /><FieldError message={fieldErrors.loginDescription} /></div>
                     <ToggleSetting label="Show local email/password login" description="The server also enforces this switch." checked={form.showLocalLogin} onChange={(checked) => update('showLocalLogin', checked)} />
-                    <ToggleSetting label="Show Microsoft login" description="The button appears only when Entra credentials are configured; the server enforces this switch." checked={form.showMicrosoftLogin} onChange={(checked) => update('showMicrosoftLogin', checked)} />
-                    {form.showMicrosoftLogin ? (
-                        <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${microsoftLoginConfigured ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200'}`}>
-                            {microsoftLoginConfigured ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
-                            <p>{microsoftLoginConfigured
-                                ? 'Microsoft sign-in is active in the running application.'
-                                : 'The toggle is enabled, but the running application does not have all three Entra values. Complete Client ID, Client Secret, and Tenant ID in the Entra ID tab, then restart the application.'}</p>
-                        </div>
-                    ) : null}
-                    <TextSetting label="Microsoft button text" value={form.microsoftButtonText} error={fieldErrors.microsoftButtonText} onChange={(value) => update('microsoftButtonText', value)} />
+                    <p className="text-xs text-muted-foreground">The single sign-on button, its provider and its text are managed in the Single sign-on tab.</p>
                     <p className="text-xs text-muted-foreground">{t('Demo login information is managed in the Demo data tab.')}</p>
                 </CardContent>
             </Card>

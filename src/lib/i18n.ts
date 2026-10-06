@@ -554,6 +554,9 @@ const french: Record<string, string> = {
     'Changes to Entra ID settings require an application restart to take effect.': 'Les modifications des paramètres Entra ID nécessitent un redémarrage de l’application pour prendre effet.',
     'Changes are saved persistently. Managed Docker installations store them in the private configuration volume; restart the CompDesk container after saving.': 'Les modifications sont enregistrées durablement. Les installations Docker gérées les stockent dans le volume de configuration privé ; redémarrez le conteneur CompDesk après l’enregistrement.',
     'This deployment manages Entra through environment variables. Configure the deployment and restart CompDesk; these fields are read-only.': 'Ce déploiement gère Entra via les variables d’environnement. Configurez le déploiement et redémarrez CompDesk ; ces champs sont en lecture seule.',
+    'Single sign-on': 'Authentification unique',
+    'Changes to single sign-on settings require an application restart to take effect.': 'Les modifications de l’authentification unique nécessitent un redémarrage de l’application pour prendre effet.',
+    'This deployment manages single sign-on through environment variables. Configure the deployment and restart CompDesk; these fields are read-only.': 'Ce déploiement gère l’authentification unique via les variables d’environnement. Configurez le déploiement et redémarrez CompDesk ; ces champs sont en lecture seule.',
 };
 
 export function normalizeLanguage(value: unknown): AppLanguage {

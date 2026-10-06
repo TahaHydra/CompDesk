@@ -1,0 +1,86 @@
+{
+  "realm": "compdesk",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "compdesk",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "lab-client-secret-1",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "webOrigins": [
+        "+"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "admin@compdesk.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "alice",
+      "lastName": "Lab",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LabPassword1!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "bob",
+      "email": "bob@compdesk.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "bob",
+      "lastName": "Lab",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LabPassword1!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "carol",
+      "email": "carol@compdesk.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "carol",
+      "lastName": "Lab",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LabPassword1!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "dave",
+      "email": "dave@compdesk.test",
+      "emailVerified": false,
+      "enabled": true,
+      "firstName": "dave",
+      "lastName": "Lab",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LabPassword1!",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

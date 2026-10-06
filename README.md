@@ -141,6 +141,7 @@ Read [SECURITY.md](SECURITY.md), the [threat model](docs/THREAT_MODEL.md), and [
 | --- | --- |
 | [First-run setup](docs/FIRST_RUN_SETUP.md) | Bootstrap token, wizard, recovery, and setup modes |
 | [Configuration](docs/CONFIGURATION.md) | Runtime variables and their actual behavior |
+| [Single sign-on](docs/SINGLE_SIGN_ON.md) | Microsoft Entra ID and OpenID Connect providers, SSO migration, IdP and SMTP certificates |
 | [Docker deployment](docs/DEPLOY_DOCKER.md) | Recommended deployment (bundled PostgreSQL); external-PostgreSQL topology is documented but not yet validated |
 | [Ubuntu deployment](docs/DEPLOY_UBUNTU.md) | Docker and standalone Ubuntu paths |
 | [Windows deployment](docs/DEPLOY_WINDOWS.md) | Windows and PowerShell instructions |

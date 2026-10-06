@@ -1,5 +1,6 @@
 import { brandingConfigSchema, type BrandingConfig } from '@/lib/branding-schema';
 import type { PublicBranding } from '@/lib/branding';
+import { DEFAULT_SSO_PROVIDER } from '@/lib/sso-presets';
 
 export type BrandingFieldErrors = Partial<Record<keyof BrandingConfig, string>>;
 
@@ -47,6 +48,9 @@ export function mergeSavedPublicBranding(
     return {
         ...branding,
         demoAccountInfo: branding.showDemoAccounts ? branding.demoAccountInfo : '',
-        microsoftLoginConfigured: current?.microsoftLoginConfigured ?? false,
+        ssoProvider: current?.ssoProvider ?? DEFAULT_SSO_PROVIDER,
+        ssoProviderId: current?.ssoProviderId ?? 'microsoft-entra-id',
+        ssoFallback: current?.ssoFallback ?? null,
+        ssoLoginConfigured: current?.ssoLoginConfigured ?? false,
     };
 }

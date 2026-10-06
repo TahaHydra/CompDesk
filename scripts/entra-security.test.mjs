@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { handleLoginOrRegister } from '../node_modules/next-auth/node_modules/@auth/core/lib/actions/callback/handle-login.js';
 
-function fixture({ linked = false, active = true, newUser = false } = {}) {
+function fixture({ linked = false, active = true, newUser = false, role = 'active', ssoEnabled = true, session = null } = {}) {
     let config;
     const existing = { id: 'existing-local', email: 'admin@example.test', normalizedEmail: 'admin@example.test', name: 'Administrator', role: 'SUPER_ADMIN', isActive: active, entraObjectId: 'original-object-id', sessionVersion: 2, credentialsChangedAt: null };
     const updates = [];
@@ -14,14 +14,15 @@ function fixture({ linked = false, active = true, newUser = false } = {}) {
         user: { findUnique: async () => newUser ? null : existing, update: async (args) => { updates.push(args); return existing; } },
         account: { findUnique: async () => linked ? { user: existing, userId: existing.id } : null },
     };
-    const nextAuth = (value) => { config = value; return { handlers: { GET() {}, POST() {} } }; };
+    const nextAuth = (value) => { config = value; return { handlers: { GET() {}, POST() {} }, auth: async () => session }; };
     const dependencies = {
         'next-auth': nextAuth, '@auth/prisma-adapter': { PrismaAdapter: () => ({}) },
         'next-auth/jwt': { decode: async ({ token }) => token ? JSON.parse(token) : null },
         'next-auth/providers/microsoft-entra-id': (value) => ({ id: 'microsoft-entra-id', ...value }),
         'next-auth/providers/credentials': (value) => value,
         'bcryptjs': {}, '@/lib/prisma': { prisma }, '@/lib/audit': { auditLog: async () => {} },
-        '@/lib/login-policy': { isLoginMethodEnabled: async () => true },
+        '@/lib/login-policy': { getEffectiveLoginPolicy: async () => ({ localEnabled: true }), resolveSsoSignInRole: async () => role, isLoginMethodEnabled: async () => ssoEnabled, storedAccountProvider: (id) => id, isEntraRuntimeConfigured: () => true },
+        '@/lib/oidc-provider': { getRuntimeOidcConfig: () => null, createOidcProvider() {}, createProviderFetch() {} },
         '@/lib/entra-diagnostic': { scheduleEntraStartupDiagnostic() {} },
         '@/lib/email-identity': { normalizeEmail: (value) => value.trim().toLowerCase() },
         '@/lib/login-throttle': {}, '@/lib/session-security': { isSessionTokenCurrent: ({ tokenSessionVersion, databaseSessionVersion }) => tokenSessionVersion === databaseSessionVersion }, '@/lib/request-ip': {},
@@ -120,4 +121,15 @@ test('post-login Microsoft metadata updates only the resolved account identity',
     assert.equal(f.updates[0].where.id, 'resolved-linked-user');
     assert.deepEqual(Object.keys(f.updates[0].data), ['entraObjectId']);
     assert.equal(f.updates[0].data.entraObjectId, 'verified-object');
+});
+
+test('a migration target honours the SSO switch for sign-in but still allows authenticated linking', async () => {
+    const anonymousLinked = fixture({ linked: true, role: 'migration', ssoEnabled: false });
+    assert.equal(await anonymousLinked.config.callbacks.signIn({ user: anonymousLinked.profile, account: anonymousLinked.account, profile: {} }), false);
+    const anonymousEnabled = fixture({ linked: true, role: 'migration', ssoEnabled: true });
+    assert.equal(await anonymousEnabled.config.callbacks.signIn({ user: anonymousEnabled.profile, account: anonymousEnabled.account, profile: {} }), true);
+    const anonymousUnlinked = fixture({ linked: false, role: 'migration', ssoEnabled: true });
+    assert.equal(await anonymousUnlinked.config.callbacks.signIn({ user: anonymousUnlinked.profile, account: anonymousUnlinked.account, profile: {} }), false);
+    const linking = fixture({ linked: false, role: 'migration', ssoEnabled: false, session: { user: { id: 'existing-local' } } });
+    assert.equal(await linking.config.callbacks.signIn({ user: linking.profile, account: linking.account, profile: {} }), true);
 });

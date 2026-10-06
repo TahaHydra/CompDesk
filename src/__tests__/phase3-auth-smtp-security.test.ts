@@ -13,7 +13,7 @@ jest.mock('@/lib/audit', () => ({ auditLog: mockAuditLog }));
 jest.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 jest.mock('@/lib/logger', () => ({ __esModule: true, default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('@/lib/branding', () => ({ getBrandingConfig: jest.fn().mockResolvedValue({ applicationName: 'CompDesk' }) }));
-jest.mock('@/lib/managed-env', () => ({ canEditManagedEnvironment: () => true, readManagedEnvironment: jest.fn().mockResolvedValue({}), updateManagedEnvironment: jest.fn(), ManagedEnvironmentError: class ManagedEnvironmentError extends Error {} }));
+jest.mock('@/lib/managed-env', () => ({ ...jest.requireActual('@/lib/managed-env'), canEditManagedEnvironment: () => true, readManagedEnvironment: jest.fn().mockResolvedValue({}), updateManagedEnvironment: jest.fn(), ManagedEnvironmentError: class ManagedEnvironmentError extends Error {} }));
 jest.mock('@/lib/uploaded-image', () => ({ removeUploadedImage: jest.fn() }));
 jest.mock('nodemailer', () => ({ __esModule: true, default: { createTransport: (...args: unknown[]) => mockCreateTransport(...args) } }));
 
@@ -100,7 +100,7 @@ describe('Phase 3 login policy recovery', () => {
         mockPrisma.appSetting.findUnique.mockRejectedValue(new Error('db unavailable'));
         await expect(isLoginMethodEnabled('login_local_enabled', { NODE_ENV: 'test', LOGIN_LOCAL_ENABLED: 'false' })).resolves.toBe(false);
         resetLoginPolicyCacheForTests();
-        await expect(isLoginMethodEnabled('login_microsoft_enabled', { NODE_ENV: 'test' })).resolves.toBe(false);
+        await expect(isLoginMethodEnabled('login_sso_enabled', { NODE_ENV: 'test' })).resolves.toBe(false);
     });
 });
 

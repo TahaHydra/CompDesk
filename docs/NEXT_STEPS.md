@@ -4,18 +4,6 @@ CompDesk is intentionally kept lightweight. The next planned additions focus on 
 
 ## Planned
 
-### Generic OpenID Connect SSO
-
-Add provider-agnostic OpenID Connect (OIDC) support so CompDesk is not limited to Microsoft Entra ID and can integrate with other standards-based identity providers.
-
-The goal is to keep the current explicit account-linking and ownership protections while allowing administrators to configure a standard OIDC provider.
-
-### Certificate support for authentication and mail
-
-Extend authentication and mail configuration with certificate-based options where the provider/protocol supports them, including OIDC client authentication and SMTP/TLS deployments that require certificate or custom trust configuration.
-
-This should remain optional and preserve the existing secret-based configuration paths.
-
 ### Saved replies / canned responses
 
 Allow staff to save reusable reply templates for common answers and insert them into ticket replies.

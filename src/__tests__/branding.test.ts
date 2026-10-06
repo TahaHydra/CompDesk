@@ -30,7 +30,7 @@ describe('branding configuration', () => {
         };
         process.env.AZURE_AD_CLIENT_ID = 'client'; process.env.AZURE_AD_CLIENT_SECRET = 'secret'; process.env.AZURE_AD_TENANT_ID = 'tenant';
         const publicBranding = toPublicBranding(DEFAULT_BRANDING);
-        expect(publicBranding.microsoftLoginConfigured).toBe(true);
+        expect(publicBranding.ssoLoginConfigured).toBe(true);
         const serialized = JSON.stringify(publicBranding);
         expect(serialized).not.toContain('secret');
         expect(serialized).not.toContain('smtp');

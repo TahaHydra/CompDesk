@@ -1,9 +1,9 @@
-import { getSignInErrorMessage, startMicrosoftSignIn } from '@/lib/microsoft-signin';
+import { getSignInErrorMessage, startSsoSignIn } from '@/lib/sso-signin';
 
-describe('Microsoft sign-in versus account linking', () => {
+describe('SSO sign-in versus account linking', () => {
     it('ends the current session before starting a fresh Microsoft login', async () => {
         const operations: string[] = [];
-        await startMicrosoftSignIn({
+        await startSsoSignIn({
             endSession: async () => { operations.push('sign-out'); },
             authenticate: async () => { operations.push('Microsoft sign-in'); },
         });
@@ -12,7 +12,7 @@ describe('Microsoft sign-in versus account linking', () => {
 
     it('does not start Microsoft login if ending the existing session fails', async () => {
         const authenticate = jest.fn();
-        await expect(startMicrosoftSignIn({
+        await expect(startSsoSignIn({
             endSession: async () => { throw new Error('Network failure'); },
             authenticate,
         })).rejects.toThrow('Network failure');
@@ -36,5 +36,14 @@ describe('Microsoft sign-in versus account linking', () => {
         expect(getSignInErrorMessage('private-token-or-email', true)).toBe(
             'Authentication failed. Please try again or contact an administrator.',
         );
+    });
+});
+
+describe('Provider-specific sign-in messages', () => {
+    it('names the configured provider in account-conflict guidance', () => {
+        const message = getSignInErrorMessage('OAuthAccountNotLinked', true, 'Okta');
+        expect(message).toContain('Okta sign-in');
+        expect(message).toContain('Link my Okta account');
+        expect(message).not.toContain('Microsoft');
     });
 });

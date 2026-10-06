@@ -1,0 +1,24 @@
+# Local single sign-on test lab: Keycloak with two pre-imported realms, plus PostgreSQL.
+# Development only; see README.md. Never expose these ports or credentials.
+name: compdesk-sso-lab
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ['start-dev', '--import-realm', '--hostname-strict=false']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: lab-admin
+    ports:
+      - '127.0.0.1:18080:8080'
+    volumes:
+      - ./realms:/opt/keycloak/data/import:ro
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: compdesk
+      POSTGRES_PASSWORD: lab-password
+      POSTGRES_DB: compdesk
+    ports:
+      - '127.0.0.1:15433:5432'

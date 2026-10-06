@@ -14,6 +14,7 @@ import nodemailer from 'nodemailer';
 import pg from 'pg';
 import { PrismaClient } from '@prisma/client';
 import { installDemoDataInTransaction } from './demo-data.mjs';
+import { assertSetupLoginPolicy, normalizeSetupAuthentication, setupSsoEnvironment, ssoProviderLabel, testSetupSso, validateSetupSso } from './setup-sso.mjs';
 import {
     SESSION_COOKIE,
     SESSION_TTL_MS,
@@ -449,14 +450,10 @@ function validateInstall(input) {
     if (Object.keys(databaseErrors).length) throw Object.assign(new Error(Object.values(databaseErrors)[0]), { statusCode: 400 });
     const url = validatePublicUrl(input.identity?.applicationUrl);
     if (!url.valid) throw Object.assign(new Error(url.error), { statusCode: 400 });
-    const auth = input.authentication || {};
-    if (auth.microsoftEnabled || auth.clientId || auth.tenantId || auth.clientSecret) {
-        const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!guid.test(auth.clientId || '') || !guid.test(auth.tenantId || '') || !auth.clientSecret?.trim()) {
-            throw Object.assign(new Error('Provide a valid Entra Client ID, Tenant ID, and Client Secret together.'), { statusCode: 400 });
-        }
-    }
-    if (!auth.localEnabled && !auth.microsoftEnabled) throw Object.assign(new Error('At least one authentication method must remain enabled.'), { statusCode: 400 });
+    const auth = normalizeSetupAuthentication(input.authentication);
+    validateSetupSso(auth);
+    // Same lockout policy as the running application; refuses SSO-only for an unlinked first admin.
+    assertSetupLoginPolicy(auth);
     const email = normalizeEmail(auth.adminEmail);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw Object.assign(new Error('Enter a valid administrator email address.'), { statusCode: 400 });
     if (!String(auth.adminName || '').trim()) throw Object.assign(new Error('Administrator name is required.'), { statusCode: 400 });
@@ -512,7 +509,10 @@ async function install(input) {
     try {
         const config = validateInstall(input);
         await testDatabase(config.database);
-        await diagnoseEntra(config.authentication, config.identity.applicationUrl);
+        if (config.authentication.ssoEnabled) {
+            const ssoTest = await testSetupSso(config.authentication, { diagnoseEntra, applicationUrl: config.identity.applicationUrl });
+            if (!ssoTest.success) throw Object.assign(new Error(`Test SSO configuration failed: ${ssoTest.message}`), { statusCode: 400 });
+        }
         if (config.smtp?.enabled) {
             const transporter = smtpTransport(config.smtp);
             await transporter.verify();
@@ -540,7 +540,8 @@ async function install(input) {
             authSecret,
             settingsEncryptionKey,
             localEnabled: config.authentication.localEnabled,
-            microsoftEnabled: config.authentication.microsoftEnabled,
+            ssoEnabled: config.authentication.ssoEnabled,
+            ssoEnvironment: setupSsoEnvironment(config.authentication),
             trustProxy: Boolean(config.identity.reverseProxy),
             privateAttachmentDir,
             uploadMaxSizeMb: config.storage.uploadMaxSizeMb,
@@ -554,9 +555,6 @@ async function install(input) {
             clamavHost: config.storage.clamavHost,
             clamavPort: config.storage.clamavPort,
             dockerDatabase: config.deploymentMode === 'docker-compose' ? config.database : null,
-            tenantId: config.authentication.tenantId,
-            clientId: config.authentication.clientId,
-            clientSecret: config.authentication.clientSecret,
         });
         writeFileAtomic(envPath, envText, { mode: 0o600, backup: true });
         await runMigrations(environment);
@@ -606,12 +604,13 @@ async function install(input) {
                     footerText: '',
                     showDemoAccounts: false,
                     demoAccountInfo: '',
-                    microsoftButtonText: 'Sign in with Microsoft',
+                    microsoftButtonText: `Sign in with ${ssoProviderLabel(config.authentication.provider)}`,
                 };
                 const settings = {
                     branding_config: JSON.stringify(branding),
                     login_local_enabled: String(config.authentication.localEnabled),
-                    login_microsoft_enabled: String(config.authentication.microsoftEnabled),
+                    login_sso_enabled: String(config.authentication.ssoEnabled),
+                    sso_provider: config.authentication.provider,
                     feature_attachments_enabled: 'true',
                     feature_dashboard_links_enabled: 'true',
                     feature_external_api_enabled: 'false',
@@ -773,6 +772,12 @@ async function handle(request, response) {
             messageId: result.messageId || null,
             message: 'The SMTP server accepted the message for relay. This does not prove final mailbox delivery.',
         });
+    }
+    if (requestUrl.pathname === '/setup/api/sso/test' && request.method === 'POST') {
+        const body = await readBody(request);
+        const url = validatePublicUrl(body.identity?.applicationUrl);
+        const result = await testSetupSso(normalizeSetupAuthentication(body.authentication), { diagnoseEntra, applicationUrl: url.valid ? url.origin : '' });
+        return json(response, result.success ? 200 : 502, result.success ? result : { ...result, error: result.message });
     }
     if (requestUrl.pathname === '/setup/api/install' && request.method === 'POST') {
         const body = await readBody(request);

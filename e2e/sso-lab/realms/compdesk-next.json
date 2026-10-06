@@ -1,0 +1,56 @@
+{
+  "realm": "compdesk-next",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "compdesk",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "lab-client-secret-2",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "webOrigins": [
+        "+"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice-next",
+      "email": "admin@compdesk.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "alice-next",
+      "lastName": "Lab",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LabPassword1!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "carol-next",
+      "email": "carol@compdesk.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "carol-next",
+      "lastName": "Lab",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LabPassword1!",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

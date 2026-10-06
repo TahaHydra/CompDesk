@@ -1,4 +1,4 @@
-import NextAuth from 'next-auth';
+import NextAuth, { customFetch } from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
 import { decode as decodeSessionJwt } from 'next-auth/jwt';
 import { PrismaAdapter } from '@auth/prisma-adapter';
@@ -8,13 +8,32 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { auditLog } from '@/lib/audit';
 import type { Role } from '@prisma/client';
-import { isLoginMethodEnabled } from '@/lib/login-policy';
+import { getEffectiveLoginPolicy, isEntraRuntimeConfigured, isLoginMethodEnabled, resolveSsoSignInRole, storedAccountProvider } from '@/lib/login-policy';
+import { createOidcProvider, createProviderFetch, getRuntimeOidcConfig, type OidcSlot } from '@/lib/oidc-provider';
 import { scheduleEntraStartupDiagnostic } from '@/lib/entra-diagnostic';
 import { normalizeEmail } from '@/lib/email-identity';
 import { applyLoginFailureDelay, checkLoginThrottle, clearLoginFailures, recordLoginFailure } from '@/lib/login-throttle';
 import { isSessionTokenCurrent } from '@/lib/session-security';
 import { requestSourceIp } from '@/lib/request-ip';
 scheduleEntraStartupDiagnostic();
+
+const SSO_PROVIDER_IDS = new Set(['microsoft-entra-id', 'oidc', 'oidc-next']);
+
+// The active OpenID Connect slot, plus the staged slot used by SSO migration mode.
+function oidcProviders(slot: OidcSlot) {
+    const config = getRuntimeOidcConfig(slot);
+    return config ? [{ ...createOidcProvider(config, slot), [customFetch]: createProviderFetch(config) }] : [];
+}
+
+// Both OpenID Connect slots share the issuer-scoped `oidc` account namespace, so a staged provider
+// becomes active at cut-over without rewriting any account binding.
+const prismaAdapter = PrismaAdapter(prisma);
+const adapter: NonNullable<NextAuthConfig['adapter']> = {
+    ...prismaAdapter,
+    getUserByAccount: (account) => prismaAdapter.getUserByAccount!({ ...account, provider: storedAccountProvider(account.provider) }),
+    linkAccount: (account) => prismaAdapter.linkAccount!({ ...account, provider: storedAccountProvider(account.provider) }),
+    unlinkAccount: (account) => prismaAdapter.unlinkAccount!({ ...account, provider: storedAccountProvider(account.provider) }),
+};
 
 const DUMMY_PASSWORD_HASH = '$2b$12$VjAsOWYkTDNoqAiLrdLiKe7cDytL3er7DkCV.wXN5TQAXsF3csbLC';
 
@@ -50,7 +69,7 @@ declare module 'next-auth' {
 }
 
 export const authConfig: NextAuthConfig = {
-    adapter: PrismaAdapter(prisma),
+    adapter,
     // AUTH_SECRET is the Auth.js v5 name. NEXTAUTH_SECRET remains a
     // compatibility fallback, but both must resolve to one stable key.
     secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
@@ -76,10 +95,10 @@ export const authConfig: NextAuthConfig = {
     trustHost: true,
     providers: [
         // ── Microsoft Entra ID SSO (only if configured) ─────────
-        ...(process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID
+        ...(isEntraRuntimeConfigured()
             ? [MicrosoftEntraID({
-                clientId: process.env.AZURE_AD_CLIENT_ID,
-                clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
+                clientId: process.env.AZURE_AD_CLIENT_ID!,
+                clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
                 issuer: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
                 authorization: {
                     params: {
@@ -101,6 +120,10 @@ export const authConfig: NextAuthConfig = {
             })]
             : []),
 
+        // ── Generic OpenID Connect SSO (only if configured) ──────
+        ...oidcProviders('OIDC'),
+        ...oidcProviders('OIDC_NEXT'),
+
         // ── Local Credentials (email + password) ────────────────
         Credentials({
             name: 'Email & Password',
@@ -114,8 +137,8 @@ export const authConfig: NextAuthConfig = {
                 const email = normalizeEmail(String(credentials.email));
                 const password = String(credentials.password);
                 const sourceIp = requestSourceIp(request);
-                const localEnabled = await isLoginMethodEnabled('login_local_enabled');
-                if (!localEnabled) return null;
+                // The effective policy keeps local login available when SSO could not be used.
+                if (!(await getEffectiveLoginPolicy()).localEnabled) return null;
 
                 const throttle = await checkLoginThrottle(email, sourceIp);
                 if (throttle.blocked) {
@@ -170,22 +193,42 @@ export const authConfig: NextAuthConfig = {
         }),
     ],
     callbacks: {
-        async signIn({ user, account }) {
+        async signIn({ user, account, profile }) {
             const normalizedEmail = user.email ? normalizeEmail(user.email) : null;
             if (normalizedEmail) user.email = normalizedEmail;
-            if (account?.provider === 'microsoft-entra-id' && !normalizedEmail) {
-                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { reason: 'missing_email_claim', method: 'sso' } });
-                return false;
-            }
-            if (account?.provider === 'microsoft-entra-id' && !(await isLoginMethodEnabled('login_microsoft_enabled'))) {
-                void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'microsoft_login_disabled', method: 'sso' } });
-                return false;
-            }
-            if (account?.provider === 'microsoft-entra-id' && normalizedEmail) {
+            const provider = account?.provider;
+            if (account && provider && SSO_PROVIDER_IDS.has(provider)) {
+                if (!normalizedEmail) {
+                    void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { reason: 'missing_email_claim', method: 'sso', provider } });
+                    return false;
+                }
+                // Entra omits email_verified; generic providers that state it as false are refused.
+                if (provider !== 'microsoft-entra-id' && profile?.email_verified === false) {
+                    void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'email_not_verified', method: 'sso', provider } });
+                    return false;
+                }
+                const role = await resolveSsoSignInRole(provider);
+                if (!role) {
+                    void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: provider === 'microsoft-entra-id' ? 'microsoft_login_disabled' : 'sso_login_disabled', method: 'sso', provider } });
+                    return false;
+                }
                 const linked = await prisma.account.findUnique({
-                    where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+                    where: { provider_providerAccountId: { provider: storedAccountProvider(account.provider), providerAccountId: account.providerAccountId } },
                     select: { user: { select: { id: true, isActive: true } } },
                 });
+                // A migration target never creates accounts: it verifies an existing link, or links
+                // the new identity to the user who is already signed in.
+                if (role === 'migration' && !(await auth())?.user) {
+                    if (!linked) {
+                        void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'migration_link_requires_session', method: 'sso', provider } });
+                        return false;
+                    }
+                    // Signing in (not linking) honours the SSO switch like the active provider does.
+                    if (!(await isLoginMethodEnabled('login_sso_enabled'))) {
+                        void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'sso_login_disabled', method: 'sso', provider } });
+                        return false;
+                    }
+                }
                 const existingUser = linked?.user ?? await prisma.user.findUnique({ where: { normalizedEmail }, select: { id: true, isActive: true } });
                 if (existingUser) {
                     if (!existingUser.isActive) {
@@ -247,12 +290,16 @@ export const authConfig: NextAuthConfig = {
     },
     events: {
         async signIn({ user, account, profile }) {
-            if (account?.provider !== 'microsoft-entra-id') return;
+            if (!account?.provider || !SSO_PROVIDER_IDS.has(account.provider)) return;
             // This event runs after Auth.js has resolved/linked the stable provider
             // account. Never update another local identity by an email claim.
-            const objectId = typeof profile?.oid === 'string' ? profile.oid : undefined;
+            const objectId = account.provider === 'microsoft-entra-id' && typeof profile?.oid === 'string' ? profile.oid : undefined;
             if (objectId) await prisma.user.update({ where: { id: user.id }, data: { entraObjectId: objectId } });
             void auditLog({ userId: user.id, action: 'auth.login', entity: 'auth', metadata: { method: 'sso', provider: account.provider } });
+        },
+        async linkAccount({ user, account }) {
+            if (!SSO_PROVIDER_IDS.has(account.provider)) return;
+            void auditLog({ userId: user.id, action: 'auth.account_linked', entity: 'auth', metadata: { provider: account.provider, issuer: account.provider === 'microsoft-entra-id' ? undefined : account.providerAccountId.split(' ')[0] } });
         },
     },
     pages: {

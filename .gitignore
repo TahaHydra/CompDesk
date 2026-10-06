@@ -74,3 +74,12 @@ ci-e2e-artifacts/
 
 # Acceptance-only deployment overrides may contain private credentials.
 /docker-compose.acceptance.yml
+
+# Local SSO lab certificate/key material
+/lab-client.key
+/lab-client.pem
+/e2e/sso-lab/*.key
+/e2e/sso-lab/*.pem
+/e2e/sso-lab/*.crt
+/e2e/sso-lab/*.p12
+/e2e/sso-lab/*.pfx

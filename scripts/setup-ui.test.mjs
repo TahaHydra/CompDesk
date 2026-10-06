@@ -24,3 +24,13 @@ test('the local password checklist covers every server policy requirement', () =
     }
     assert.match(source, /aria-live="polite"/);
 });
+
+test('the authentication step offers local, SSO, or both with provider fields and a lockout guard', () => {
+    for (const mode of ['local', 'both', 'sso']) assert.match(source, new RegExp(`name="authMode" type="radio" value="${mode}"`));
+    for (const provider of ['microsoft-entra-id', 'google', 'okta', 'keycloak', 'auth0', 'authentik', 'oidc']) assert.match(source, new RegExp(`<option value="${provider}">`));
+    assert.match(source, /Test SSO configuration/);
+    assert.match(source, /\/setup\/api\/sso\/test/);
+    assert.match(source, /ssoOnlyNotice/);
+    assert.match(source, /Advanced: certificates and client authentication/);
+    assert.match(source, /api\/auth\/callback\/\$\{entra\?'microsoft-entra-id':'oidc'\}/);
+});

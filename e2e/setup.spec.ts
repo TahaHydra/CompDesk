@@ -192,15 +192,17 @@ test('completes a clean installation and permanently retires setup', async ({ pa
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(confirmation).toHaveAttribute('aria-invalid', 'true');
 
-    await page.locator('input[name="localEnabled"]').uncheck();
-    await page.locator('input[name="microsoftEnabled"]').check();
-    await password.fill('');
-    await confirmation.fill('');
+    // Single sign-on only would lock out the first Super Admin (no linked SSO identity yet).
+    await page.locator('input[name="authMode"][value="sso"]').check();
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(page.getByRole('heading', { name: '6. Secrets and encryption' })).toBeVisible();
-    await page.getByRole('button', { name: 'Back' }).click();
-    await page.locator('input[name="localEnabled"]').check();
-    await page.locator('input[name="microsoftEnabled"]').uncheck();
+    await expect(page.getByRole('heading', { name: '5. First Super Admin and authentication' })).toBeVisible();
+    await expect(page.locator('#ssoOnlyNotice')).toBeVisible();
+    await page.locator('input[name="authMode"][value="both"]').check();
+    await expect(page.locator('select[name="ssoProvider"]')).toBeVisible();
+    await expect(page.locator('#callback')).toContainText('/api/auth/callback/microsoft-entra-id');
+    await page.locator('select[name="ssoProvider"]').selectOption('keycloak');
+    await expect(page.locator('#callback')).toContainText('/api/auth/callback/oidc');
+    await page.locator('input[name="authMode"][value="local"]').check();
     await page.locator('input[name="adminPassword"]').fill('ReleaseCandidate1!Secure');
     await page.locator('input[name="adminPasswordConfirm"]').fill('ReleaseCandidate1!Secure');
     await page.getByRole('button', { name: 'Next' }).click();

@@ -14,16 +14,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { submitCredentialsOnce } from '@/lib/signin-submission';
-import { getSignInErrorMessage, startMicrosoftSignIn } from '@/lib/microsoft-signin';
+import { getSignInErrorMessage, startSsoSignIn } from '@/lib/sso-signin';
+import { SSO_PRESETS } from '@/lib/sso-presets';
+import { SsoProviderLogo } from '@/components/sso-provider-logo';
 import { useLanguage } from '@/components/providers/language-provider';
 
-function MicrosoftMark() {
-    return (
-        <svg className="h-5 w-5" viewBox="0 0 21 21" fill="currentColor" aria-hidden="true">
-            <rect x="1" y="1" width="9" height="9" /><rect x="11" y="1" width="9" height="9" />
-            <rect x="1" y="11" width="9" height="9" /><rect x="11" y="11" width="9" height="9" />
-        </svg>
-    );
+function SsoMark({ provider }: { provider: Parameters<typeof SsoProviderLogo>[0]['provider'] }) {
+    return <span className="inline-flex rounded bg-white p-0.5"><SsoProviderLogo provider={provider} className="h-4 w-4" /></span>;
 }
 
 function SignInForm() {
@@ -34,21 +31,22 @@ function SignInForm() {
     const [loading, setLoading] = useState(false);
     const submissionLock = useRef(false);
     const [localError, setLocalError] = useState('');
-    const microsoftVisible = branding.showMicrosoftLogin && branding.microsoftLoginConfigured;
-    const showDivider = microsoftVisible && branding.showLocalLogin;
+    const ssoVisible = branding.showMicrosoftLogin && branding.ssoLoginConfigured;
+    const ssoLabel = SSO_PRESETS[branding.ssoProvider].label;
+    const showDivider = ssoVisible && branding.showLocalLogin;
 
-    const handleMicrosoft = async () => {
+    const handleSso = async (providerId: string = branding.ssoProviderId) => {
         if (submissionLock.current) return;
         submissionLock.current = true;
         setLoading(true);
         setLocalError('');
         try {
-            await startMicrosoftSignIn({
+            await startSsoSignIn({
                 endSession: () => signOut({ redirect: false }),
-                authenticate: () => signIn('microsoft-entra-id', { callbackUrl: '/dashboard' }),
+                authenticate: () => signIn(providerId, { callbackUrl: '/dashboard' }),
             });
         } catch {
-            setLocalError(t('Microsoft sign-in unavailable. Try again.'));
+            setLocalError(t(`${ssoLabel} sign-in unavailable. Try again.`));
         } finally {
             submissionLock.current = false;
             setLoading(false);
@@ -90,29 +88,41 @@ function SignInForm() {
             <CardContent className="space-y-5 pt-4">
                 {(authError || localError) ? (
                     <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm text-destructive">
-                        {localError || t(getSignInErrorMessage(authError ?? '', branding.showLocalLogin))}
+                        {localError || t(getSignInErrorMessage(authError ?? '', branding.showLocalLogin, ssoLabel))}
                     </div>
                 ) : null}
-                {microsoftVisible ? (
+                {ssoVisible ? (
                     <Button
-                        onClick={handleMicrosoft}
+                        onClick={() => handleSso()}
                         disabled={loading}
                         className="h-12 w-full gap-3 text-base shadow-lg shadow-primary/25"
                     >
-                        <MicrosoftMark />
+                        <SsoMark provider={branding.ssoProvider} />
                         {branding.microsoftButtonText}
                         <ArrowRight className="ml-auto h-4 w-4" />
                     </Button>
                 ) : null}
 
-                {branding.showMicrosoftLogin && !branding.microsoftLoginConfigured ? (
+                {ssoVisible && branding.ssoFallback ? (
+                    <div className="space-y-1 text-center">
+                        <Button type="button" variant="outline" disabled={loading} className="w-full gap-2" onClick={() => handleSso(branding.ssoFallback!.providerId)}>
+                            <SsoMark provider={branding.ssoFallback.provider} />
+                            {t(`Sign in with ${SSO_PRESETS[branding.ssoFallback.provider].label}`)}
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                            {SSO_PRESETS[branding.ssoProvider].label} replaced {SSO_PRESETS[branding.ssoFallback.provider].label}. If your {ssoLabel} account is not linked yet, sign in with {SSO_PRESETS[branding.ssoFallback.provider].label} once and link it from your profile.
+                        </p>
+                    </div>
+                ) : null}
+
+                {branding.showMicrosoftLogin && !branding.ssoLoginConfigured ? (
                     <div className="space-y-2">
                         <Button type="button" disabled className="h-12 w-full gap-3 text-base">
-                            <MicrosoftMark />
+                            <SsoMark provider={branding.ssoProvider} />
                             {branding.microsoftButtonText}
                         </Button>
                         <p className="text-center text-xs text-muted-foreground">
-                            Microsoft sign-in is enabled but unavailable until the administrator completes the Entra configuration and restarts the application.
+                            {ssoLabel} sign-in is enabled but unavailable until the administrator completes the single sign-on configuration and restarts the application.
                         </p>
                     </div>
                 ) : null}
@@ -142,13 +152,13 @@ function SignInForm() {
                                 <Input id="password" name="password" type="password" autoComplete="current-password" placeholder="••••••••" className="h-11 pl-9" required />
                             </div>
                         </div>
-                        <Button type="submit" variant={microsoftVisible ? 'outline' : 'default'} className="h-11 w-full text-base" disabled={loading}>
+                        <Button type="submit" variant={ssoVisible ? 'outline' : 'default'} className="h-11 w-full text-base" disabled={loading}>
                             {loading ? <span className="h-4 w-4 animate-spin rounded-full border-b-2 border-current" aria-label="Signing in" /> : 'Sign In'}
                         </Button>
                     </form>
                 ) : null}
 
-                {!branding.showLocalLogin && !microsoftVisible ? (
+                {!branding.showLocalLogin && !ssoVisible ? (
                     <div role="alert" className="rounded-lg border p-4 text-center text-sm text-muted-foreground">
                         No sign-in method is currently available. {branding.supportEmail ? <a className="text-primary underline" href={`mailto:${branding.supportEmail}`}>Contact support</a> : 'Contact an administrator.'}
                     </div>

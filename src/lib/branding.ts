@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import { assertProposedAuthentication, getEffectiveLoginPolicy, getSsoState, isEntraRuntimeConfigured, isRuntimeProviderConfigured } from '@/lib/login-policy';
+import { DEFAULT_SSO_PROVIDER, SSO_LOGIN_SETTING_KEY, targetProviderId, type RuntimeSsoProviderId, type SsoProviderOption } from '@/lib/sso-presets';
 import {
     brandingConfigSchema,
     type BrandingAssetField,
@@ -9,7 +11,12 @@ export { brandingConfigSchema } from '@/lib/branding-schema';
 export type { BrandingAssetField, BrandingConfig } from '@/lib/branding-schema';
 
 export interface PublicBranding extends BrandingConfig {
-    microsoftLoginConfigured: boolean;
+    ssoProvider: SsoProviderOption;
+    /** Auth.js provider id the sign-in button uses. */
+    ssoProviderId: RuntimeSsoProviderId;
+    /** After an SSO migration cut-over: the previous provider, usable by already-linked accounts so they can link the new one. */
+    ssoFallback: { provider: SsoProviderOption; providerId: RuntimeSsoProviderId } | null;
+    ssoLoginConfigured: boolean;
 }
 
 export const BRANDING_ASSET_FIELDS: readonly BrandingAssetField[] = [
@@ -47,7 +54,7 @@ export const DEFAULT_BRANDING: BrandingConfig = {
 
 const BRANDING_SETTING_KEY = 'branding_config';
 const LOCAL_LOGIN_SETTING_KEY = 'login_local_enabled';
-const MICROSOFT_LOGIN_SETTING_KEY = 'login_microsoft_enabled';
+const MICROSOFT_LOGIN_SETTING_KEY = SSO_LOGIN_SETTING_KEY;
 
 function parseStoredBranding(value?: string): Partial<BrandingConfig> {
     if (!value) return {};
@@ -66,15 +73,17 @@ export function normalizeBranding(input: Partial<BrandingConfig>): BrandingConfi
     return parsed.success ? parsed.data : DEFAULT_BRANDING;
 }
 
-export function toPublicBranding(config: BrandingConfig): PublicBranding {
+export function toPublicBranding(
+    config: BrandingConfig,
+    sso: { provider: SsoProviderOption; providerId: RuntimeSsoProviderId; configured: boolean; fallback?: PublicBranding['ssoFallback'] } = { provider: DEFAULT_SSO_PROVIDER, providerId: 'microsoft-entra-id', configured: isEntraRuntimeConfigured() },
+): PublicBranding {
     return {
         ...config,
         demoAccountInfo: config.showDemoAccounts ? config.demoAccountInfo : '',
-        microsoftLoginConfigured: Boolean(
-            process.env.AZURE_AD_CLIENT_ID &&
-            process.env.AZURE_AD_CLIENT_SECRET &&
-            process.env.AZURE_AD_TENANT_ID
-        ),
+        ssoProvider: sso.provider,
+        ssoProviderId: sso.providerId,
+        ssoFallback: sso.fallback ?? null,
+        ssoLoginConfigured: sso.configured,
     };
 }
 
@@ -100,13 +109,15 @@ export async function getBrandingConfig(): Promise<BrandingConfig> {
 }
 
 export async function getPublicBranding(): Promise<PublicBranding> {
-    return toPublicBranding(await getBrandingConfig());
+    const [config, policy, state] = await Promise.all([getBrandingConfig(), getEffectiveLoginPolicy(), getSsoState()]);
+    const previousId = state.migrationPhase === 'rollback' ? targetProviderId(state) : null;
+    const fallback = state.migrationTarget && previousId && policy.ssoEnabled && isRuntimeProviderConfigured(previousId) ? { provider: state.migrationTarget, providerId: previousId } : null;
+    // The login page shows what is effective, including local login kept on to prevent a lockout.
+    return toPublicBranding({ ...config, showLocalLogin: policy.localEnabled, showMicrosoftLogin: policy.ssoEnabled }, { provider: policy.ssoProvider, providerId: policy.ssoProviderId, configured: isRuntimeProviderConfigured(policy.ssoProviderId), fallback });
 }
 
 export async function saveBrandingConfig(input: BrandingConfig): Promise<BrandingConfig> {
-    if (!input.showLocalLogin && (!input.showMicrosoftLogin || !process.env.AZURE_AD_CLIENT_ID || !process.env.AZURE_AD_CLIENT_SECRET || !process.env.AZURE_AD_TENANT_ID)) {
-        throw new Error('Local login can be disabled only while Microsoft login is enabled and configured in the running application.');
-    }
+    await assertProposedAuthentication({ localEnabled: input.showLocalLogin, ssoEnabled: input.showMicrosoftLogin });
     const config = brandingConfigSchema.parse(input);
     const storedConfig = { ...config };
     delete (storedConfig as Partial<BrandingConfig>).showLocalLogin;

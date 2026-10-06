@@ -58,15 +58,37 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             <label class="choice full"><input name="reverseProxy" type="checkbox"> Trust a configured reverse proxy (review forwarded-header documentation)</label>
         </fieldset></section>
         <section data-step="4" class="hidden"><h2>5. First Super Admin and authentication</h2><fieldset>
-            <label class="choice"><input name="localEnabled" type="checkbox" checked> Local password login</label>
-            <label class="choice"><input name="microsoftEnabled" type="checkbox"> Microsoft Entra ID</label>
+            <div class="full" role="radiogroup" aria-label="Sign-in methods">
+                <label class="choice"><input name="authMode" type="radio" value="local" checked> Local password only</label>
+                <label class="choice"><input name="authMode" type="radio" value="both"> Local password and single sign-on</label>
+                <label class="choice"><input name="authMode" type="radio" value="sso"> Single sign-on only</label>
+            </div>
+            <div id="ssoOnlyNotice" class="notice error full hidden" role="alert">Single sign-on only would lock out the first Super Admin, whose single sign-on identity is not linked yet. Choose "Local password and single sign-on"; after signing in, link your account from Profile, then disable local login in Settings → Security.</div>
             <label>Administrator name<input name="adminName" required></label>
             <label>Administrator email<input name="adminEmail" type="email" required autocomplete="username"></label>
             <label>Local password<input name="adminPassword" type="password" autocomplete="new-password" aria-describedby="passwordRequirements"></label>
             <label>Confirm password<input name="adminPasswordConfirm" type="password" autocomplete="new-password" aria-describedby="passwordRequirements"></label>
-            <label>Entra tenant ID<input name="tenantId"></label><label>Entra client ID<input name="clientId"></label>
-            <label class="full">Entra client secret<input name="clientSecret" type="password" autocomplete="new-password"></label>
-        </fieldset><div id="passwordRequirements" class="notice" aria-live="polite"></div><p>Expected callback: <code id="callback"></code></p></section>
+        </fieldset><div id="passwordRequirements" class="notice" aria-live="polite"></div>
+        <fieldset id="ssoFields" class="hidden">
+            <label class="full">Identity provider<select name="ssoProvider">
+                <option value="microsoft-entra-id">Microsoft Entra ID</option><option value="google">Google</option><option value="okta">Okta</option>
+                <option value="keycloak">Keycloak</option><option value="auth0">Auth0</option><option value="authentik">authentik</option><option value="oidc">Generic OpenID Connect</option>
+            </select></label>
+            <label data-provider="entra">Entra tenant ID<input name="tenantId"></label><label data-provider="entra">Entra client ID<input name="clientId"></label>
+            <label data-provider="entra" class="full">Entra client secret<input name="clientSecret" type="password" autocomplete="new-password"></label>
+            <label data-provider="oidc" class="full">Issuer URL (exactly as in /.well-known/openid-configuration; HTTPS)<input name="oidcIssuer" inputmode="url"></label>
+            <label data-provider="oidc">Client ID<input name="oidcClientId"></label>
+            <label data-provider="oidc" data-secret-auth>Client secret<input name="oidcClientSecret" type="password" autocomplete="new-password"></label>
+            <details data-provider="oidc" class="full"><summary>Advanced: certificates and client authentication</summary><fieldset>
+                <label class="full">Identity provider CA certificate (optional, PEM; for a private CA)<textarea name="oidcCaCertificate" rows="3" spellcheck="false"></textarea></label>
+                <label class="full">Token endpoint authentication<select name="oidcAuthMethod"><option value="client_secret_basic">Client secret (HTTP Basic, recommended)</option><option value="client_secret_post">Client secret (form post)</option><option value="private_key_jwt">Private key JWT (certificate)</option></select></label>
+                <label class="full" data-key-auth>Client private key (PEM, unencrypted; RSA 2048+, EC P-256 or P-384)<textarea name="oidcPrivateKey" rows="3" spellcheck="false" autocomplete="off"></textarea></label>
+                <label class="full" data-key-auth>Client certificate (optional, PEM; adds x5t#S256)<textarea name="oidcCertificate" rows="3" spellcheck="false"></textarea></label>
+                <label data-key-auth>Key ID (kid, optional)<input name="oidcKeyId"></label>
+            </fieldset></details>
+            <p class="full">Redirect URI to register with the provider: <code id="callback"></code></p>
+            <div class="full"><button type="button" class="secondary" id="testSso">Test SSO configuration</button><div id="ssoResult" class="notice hidden" role="status"></div></div>
+        </fieldset></section>
         <section data-step="5" class="hidden"><h2>6. Secrets and encryption</h2><p>CompDesk generates independent cryptographic secrets during installation. They are written atomically to one ignored environment file with restrictive permissions and are never shown by this wizard.</p></section>
         <section data-step="6" class="hidden"><h2>7. SMTP and notifications</h2><label class="choice"><input name="smtpEnabled" type="checkbox"> Configure SMTP now (optional)</label><fieldset>
             <label>Host<input name="smtpHost"></label><label>Port<input name="smtpPort" type="number" value="587"></label>
@@ -125,12 +147,16 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
         return payload;
     };
     const value = (name) => form.elements[name]?.value || '';
+    const authMode = () => form.querySelector('input[name="authMode"]:checked')?.value || 'local';
+    const localMode = () => authMode() !== 'sso';
+    const providerNames = {'microsoft-entra-id':'Microsoft Entra ID',google:'Google',okta:'Okta',keycloak:'Keycloak',auth0:'Auth0',authentik:'authentik',oidc:'OpenID Connect'};
+    const issuerHints = {google:'https://accounts.google.com',okta:'https://your-org.okta.com/oauth2/default',keycloak:'https://sso.example.com/realms/your-realm',auth0:'https://your-tenant.eu.auth0.com/',authentik:'https://sso.example.com/application/o/compdesk/',oidc:'https://idp.example.com'};
     const checked = (name) => Boolean(form.elements[name]?.checked);
     const data = () => ({
         deploymentMode: form.elements.deploymentMode.value,
         database:{provider:value('dbProvider'),host:value('dbHost'),port:Number(value('dbPort')),database:value('dbName'),username:value('dbUser'),password:value('dbPassword'),sslMode:value('dbSslMode'),ca:value('dbCa')},
         identity:{applicationUrl:value('applicationUrl'),applicationName:value('applicationName'),supportEmail:value('supportEmail'),primaryColor:value('primaryColor'),accentColor:value('accentColor'),reverseProxy:checked('reverseProxy')},
-        authentication:{localEnabled:checked('localEnabled'),microsoftEnabled:checked('microsoftEnabled'),adminName:value('adminName'),adminEmail:value('adminEmail'),adminPassword:value('adminPassword'),adminPasswordConfirm:value('adminPasswordConfirm'),tenantId:value('tenantId'),clientId:value('clientId'),clientSecret:value('clientSecret')},
+        authentication:{mode:authMode(),provider:value('ssoProvider'),adminName:value('adminName'),adminEmail:value('adminEmail'),adminPassword:value('adminPassword'),adminPasswordConfirm:value('adminPasswordConfirm'),tenantId:value('tenantId'),clientId:value('clientId'),clientSecret:value('clientSecret'),oidcIssuer:value('oidcIssuer'),oidcClientId:value('oidcClientId'),oidcClientSecret:value('oidcClientSecret'),oidcAuthMethod:value('oidcAuthMethod'),oidcPrivateKey:value('oidcPrivateKey'),oidcCertificate:value('oidcCertificate'),oidcKeyId:value('oidcKeyId'),oidcCaCertificate:value('oidcCaCertificate')},
         smtp:{enabled:checked('smtpEnabled'),host:value('smtpHost'),port:Number(value('smtpPort')),username:value('smtpUsername'),password:value('smtpPassword'),from:value('smtpFrom'),recipient:value('smtpRecipient'),secure:checked('smtpSecure'),requireTls:checked('smtpRequireTls')},
         storage:{privateAttachmentDir:value('privateAttachmentDir'),uploadMaxSizeMb:Number(value('uploadMaxSizeMb')),attachmentMaxFilesPerTicket:Number(value('attachmentMaxFilesPerTicket')),attachmentMaxMbPerTicket:Number(value('attachmentMaxMbPerTicket')),attachmentGlobalMaxGb:Number(value('attachmentGlobalMaxGb')),tempAttachmentTtlHours:Number(value('tempAttachmentTtlHours')),tempAttachmentMaxFilesPerUser:Number(value('tempAttachmentMaxFilesPerUser')),tempAttachmentMaxMbPerUser:Number(value('tempAttachmentMaxMbPerUser')),clamavEnabled:checked('clamavEnabled'),clamavHost:value('clamavHost'),clamavPort:Number(value('clamavPort'))},
         installDemoData:checked('installDemoData')
@@ -141,7 +167,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
     const passwordResults=()=>{const password=value('adminPassword');return {minimumLength:password.length>=passwordPolicy.minimumLength,lowercase:/[a-z]/.test(password),uppercase:/[A-Z]/.test(password),number:/\d/.test(password),symbol:/[^A-Za-z0-9]/.test(password),confirmation:Boolean(password)&&password===value('adminPasswordConfirm')};};
     const renderPasswordRequirements=()=>{
         const container=$('#passwordRequirements');
-        if(!checked('localEnabled')){container.classList.add('hidden');form.elements.adminPassword.removeAttribute('aria-invalid');form.elements.adminPasswordConfirm.removeAttribute('aria-invalid');return;}
+        if(!localMode()){container.classList.add('hidden');form.elements.adminPassword.removeAttribute('aria-invalid');form.elements.adminPasswordConfirm.removeAttribute('aria-invalid');return;}
         container.classList.remove('hidden');
         const results=passwordResults();
         const labels={minimumLength:`At least ${passwordPolicy.minimumLength} characters`,lowercase:'A lowercase letter',uppercase:'An uppercase letter',number:'A number',symbol:'A symbol',confirmation:'Passwords match'};
@@ -150,7 +176,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
         container.replaceChildren(element('strong','Password requirements'),list);
     };
     const validateAuthenticationStep=()=>{
-        if(!checked('localEnabled')){form.elements.adminPassword.setCustomValidity('');form.elements.adminPasswordConfirm.setCustomValidity('');return true;}
+        if(authMode()==='sso'){$('#ssoOnlyNotice').classList.remove('hidden');$('#ssoOnlyNotice').focus?.();return false;}
         const results=passwordResults();
         const policyValid=['minimumLength','lowercase','uppercase','number','symbol'].every((key)=>results[key]);
         form.elements.adminPassword.setCustomValidity(policyValid?'':`Use at least ${passwordPolicy.minimumLength} characters with lowercase, uppercase, number, and symbol.`);
@@ -162,16 +188,30 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
         if(invalid){invalid.reportValidity();invalid.focus();return false;}
         return true;
     };
-    for(const name of ['adminPassword','adminPasswordConfirm','localEnabled']) form.elements[name].addEventListener('input',renderPasswordRequirements);
+    for(const name of ['adminPassword','adminPasswordConfirm']) form.elements[name].addEventListener('input',renderPasswordRequirements);
+    const renderAuthentication=()=>{
+        const mode=authMode(), provider=value('ssoProvider'), entra=provider==='microsoft-entra-id', keyAuth=value('oidcAuthMethod')==='private_key_jwt';
+        $('#ssoFields').classList.toggle('hidden',mode==='local');
+        $('#ssoOnlyNotice').classList.toggle('hidden',mode!=='sso');
+        form.querySelectorAll('[data-provider="entra"]').forEach((node)=>node.classList.toggle('hidden',!entra));
+        form.querySelectorAll('[data-provider="oidc"]').forEach((node)=>node.classList.toggle('hidden',entra));
+        form.querySelectorAll('[data-key-auth]').forEach((node)=>node.classList.toggle('hidden',!keyAuth));
+        form.querySelectorAll('[data-secret-auth]').forEach((node)=>node.classList.toggle('hidden',entra||keyAuth));
+        form.elements.oidcIssuer.placeholder=issuerHints[provider]||'';
+        $('#callback').textContent=`${value('applicationUrl').replace(/\/$/,'')}/api/auth/callback/${entra?'microsoft-entra-id':'oidc'}`;
+        renderPasswordRequirements();
+    };
+    form.querySelectorAll('input[name="authMode"]').forEach((input)=>input.addEventListener('change',renderAuthentication));
+    for(const name of ['ssoProvider','oidcAuthMethod']) form.elements[name].addEventListener('change',()=>{$('#ssoResult').className='notice hidden';renderAuthentication();});
     const render = () => {
         sections.forEach((section,index)=>section.classList.toggle('hidden',index!==step));
         $('#progress').style.width=`${(step+1)*10}%`; $('#stepLabel').textContent=`Step ${step+1} of 10`;
         $('#back').disabled=step===0; $('#next').classList.toggle('hidden',step===9); $('#install').classList.toggle('hidden',step!==9);
-        if(step===4) $('#callback').textContent=`${value('applicationUrl').replace(/\/$/,'')}/api/auth/callback/microsoft-entra-id`;
-        if(step===4) renderPasswordRequirements();
+        if(step===4) renderAuthentication();
         if(step===9) {
             const state=data();
-            const authentication = `${state.authentication.localEnabled?'Local ':''}${state.authentication.microsoftEnabled?'Microsoft Entra ID':''}` || 'None';
+            const sso = providerNames[state.authentication.provider] || 'single sign-on';
+            const authentication = state.authentication.mode==='both' ? `Local password and ${sso}` : state.authentication.mode==='sso' ? `${sso} only` : 'Local password';
             const review = $('#review');
             review.replaceChildren(
                 definitionList([
@@ -196,8 +236,11 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
             const systemNode = $('#system');
             const checks = Object.entries(system.checks).map(([key,item])=>[key, `${item.ok?'✓':'⚠'} ${item.value||item.message}`]);
             systemNode.replaceChildren(definitionList(checks), element('div', system.guidance.join('\n'), 'notice'));
-            if(system.bootstrapDatabase){for(const [key,name] of Object.entries({host:'dbHost',port:'dbPort',database:'dbName',username:'dbUser',sslMode:'dbSslMode'}))form.elements[name].value=system.bootstrapDatabase[key];form.elements.dbPassword.placeholder='Managed by the Docker setup stack';}
+            if(system.bootstrapDatabase){for(const [key,name] of Object.entries({host:'dbHost',port:'dbPort',database:'dbName',username:'dbUser',sslMode:'dbSslMode'}))form.elements[name].value=system.bootstrapDatabase[key];form.elements.dbPassword.placeholder='Managed by the Docker setup stack';form.elements.dbPassword.required=false;}
             if(state.state) Object.entries(state.state.identity||{}).forEach(([key,item])=>{if(form.elements[key]&&typeof item!=='boolean')form.elements[key].value=item;});
+            const savedAuth=state.state?.authentication||{};
+            for(const [key,name] of Object.entries({provider:'ssoProvider',tenantId:'tenantId',clientId:'clientId',oidcIssuer:'oidcIssuer',oidcClientId:'oidcClientId',oidcAuthMethod:'oidcAuthMethod',oidcKeyId:'oidcKeyId',adminName:'adminName',adminEmail:'adminEmail'})) if(savedAuth[key]&&form.elements[name]) form.elements[name].value=savedAuth[key];
+            if(['local','both','sso'].includes(savedAuth.mode)) form.querySelector(`input[name="authMode"][value="${savedAuth.mode}"]`).checked=true;
             render();
         }catch(error){
             const previous = $('#loginError');
@@ -227,6 +270,7 @@ docker compose logs --tail=50 compdesk</code></pre><button type="button" class="
     $('#testDatabase').onclick=async()=>{try{const result=await api('/setup/api/database/test',{method:'POST',body:JSON.stringify({database:data().database,deploymentMode:data().deploymentMode})});$('#databaseResult').className='notice success';$('#databaseResult').textContent=result.message;}catch(error){$('#databaseResult').className='notice error';$('#databaseResult').textContent=error instanceof Error ? error.message : 'Database test failed.';}};
     const testSmtp=async(mode)=>{try{const result=await api('/setup/api/smtp/test',{method:'POST',body:JSON.stringify({smtp:data().smtp,mode})});$('#smtpResult').className='notice success';$('#smtpResult').textContent=result.message;}catch(error){$('#smtpResult').className='notice error';$('#smtpResult').textContent=error instanceof Error ? error.message : 'SMTP test failed.';}};
     $('#testSmtp').onclick=()=>testSmtp('verify');
+    $('#testSso').onclick=async()=>{const node=$('#ssoResult');node.className='notice';node.textContent='Testing…';try{const state=data();const result=await api('/setup/api/sso/test',{method:'POST',body:JSON.stringify({authentication:state.authentication,identity:state.identity})});node.className='notice success';node.textContent=result.message;}catch(error){node.className='notice error';node.textContent=error instanceof Error?error.message:'SSO test failed.';}};
     $('#sendSmtp').onclick=()=>testSmtp('send');
     const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
     // Bounded exponential backoff keeps the completion screen visible while

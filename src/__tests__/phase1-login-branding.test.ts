@@ -161,10 +161,14 @@ describe('Phase 1 branding behavior', () => {
         const saved = { ...DEFAULT_BRANDING, primaryColor: '#123456' };
         const publicBranding = mergeSavedPublicBranding(saved, {
             ...DEFAULT_BRANDING,
-            microsoftLoginConfigured: true,
+            ssoProvider: 'okta',
+            ssoProviderId: 'oidc',
+            ssoFallback: null,
+            ssoLoginConfigured: true,
         });
         expect(publicBranding.primaryColor).toBe('#123456');
-        expect(publicBranding.microsoftLoginConfigured).toBe(true);
+        expect(publicBranding.ssoLoginConfigured).toBe(true);
+        expect(publicBranding.ssoProvider).toBe('okta');
 
         const brandingSettings = source('src/components/admin/branding-settings.tsx');
         expect(brandingSettings).toContain("queryClient.setQueryData<PublicBranding>(");

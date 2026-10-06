@@ -4,11 +4,21 @@ import { isLocalStandaloneRuntime, resolveRuntimeEnvFiles } from '@/lib/runtime-
 
 export class ManagedEnvironmentError extends Error {}
 
-const MANAGED_ENV_KEYS = {
+/** Setting-key suffixes of an OpenID Connect slot, e.g. `oidc_issuer` ↔ `OIDC_ISSUER`. */
+export const OIDC_SETTING_FIELDS = ['issuer', 'client_id', 'client_secret', 'client_auth_method', 'client_private_key', 'client_certificate', 'client_key_id', 'ca_certificate'] as const;
+
+const MANAGED_ENV_KEYS: Readonly<Record<string, string>> = {
     azure_ad_client_id: 'AZURE_AD_CLIENT_ID',
     azure_ad_client_secret: 'AZURE_AD_CLIENT_SECRET',
     azure_ad_tenant_id: 'AZURE_AD_TENANT_ID',
-} as const;
+    // The active OpenID Connect slot and the staged SSO-migration slot.
+    ...Object.fromEntries(['oidc', 'oidc_next'].flatMap((slot) => OIDC_SETTING_FIELDS.map((field) => [`${slot}_${field}`, `${slot}_${field}`.toUpperCase()]))),
+};
+export type ManagedEnvironmentKey = string;
+export const MANAGED_ENV_NAMES = MANAGED_ENV_KEYS;
+// PEM values are stored on one line: JSON string escaping writes newlines as `\n`, which both
+// dotenv and decodeEnvValue() expand back.
+const isMultilineEnvKey = (envKey: string) => /_(PRIVATE_KEY|CERTIFICATE)$/.test(envKey);
 
 function decodeEnvValue(value: string): string {
     const trimmed = value.trim();
@@ -80,16 +90,17 @@ export function canEditManagedEnvironment(cwd = process.cwd()): boolean {
     return Boolean(process.env.COMPDESK_CONFIG_DIR) || process.env.NODE_ENV !== 'production' || isLocalStandaloneRuntime(cwd);
 }
 
+/** Writes managed values: a string replaces, `null` removes the variable, and empty/omitted values are kept. */
 export async function updateManagedEnvironment(
     updates: Record<string, unknown>,
     cwd = process.cwd()
 ): Promise<boolean> {
     const entries = Object.entries(updates).filter(([key, value]) =>
-        key in MANAGED_ENV_KEYS && String(value).trim() !== ''
+        key in MANAGED_ENV_KEYS && (value === null || (value !== undefined && String(value).trim() !== ''))
     );
     if (entries.length === 0) return false;
     if (!canEditManagedEnvironment(cwd)) {
-        throw new ManagedEnvironmentError('Entra settings are managed by the deployment environment. Update the container environment and restart the application.');
+        throw new ManagedEnvironmentError('Single sign-on settings are managed by the deployment environment. Update the container environment and restart the application.');
     }
 
     const [envPath] = resolveRuntimeEnvFiles(cwd);
@@ -99,11 +110,15 @@ export async function updateManagedEnvironment(
     try {
         let contents = await fs.readFile(envPath, 'utf8').catch(() => '');
         for (const [key, rawValue] of entries) {
-            const value = String(rawValue);
-            if (/[\r\n]/.test(value)) throw new ManagedEnvironmentError('Environment setting values cannot contain line breaks.');
-            const envKey = MANAGED_ENV_KEYS[key as keyof typeof MANAGED_ENV_KEYS];
-            const line = `${envKey}=${JSON.stringify(value)}`;
+            const envKey = MANAGED_ENV_KEYS[key];
             const pattern = new RegExp(`^#?\\s*${envKey}=.*$`, 'm');
+            if (rawValue === null) {
+                contents = contents.replace(new RegExp(`^#?\\s*${envKey}=.*(?:\\r?\\n|$)`, 'm'), '');
+                continue;
+            }
+            const value = isMultilineEnvKey(envKey) ? String(rawValue).replace(/\r\n?/g, '\n') : String(rawValue);
+            if (!isMultilineEnvKey(envKey) && /[\r\n]/.test(value)) throw new ManagedEnvironmentError('Environment setting values cannot contain line breaks.');
+            const line = `${envKey}=${JSON.stringify(value)}`;
             contents = pattern.test(contents) ? contents.replace(pattern, () => line) : `${contents.trimEnd()}\n${line}`;
         }
         await writeAtomically(envPath, `${contents.trim()}\n`);

@@ -22,7 +22,10 @@ describe('settings control wiring', () => {
         const settings = read('src', 'app', '(dashboard)', 'admin', 'settings', 'page.tsx');
         expect(settings).not.toContain('CSP Headers: Active');
         expect(settings).not.toContain('Rate Limiting: Active');
-        expect(settings).toContain('azure_ad_runtime_configured');
+        const sso = read('src', 'components', 'admin', 'sso-settings.tsx');
+        expect(sso).toContain('azure_ad_runtime_configured');
+        expect(sso).toContain('_runtime_configured');
+        expect(read('src', 'lib', 'sso-settings.ts')).toContain('_runtime_configured');
     });
 
     it('explains operating-system SMTP connection denials', () => {

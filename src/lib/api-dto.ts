@@ -86,6 +86,9 @@ export const FORBIDDEN_API_RESPONSE_KEYS = new Set([
     'key_hash',
     'smtp_password',
     'azure_ad_client_secret',
+    'oidc_client_secret',
+    'oidc_client_private_key',
+    'smtp_client_key',
     'webhook_secret',
     'encryption_key',
 ]);

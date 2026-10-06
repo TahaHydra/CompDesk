@@ -9,8 +9,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { PageHeader } from '@/components/layout/page-header';
 import { LanguagePreference } from '@/components/profile-language-preference';
 import { cn } from '@/lib/utils';
-import { isLoginMethodEnabled } from '@/lib/login-policy';
-import { MicrosoftAccountLink } from '@/components/microsoft-account-link';
+import { getEffectiveLoginPolicy, getSsoState, isRuntimeProviderConfigured, isUsableBinding, providerAccountFilter } from '@/lib/login-policy';
+import { targetProviderId, type RuntimeSsoProviderId, type SsoProviderOption } from '@/lib/sso-presets';
+import { SsoAccountLink } from '@/components/sso-account-link';
 
 export default async function ProfilePage() {
     const session = await auth();
@@ -30,8 +31,19 @@ export default async function ProfilePage() {
     if (!user) redirect('/auth/signin');
 
     const language = normalizeLanguage(user.preferredLanguage);
-    const microsoftLinkAvailable = Boolean(process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET && process.env.AZURE_AD_TENANT_ID)
-        && await isLoginMethodEnabled('login_microsoft_enabled');
+    // Linkable providers: the active one, plus a migration target that users link before cut-over.
+    const [ssoState, loginPolicy] = await Promise.all([getSsoState(), getEffectiveLoginPolicy()]);
+    const migrationProviderId = targetProviderId(ssoState);
+    const linkTargets: Array<{ provider: SsoProviderOption; providerId: RuntimeSsoProviderId; migration: boolean }> = [
+        ...(loginPolicy.ssoAvailable ? [{ provider: ssoState.provider, providerId: loginPolicy.ssoProviderId, migration: false }] : []),
+        ...(ssoState.migrationTarget && migrationProviderId && isRuntimeProviderConfigured(migrationProviderId) ? [{ provider: ssoState.migrationTarget, providerId: migrationProviderId, migration: true }] : []),
+    ];
+    const ssoLinks = await Promise.all(linkTargets.map(async (target) => {
+        const accounts = providerAccountFilter(target.providerId);
+        const rows = accounts ? await prisma.account.findMany({ where: { ...accounts, userId: user.id }, select: { provider: true, providerAccountId: true, id_token: true } }) : [];
+        const linked = rows.some((row) => isUsableBinding(target.providerId, row));
+        return { ...target, linked };
+    }));
     const t = (key: string) => translate(language, key);
     const assignedQueues = [...new Map([
         ...user.queueMemberships.map((membership) => membership.queue),
@@ -80,7 +92,7 @@ export default async function ProfilePage() {
 
                 <div className="space-y-6 md:col-span-2">
                     <LanguagePreference initialLanguage={language} />
-                    {microsoftLinkAvailable ? <Card><CardContent className="pt-6"><MicrosoftAccountLink /></CardContent></Card> : null}
+                    {ssoLinks.map((link) => <Card key={link.providerId}><CardContent className="pt-6"><SsoAccountLink {...link} /></CardContent></Card>)}
 
                     <Card className="border shadow-sm">
                         <CardHeader className="bg-muted/30 pb-4">

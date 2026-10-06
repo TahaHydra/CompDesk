@@ -27,6 +27,12 @@ Invalid JSON, invalid fields, redirects, non-HTTPS sources, and HTTP failures
 fail safely. Severity is never inferred from the version number or the minimum
 supported version. SemVer precedence handles prereleases and ignores build metadata.
 
+Release rehearsals use `updates/manifest.staging.json`, which announces the unreleased
+version. Serve it over HTTPS and point a **test** installation at it with
+`COMPDESK_UPDATE_MANIFEST_URL`; never change the production manifest before the
+release is published and verified. See the beta.4 rehearsal record in
+[docs/releases](releases/v0.9.0-beta.4.md).
+
 Operators may set `COMPDESK_UPDATE_MANIFEST_URL` to another trusted HTTPS
 manifest in the server environment (or the Compose host environment). This is
 host configuration, not an editable browser URL. Restart/recreate the app when

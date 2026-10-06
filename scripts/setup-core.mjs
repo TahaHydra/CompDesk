@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { nonSecretSetupAuthentication, normalizeSetupAuthentication } from './setup-sso.mjs';
 
 export const SETUP_VERSION = 1;
 export const SESSION_COOKIE = 'compdesk_setup_session';
@@ -138,7 +139,7 @@ export function renderEnvironment(config) {
         `AUTH_SECRET=${quoteEnvValue(config.authSecret)}`,
         `APP_SETTINGS_ENCRYPTION_KEY=${quoteEnvValue(config.settingsEncryptionKey)}`,
         `LOGIN_LOCAL_ENABLED=${config.localEnabled ? 'true' : 'false'}`,
-        `LOGIN_MICROSOFT_ENABLED=${config.microsoftEnabled ? 'true' : 'false'}`,
+        `LOGIN_SSO_ENABLED=${(config.ssoEnabled ?? config.microsoftEnabled) ? 'true' : 'false'}`,
         `TRUST_PROXY=${config.trustProxy ? 'true' : 'false'}`,
         `ATTACHMENT_STORAGE_DIR=${quoteEnvValue(config.privateAttachmentDir)}`,
         `UPLOAD_MAX_SIZE_MB=${String(config.uploadMaxSizeMb)}`,
@@ -163,13 +164,11 @@ export function renderEnvironment(config) {
             `POSTGRES_PASSWORD=${quoteEnvValue(config.dockerDatabase.password)}`
         );
     }
-    if (config.microsoftEnabled || config.clientId || config.tenantId || config.clientSecret) {
-        lines.push(
-            `AZURE_AD_TENANT_ID=${quoteEnvValue(config.tenantId)}`,
-            `AZURE_AD_CLIENT_ID=${quoteEnvValue(config.clientId)}`,
-            `AZURE_AD_CLIENT_SECRET=${quoteEnvValue(config.clientSecret)}`
-        );
-    }
+    // Provider settings from setup-sso.mjs (Entra or OpenID Connect); PEM values are \n-escaped.
+    const ssoEnvironment = config.ssoEnvironment ?? ((config.microsoftEnabled || config.clientId || config.tenantId || config.clientSecret)
+        ? { AZURE_AD_TENANT_ID: config.tenantId, AZURE_AD_CLIENT_ID: config.clientId, AZURE_AD_CLIENT_SECRET: config.clientSecret }
+        : {});
+    for (const [name, value] of Object.entries(ssoEnvironment)) lines.push(`${name}=${quoteEnvValue(value)}`);
     return `${lines.join('\n')}\n`;
 }
 
@@ -224,12 +223,9 @@ export function saveNonSecretState(target, input) {
             reverseProxy: Boolean(input.identity?.reverseProxy),
         },
         authentication: {
-            localEnabled: Boolean(input.authentication?.localEnabled),
-            microsoftEnabled: Boolean(input.authentication?.microsoftEnabled),
+            ...nonSecretSetupAuthentication(normalizeSetupAuthentication(input.authentication)),
             adminEmail: normalizeEmail(input.authentication?.adminEmail),
             adminName: input.authentication?.adminName || '',
-            tenantId: input.authentication?.tenantId || '',
-            clientId: input.authentication?.clientId || '',
         },
         storage: {
             privateAttachmentDir: input.storage?.privateAttachmentDir || 'storage/attachments',

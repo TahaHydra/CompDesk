@@ -7,6 +7,7 @@ import { auditLog } from '@/lib/audit';
 import { classifyNetworkError } from '@/lib/network-error';
 import { decryptSettingSecret, getEnvironmentSmtpPassword } from '@/lib/settings-secret';
 import { isValidSmtpFrom, validateSmtpSecurityCombination } from '@/lib/settings-validation';
+import { readPemSource } from '@/lib/tls-material';
 
 interface EmailOptions {
     to: string | string[];
@@ -23,6 +24,23 @@ export interface SmtpConfig {
     user?: string;
     pass?: string;
     from: string;
+    /** Optional PEM material: a CA bundle that replaces the system roots, and a client certificate pair. */
+    tls?: { ca?: string; cert?: string; key?: string };
+}
+
+/** A client certificate can stand in for username/password on relays that authenticate by mutual TLS. */
+export function hasSmtpAuthentication(smtp: SmtpConfig): boolean {
+    return Boolean((smtp.user && smtp.pass) || (smtp.tls?.cert && smtp.tls?.key));
+}
+
+function smtpTlsMaterial(config: Record<string, string>, env: NodeJS.ProcessEnv): SmtpConfig['tls'] {
+    const ca = config.smtp_ca_certificate || readPemSource(undefined, env.SMTP_CA_FILE);
+    // The certificate and key always come from the same source so a pair is never mixed.
+    const pair = config.smtp_client_certificate
+        ? { cert: config.smtp_client_certificate, key: config.smtp_client_key ? decryptSettingSecret(config.smtp_client_key) : undefined }
+        : { cert: readPemSource(undefined, env.SMTP_CLIENT_CERT_FILE), key: readPemSource(undefined, env.SMTP_CLIENT_KEY_FILE) };
+    const tls = { ...(ca ? { ca } : {}), ...(pair.cert && pair.key ? pair : {}) };
+    return Object.keys(tls).length ? tls : undefined;
 }
 
 function escapeHtml(value: string): string {
@@ -58,11 +76,12 @@ export async function getSmtpConfig(branding: BrandingConfig): Promise<SmtpConfi
         user: config.smtp_user || process.env.SMTP_USER,
         pass: environmentPassword || storedPassword,
         from: config.smtp_from || process.env.SMTP_FROM || '',
+        tls: smtpTlsMaterial(config, process.env),
     };
 }
 
 export function createSmtpTransport(smtp: SmtpConfig) {
-    if (!smtp.host || !smtp.user || !smtp.pass) throw new Error('SMTP is not configured. Fill in the host, user, and password.');
+    if (!smtp.host || !hasSmtpAuthentication(smtp)) throw new Error('SMTP is not configured. Fill in the host and either a user and password or a client certificate.');
     if (!Number.isInteger(smtp.port) || smtp.port < 1 || smtp.port > 65535) throw new Error('SMTP port must be between 1 and 65535.');
     validateSmtpSecurityCombination(smtp);
     return nodemailer.createTransport({
@@ -70,8 +89,9 @@ export function createSmtpTransport(smtp: SmtpConfig) {
         port: smtp.port,
         secure: smtp.secure,
         requireTLS: smtp.requireTLS,
-        auth: { user: smtp.user, pass: smtp.pass },
-        tls: { rejectUnauthorized: true },
+        auth: smtp.user && smtp.pass ? { user: smtp.user, pass: smtp.pass } : undefined,
+        // Verification always stays on; a custom CA narrows trust rather than disabling it.
+        tls: { rejectUnauthorized: true, ...smtp.tls },
         connectionTimeout: 10000,
         greetingTimeout: 10000,
         socketTimeout: 10000,
@@ -151,7 +171,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
         const branding = await getBrandingConfig();
         smtp = await getSmtpConfig(branding);
         requireValidSmtpFrom(smtp);
-        if (!smtp.user || !smtp.pass) {
+        if (!hasSmtpAuthentication(smtp)) {
             const message = 'SMTP credentials not configured, skipping email send';
             logger.warn(message, { subject: options.subject, recipientCount: recipients.length });
             await auditLog({ action: 'email.delivery_skipped', entity: 'email', metadata: { reason: message, subject: options.subject, recipientCount: recipients.length } });

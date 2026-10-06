@@ -24,30 +24,21 @@ import { useState, useEffect } from 'react';
 import { copyText } from '@/lib/browser-clipboard';
 import { parseDashboardLinks, type DashboardLink } from '@/lib/dashboard-links';
 
-type SettingsMap = Record<string, string>;
+import { loadSettings, updateSettings, type SettingsMap } from '@/lib/settings-client';
+import { SsoSettings } from '@/components/admin/sso-settings';
+import { SmtpCertificates } from '@/components/admin/smtp-certificates';
+import { useSettingsDraft } from '@/components/admin/use-settings-draft';
 
-async function loadSettings(): Promise<SettingsMap> {
-    const response = await fetch('/api/settings');
-    const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
-    if (!response.ok) throw new Error(payload.error || 'Failed to load settings');
-    return payload;
-}
-async function updateSettings(data: Record<string, string>): Promise<{ success: boolean; restartRequired?: boolean }> {
-    const response = await fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-    });
-    const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
-    if (!response.ok) throw new Error(payload.error || 'Failed to update settings');
-    return payload;
-}
+const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_password', 'smtp_from', 'smtp_secure', 'smtp_require_tls'] as const;
+const SMTP_ALLOW_EMPTY = new Set(['smtp_user', 'smtp_from']);
 
 function SmtpSettingsTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const { data: settings } = useQuery<SettingsMap>({ queryKey: ['settings'], queryFn: loadSettings, throwOnError: true });
-    const [smtp, setSmtp] = useState({ smtp_host: '', smtp_port: '587', smtp_user: '', smtp_password: '', smtp_from: '', smtp_secure: 'false', smtp_require_tls: 'true' });
+    const { draft, set, markSaved, changes } = useSettingsDraft(settings, SMTP_KEYS, SMTP_ALLOW_EMPTY);
+    const smtp = Object.fromEntries(SMTP_KEYS.map((key) => [key, draft[key] ?? ''])) as Record<(typeof SMTP_KEYS)[number], string>;
+    const setSmtp = (next: typeof smtp) => { for (const key of SMTP_KEYS) if (next[key] !== smtp[key]) set(key, next[key]); };
     const [diagnostic, setDiagnostic] = useState<{ success: boolean; correlationId: string; message?: string; error?: string; category?: string; fromAccepted?: boolean | null; relayAccepted?: boolean; acceptedRecipients?: string[]; rejectedRecipients?: string[]; response?: string | null; responseStatus?: string | null; messageId?: string | null } | null>(null);
     const smtpPasswordConfigured = settings?.smtp_password_configured === 'true';
     const migrationRequired = settings?.smtp_password_migration_required === 'true';
@@ -55,19 +46,11 @@ function SmtpSettingsTab() {
     const passwordSource = settings?.smtp_password_source ?? 'missing';
     const ignoredEnvironmentPlaceholder = settings?.smtp_environment_placeholder_ignored === 'true';
 
-    useEffect(() => { if (settings) setSmtp((current) => ({
-        smtp_host: settings.smtp_host ?? current.smtp_host,
-        smtp_port: settings.smtp_port ?? current.smtp_port,
-        smtp_user: settings.smtp_user ?? current.smtp_user,
-        smtp_password: '',
-        smtp_from: settings.smtp_from ?? current.smtp_from,
-        smtp_secure: settings.smtp_secure ?? current.smtp_secure,
-        smtp_require_tls: settings.smtp_require_tls ?? 'true',
-    })); }, [settings]);
-
+    // Sends only this card's changed fields, so unsaved edits in other cards are never overwritten.
     const save = async () => {
-        await updateSettings(smtp);
-        setSmtp((current) => ({ ...current, smtp_password: '' }));
+        const payload = changes();
+        if (Object.keys(payload).length) await updateSettings(payload);
+        markSaved(Object.keys(payload));
         await queryClient.invalidateQueries({ queryKey: ['settings'] });
     };
     const saveMutation = useMutation({ mutationFn: save, onSuccess: () => toast({ title: 'SMTP settings saved' }), onError: (error: Error) => toast({ title: 'Failed to save SMTP settings', description: error.message, variant: 'destructive' }) });
@@ -87,7 +70,7 @@ function SmtpSettingsTab() {
 
     return <div className="space-y-6"><Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Mail className="h-4 w-4" /> SMTP Configuration</CardTitle></CardHeader><CardContent className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="smtp-host">SMTP Host</Label><Input id="smtp-host" value={smtp.smtp_host} onChange={(event) => setSmtp({ ...smtp, smtp_host: event.target.value })} /></div><div className="space-y-2"><Label htmlFor="smtp-port">Port</Label><Input id="smtp-port" inputMode="numeric" value={smtp.smtp_port} onChange={(event) => setSmtp({ ...smtp, smtp_port: event.target.value })} /></div></div>
-        <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="smtp-user">Username / Email</Label><Input id="smtp-user" autoComplete="username" value={smtp.smtp_user} onChange={(event) => setSmtp({ ...smtp, smtp_user: event.target.value })} /></div><div className="space-y-2"><Label htmlFor="smtp-password">Password</Label><Input id="smtp-password" type="password" autoComplete="new-password" placeholder={smtpPasswordConfigured ? 'Configured; enter a replacement only' : 'Required'} value={smtp.smtp_password} onChange={(event) => setSmtp({ ...smtp, smtp_password: event.target.value })} /><p className="text-xs text-muted-foreground">Database passwords use an authenticated enc:v1 AES-256-GCM envelope. Effective source: {passwordSource === 'environment' ? 'environment (overrides the saved password)' : passwordSource === 'database' ? 'encrypted database setting' : 'not configured'}.</p></div></div>
+        <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="smtp-user">Username / Email</Label><Input id="smtp-user" autoComplete="username" value={smtp.smtp_user} onChange={(event) => setSmtp({ ...smtp, smtp_user: event.target.value })} /></div><div className="space-y-2"><Label htmlFor="smtp-password">Password</Label><Input id="smtp-password" type="password" autoComplete="new-password" placeholder={smtpPasswordConfigured ? 'Configured; enter a replacement only' : 'Required unless a client certificate is used'} value={smtp.smtp_password} onChange={(event) => setSmtp({ ...smtp, smtp_password: event.target.value })} /><p className="text-xs text-muted-foreground">Database passwords use an authenticated enc:v1 AES-256-GCM envelope. Effective source: {passwordSource === 'environment' ? 'environment (overrides the saved password)' : passwordSource === 'database' ? 'encrypted database setting' : 'not configured'}.</p></div></div>
         <div className="grid gap-4 sm:grid-cols-3"><div className="space-y-2"><Label htmlFor="smtp-from">From Address</Label><Input id="smtp-from" value={smtp.smtp_from} onChange={(event) => setSmtp({ ...smtp, smtp_from: event.target.value })} aria-invalid={Boolean(smtp.smtp_from && !validFrom)} /><p className="text-xs text-muted-foreground">Required before notifications or a real-send test.</p></div><div className="space-y-2"><Label htmlFor="smtp-secure">Transport security</Label><Select value={smtp.smtp_secure} onValueChange={(value) => setSmtp({ ...smtp, smtp_secure: value, smtp_require_tls: value === 'true' ? 'false' : 'true' })}><SelectTrigger id="smtp-secure"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="false">STARTTLS</SelectItem><SelectItem value="true">Implicit TLS</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label htmlFor="smtp-require-tls">Require STARTTLS</Label><Select value={smtp.smtp_require_tls} disabled={smtp.smtp_secure === 'true'} onValueChange={(value) => setSmtp({ ...smtp, smtp_require_tls: value })}><SelectTrigger id="smtp-require-tls"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="true">Required</SelectItem><SelectItem value="false">Not required</SelectItem></SelectContent></Select></div></div>
         <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">Port 587 requires STARTTLS and keeps certificate verification enabled. Port 465 requires implicit TLS. Verification checks connectivity and authentication only. A real-send test can show that the SMTP server accepted a message for relay using the configured From address; it cannot prove final mailbox delivery.</div>
         {ignoredEnvironmentPlaceholder ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">A documented placeholder in SMTP_PASS/SMTP_PASSWORD was ignored. The encrypted database password is being used when available.</div> : null}
@@ -100,6 +83,15 @@ function SmtpSettingsTab() {
         </div>
     </CardContent></Card></div>;
 }
+function MailSettingsTab() {
+    const [provider, setProvider] = useState<'smtp' | 'graph' | null>(null);
+
+    return <div className="space-y-6">
+        <GraphMailSettings onProviderChange={setProvider} />
+        {provider === 'smtp' ? <><SmtpSettingsTab /><SmtpCertificates /></> : null}
+    </div>;
+}
+
 function EmailTogglesTab() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -163,125 +155,6 @@ function EmailTogglesTab() {
                 })}
             </CardContent>
         </Card>
-    );
-}
-
-function EntraSettingsTab() {
-    const { t } = useLanguage();
-    const { toast } = useToast();
-    const queryClient = useQueryClient();
-
-    const { data: settings } = useQuery<SettingsMap>({
-        queryKey: ['settings'],
-        queryFn: loadSettings,
-        throwOnError: true,
-    });
-
-    const [entra, setEntra] = useState({
-        azure_ad_client_id: '', azure_ad_client_secret: '', azure_ad_tenant_id: '',
-    });
-    const entraSecretConfigured = settings?.azure_ad_client_secret_configured === 'true';
-    const entraRuntimeConfigured = settings?.azure_ad_runtime_configured === 'true';
-    const entraSettingsEditable = settings?.azure_ad_settings_editable !== 'false';
-    const entraSavedConfigured = Boolean(settings?.azure_ad_client_id && settings?.azure_ad_tenant_id && entraSecretConfigured);
-
-    useEffect(() => {
-        if (settings) {
-            setEntra((prev) => ({
-                azure_ad_client_id: settings.azure_ad_client_id ?? prev.azure_ad_client_id,
-                azure_ad_client_secret: settings.azure_ad_client_secret ?? prev.azure_ad_client_secret,
-                azure_ad_tenant_id: settings.azure_ad_tenant_id ?? prev.azure_ad_tenant_id,
-            }));
-        }
-    }, [settings]);
-
-    const saveMutation = useMutation({
-        mutationFn: async () => updateSettings(entra),
-        onSuccess: async (result) => {
-            await queryClient.invalidateQueries({ queryKey: ['settings'] });
-            toast({
-                title: 'Entra ID settings saved',
-                description: result.restartRequired ? 'Restart the application before Microsoft sign-in becomes available.' : 'No runtime restart is required.',
-            });
-        },
-        onError: (error: Error) => toast({ title: 'Entra ID settings could not be saved', description: error.message, variant: 'destructive' }),
-    });
-
-    const [diagnostic, setDiagnostic] = useState<{ success: boolean; correlationId: string; stage: string; message?: string; error?: string; expectedCallbackUri?: string | null } | null>(null);
-    const diagnosticMutation = useMutation({
-        mutationFn: async () => {
-            const response = await fetch('/api/settings/entra-diagnostic', { method: 'POST' });
-            const payload = await response.json().catch(() => ({ error: 'The server returned an invalid response' }));
-            setDiagnostic(payload);
-            if (!response.ok) throw new Error(payload.message || payload.error || 'Entra diagnostic failed');
-            return payload;
-        },
-        onSuccess: (result) => toast({ title: 'Entra diagnostic succeeded', description: `${result.message} Correlation ID: ${result.correlationId}` }),
-        onError: (error: Error) => toast({ title: 'Entra diagnostic failed', description: error.message, variant: 'destructive' }),
-    });
-    return (
-        <div className="space-y-4">
-            <Card className="border-0 shadow-sm">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                        <Shield className="h-4 w-4" /> Microsoft Entra ID (Azure AD)
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2">
-                        <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                        <p className="text-xs text-amber-800 dark:text-amber-200">
-                            {t('Changes to Entra ID settings require an application restart to take effect.')}
-                            {' '}{t(entraSettingsEditable ? 'Changes are saved persistently. Managed Docker installations store them in the private configuration volume; restart the CompDesk container after saving.' : 'This deployment manages Entra through environment variables. Configure the deployment and restart CompDesk; these fields are read-only.')}
-                        </p>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="entra-client-id">Client ID</Label>
-                        <Input id="entra-client-id" disabled={!entraSettingsEditable} autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_client_id}
-                            onChange={(e) => setEntra({ ...entra, azure_ad_client_id: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="entra-client-secret">Client Secret</Label>
-                        <Input
-                            id="entra-client-secret"
-                            disabled={!entraSettingsEditable}
-                            type="password"
-                            autoComplete="new-password"
-                            placeholder={entraSecretConfigured ? 'Saved secret configured. Enter a new one to replace it.' : '••••••••'}
-                            value={entra.azure_ad_client_secret}
-                            onChange={(e) => setEntra({ ...entra, azure_ad_client_secret: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="entra-tenant-id">Tenant ID</Label>
-                        <Input id="entra-tenant-id" disabled={!entraSettingsEditable} autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={entra.azure_ad_tenant_id}
-                            onChange={(e) => setEntra({ ...entra, azure_ad_tenant_id: e.target.value })} />
-                    </div>
-                    <div className="flex justify-end border-t pt-4">
-                        <Button onClick={() => saveMutation.mutate()} disabled={!entraSettingsEditable || saveMutation.isPending} className="gap-2">
-                            <Save className="h-4 w-4" /> Save Entra Settings
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm">
-                <CardHeader>
-                    <CardTitle className="text-base">Microsoft login status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                    <div className="flex items-center gap-2">
-                        {entraRuntimeConfigured ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
-                        <span>{settings?.azure_ad_restart_required === 'true' ? 'Saved; application restart required' : entraRuntimeConfigured ? 'Active in the running application' : entraSavedConfigured ? 'Saved; application restart required' : 'Incomplete configuration'}</span>
-                    </div>
-                    <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-                        <span>Client ID: {settings?.azure_ad_client_id ? 'configured' : 'missing'}</span>
-                        <span>Client secret: {entraSecretConfigured ? 'configured' : 'missing'}</span>
-                        <span>Tenant ID: {settings?.azure_ad_tenant_id ? 'configured' : 'missing'}</span>
-                    </div>                    <Button variant="outline" onClick={() => diagnosticMutation.mutate()} disabled={diagnosticMutation.isPending} className="gap-2"><Shield className="h-4 w-4" />{diagnosticMutation.isPending ? 'Testing running configuration…' : 'Diagnose Running Entra Configuration'}</Button>
-                    {diagnostic ? <div className={`rounded-lg border p-3 text-sm ${diagnostic.success ? 'border-green-300 bg-green-50 text-green-900' : 'border-destructive/30 bg-destructive/5 text-destructive'}`}><p>{diagnostic.message ?? diagnostic.error}</p><p className="mt-1 text-xs">Stage: {diagnostic.stage} · Correlation ID: {diagnostic.correlationId}</p>{diagnostic.expectedCallbackUri ? <p className="mt-1 break-all text-xs">Expected callback: {diagnostic.expectedCallbackUri}</p> : null}<p className="mt-2 text-xs">Values are never returned: only presence, format validity, and metadata checks are reported.</p></div> : null}
-                </CardContent>
-            </Card>
-        </div>
     );
 }
 
@@ -388,7 +261,7 @@ function SecuritySettingsTab() {
                     <div className="space-y-1">
                         <p className="font-medium">Allow local password login</p>
                         <p className="text-sm text-muted-foreground">
-                            When disabled, users can only sign in via Microsoft Entra ID SSO.
+                            When disabled, users can only sign in through the configured single sign-on provider.
                             Local accounts created in the admin panel will not be able to log in with their password.
                         </p>
                     </div>
@@ -402,7 +275,7 @@ function SecuritySettingsTab() {
                     <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2">
                         <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                         <p className="text-sm text-amber-800 dark:text-amber-200">
-                            Local login is currently <strong>disabled</strong>. Only Microsoft Entra ID SSO is allowed.
+                            Local login is currently <strong>disabled</strong>. Only single sign-on is allowed.
                             Make sure SSO is properly configured before disabling local login.
                         </p>
                     </div>
@@ -854,9 +727,9 @@ export default function AdminSettingsPage() {
             <Tabs defaultValue="branding">
                 <TabsList className="w-full justify-start overflow-x-auto">
                     <TabsTrigger value="branding" className="gap-1 min-w-max"><Palette className="h-3.5 w-3.5" /> Branding</TabsTrigger>
-                    <TabsTrigger value="smtp" className="gap-1 min-w-max"><Mail className="h-3.5 w-3.5" /> SMTP</TabsTrigger>
+                    <TabsTrigger value="smtp" className="gap-1 min-w-max"><Mail className="h-3.5 w-3.5" /> Email Delivery</TabsTrigger>
                     <TabsTrigger value="emails" className="gap-1 min-w-max"><Send className="h-3.5 w-3.5" /> Email Notifications</TabsTrigger>
-                    <TabsTrigger value="entra" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> Entra ID</TabsTrigger>
+                    <TabsTrigger value="sso" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> {t('Single sign-on')}</TabsTrigger>
                     <TabsTrigger value="links" className="gap-1 min-w-max"><LinkIcon className="h-3.5 w-3.5" /> Quick Links</TabsTrigger>
                     <TabsTrigger value="security" className="gap-1 min-w-max"><Lock className="h-3.5 w-3.5" /> Security</TabsTrigger>
                     <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
@@ -866,9 +739,9 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="demo" className="gap-1 min-w-max">{t('Demo data')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="branding"><BrandingSettings /></TabsContent>
-                <TabsContent value="smtp"><div className="space-y-6"><GraphMailSettings /><SmtpSettingsTab /></div></TabsContent>
+                <TabsContent value="smtp"><MailSettingsTab /></TabsContent>
                 <TabsContent value="emails"><EmailTogglesTab /></TabsContent>
-                <TabsContent value="entra"><EntraSettingsTab /></TabsContent>
+                <TabsContent value="sso"><SsoSettings /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
                 <TabsContent value="security"><SecuritySettingsTab /></TabsContent>
                 <TabsContent value="features"><FeatureFlagsTab /></TabsContent>

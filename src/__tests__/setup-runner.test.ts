@@ -8,6 +8,8 @@ describe('first-run setup primitives', () => {
             [
                 '--test',
                 path.join(process.cwd(), 'scripts', 'setup-core.test.mjs'),
+                path.join(process.cwd(), 'scripts', 'setup-sso.test.mjs'),
+                path.join(process.cwd(), 'scripts', 'setup-ui.test.mjs'),
                 path.join(process.cwd(), 'scripts', 'setup-terminal.test.mjs'),
                 path.join(process.cwd(), 'scripts', 'setup-server.test.mjs'),
                 path.join(process.cwd(), 'scripts', 'launch.test.mjs'),

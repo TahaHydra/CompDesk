@@ -546,7 +546,7 @@ export async function seedDemoDataset(prisma, options = {}) {
             demoAccountInfo: '', microsoftButtonText: 'Sign in with Microsoft',
         };
         for (const [key, value] of Object.entries({
-            branding_config: JSON.stringify(brandingConfig), login_local_enabled: 'true', login_microsoft_enabled: 'true',
+            branding_config: JSON.stringify(brandingConfig), login_local_enabled: 'true', login_sso_enabled: 'true',
         })) {
             await prisma.appSetting.upsert({ where: { key }, update: {}, create: { key, value } });
         }
