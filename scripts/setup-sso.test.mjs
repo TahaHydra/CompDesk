@@ -36,6 +36,8 @@ test('validates provider-specific fields', () => {
 test('validates private_key_jwt keys with the same policy as the application', () => {
     const base = { mode: 'both', ...OIDC, oidcClientSecret: '', oidcAuthMethod: 'private_key_jwt' };
     assert.doesNotThrow(() => validateSetupSso(normalizeSetupAuthentication({ ...base, oidcPrivateKey: pem(crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey) })));
+    // Intentional weak-key fixture: verifies CompDesk rejects RSA keys below 2048 bits.
+    // codeql[js/insufficient-key-size]
     assert.throws(() => validateSetupSso(normalizeSetupAuthentication({ ...base, oidcPrivateKey: pem(crypto.generateKeyPairSync('rsa', { modulusLength: 1024 }).privateKey) })), /2048/);
     assert.throws(() => validateSetupSso(normalizeSetupAuthentication({ ...base, oidcPrivateKey: 'not a key' })), /valid PEM/);
 });

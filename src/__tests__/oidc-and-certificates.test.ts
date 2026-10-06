@@ -62,6 +62,8 @@ describe('OIDC configuration', () => {
     });
 
     it('rejects weak, unsupported, encrypted, and mismatched client keys', () => {
+        // Intentional weak-key fixture: verifies CompDesk rejects RSA keys below 2048 bits.
+        // codeql[js/insufficient-key-size]
         const weak = crypto.generateKeyPairSync('rsa', { modulusLength: 1024 }).privateKey;
         const edwards = crypto.generateKeyPairSync('ed25519').privateKey;
         const encrypted = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase: 'pass' }).toString();

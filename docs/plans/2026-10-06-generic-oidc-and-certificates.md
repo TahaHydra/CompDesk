@@ -114,7 +114,7 @@ Phase 1 (this branch) is implemented, and these review suggestions are folded in
   optional pruning. Migration also adds a rollback-window fallback sign-in button.
 - **Active-issuer change guard and warning.**
 - **Integration and rollout testing** (Keycloak, mutual-TLS SMTP, beta.3 → beta.4 rehearsal). Results are in
-  `docs/releases/v0.9.0-beta.4.md`.
+  `docs/audits/2026-10-06-beta4-rehearsal.md`.
 
 ## Verification
 
