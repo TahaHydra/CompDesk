@@ -307,6 +307,17 @@ function pgConfiguration(database) {
     return config;
 }
 
+// This database already holds a completed installation, but this server found no installation
+// receipt or runtime configuration: the configuration directory was lost or never persisted.
+function alreadyInstalledError() {
+    return Object.assign(new Error(
+        'CompDesk is already installed in this database. Setup made no changes and cannot be run again. '
+        + 'The CompDesk configuration (installation.json and secrets/runtime.env — the /config volume in Docker) is missing: '
+        + 'restore it from a backup and restart CompDesk. If this server never stored that configuration persistently, '
+        + 'see "Setup says CompDesk is already installed" in docs/DEPLOY_DOCKER.md.'
+    ), { statusCode: 410 });
+}
+
 async function testDatabase(database) {
     const errors = validateDatabaseInput(database);
     if (Object.keys(errors).length) {
@@ -341,11 +352,18 @@ async function testDatabase(database) {
             } finally {
                 await client.query('ROLLBACK');
             }
+            // Refuse before install() writes any runtime configuration: re-running setup against an
+            // installed database would otherwise replace the secrets its encrypted settings depend on.
+            const table = await client.query("SELECT to_regclass('public.installation_records') IS NOT NULL AS present");
+            if (table.rows[0]?.present && (await client.query("SELECT 1 FROM public.installation_records WHERE id = 'primary'")).rowCount) {
+                throw alreadyInstalledError();
+            }
         } finally {
             await client.end();
         }
         return { success: true, correlationId, message: 'PostgreSQL DNS, TCP, authentication, database access, and target-schema migration permissions succeeded.', database: redactDatabaseInput(database) };
     } catch (error) {
+        if (error.statusCode === 410) throw error;
         const safe = sanitizeSetupError(error);
         console.error(JSON.stringify({ level: 'error', message: 'Setup PostgreSQL diagnostic failed', correlationId, stage: safe.stage }));
         const diagnostic = new Error(`${safe.message} Correlation ID: ${correlationId}`);
@@ -571,7 +589,7 @@ async function install(input) {
                     return { rows: [], rowCount: await tx.$executeRawUnsafe(statement, ...values) };
                 } };
                 const installed = await client.query('SELECT id FROM installation_records WHERE id = $1 FOR UPDATE', ['primary']);
-                if (installed.rowCount) throw Object.assign(new Error('CompDesk is already installed. Setup cannot be run again.'), { statusCode: 410 });
+                if (installed.rowCount) throw alreadyInstalledError();
                 const existing = await client.query('SELECT id, role FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1', [config.authentication.adminEmail]);
                 if (existing.rowCount && existing.rows[0].role !== 'SUPER_ADMIN') {
                     throw Object.assign(new Error('The administrator email already belongs to a non-Super-Admin account.'), { statusCode: 409 });

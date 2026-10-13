@@ -175,6 +175,7 @@ async function transitionToProduction() {
 
 async function runUninstalled() {
     log('No installation receipt found. Starting first-run setup.');
+    log(`If CompDesk was already installed, do not run setup again: ${configDir} has lost its configuration. Restore it from a backup and restart.`);
     Object.assign(process.env, {
         COMPDESK_ORCHESTRATOR_MANAGED: 'true',
         COMPDESK_SETUP_STATE_DIR: configDir,
