@@ -202,8 +202,9 @@ export const authConfig: NextAuthConfig = {
                     void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { reason: 'missing_email_claim', method: 'sso', provider } });
                     return false;
                 }
-                // Entra omits email_verified; generic providers that state it as false are refused.
-                if (provider !== 'microsoft-entra-id' && profile?.email_verified === false) {
+                // Entra omits email_verified; generic providers that state it as false are refused
+                // (some userinfo endpoints send it as the string "false").
+                if (provider !== 'microsoft-entra-id' && String(profile?.email_verified) === 'false') {
                     void auditLog({ action: 'auth.login_failed', entity: 'auth', metadata: { email: normalizedEmail, reason: 'email_not_verified', method: 'sso', provider } });
                     return false;
                 }

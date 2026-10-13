@@ -122,6 +122,17 @@ export function oidcAccountId(issuer: string, subject: string): string {
     return `${issuer} ${subject}`;
 }
 
+/** Reads `iss` from an ID token that Auth.js has already verified; it is not a validation step. */
+export function idTokenIssuer(idToken: unknown): string | undefined {
+    if (typeof idToken !== 'string') return undefined;
+    try {
+        const claims = JSON.parse(Buffer.from(idToken.split('.')[1] ?? '', 'base64url').toString('utf8'));
+        return typeof claims?.iss === 'string' ? claims.iss : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 /** Auth.js provider options; auth.ts attaches createProviderFetch() as the customFetch hook. */
 export function createOidcProvider(config: OidcRuntimeConfig, slot: OidcSlot = 'OIDC'): OIDCConfig<Record<string, unknown>> {
     return {
@@ -136,15 +147,21 @@ export function createOidcProvider(config: OidcRuntimeConfig, slot: OidcSlot = '
         client: { token_endpoint_auth_method: config.authMethod === 'private_key_jwt' ? 'none' : config.authMethod },
         checks: ['pkce', 'state', 'nonce'],
         authorization: { params: { scope: 'openid profile email' } },
+        // Read the profile from the userinfo endpoint (which discovery requires) after Auth.js has
+        // validated the ID token and matched the userinfo `sub` to it. Providers such as Authelia
+        // return email and name only from userinfo, never in the ID token.
+        idToken: false,
         // Email claims are not proof of local-account ownership; existing accounts link only from
         // an authenticated session.
         allowDangerousEmailAccountLinking: false,
-        profile(profile) {
+        profile(profile, tokens) {
             const email = typeof profile.email === 'string' ? profile.email : '';
             const name = [profile.name, profile.preferred_username, email].find((value) => typeof value === 'string' && value.trim());
             // Auth.js stores this id as providerAccountId. `sub` is only unique per issuer, so the
             // identity is issuer-scoped: switching IdPs can never resolve to another IdP's account.
-            return { id: oidcAccountId(String(profile.iss ?? config.issuer), String(profile.sub)), name: String(name ?? ''), email: normalizeEmail(email), image: null };
+            // Userinfo rarely carries `iss`, so take it from the validated ID token to keep existing links.
+            const issuer = profile.iss ?? idTokenIssuer(tokens?.id_token) ?? config.issuer;
+            return { id: oidcAccountId(String(issuer), String(profile.sub)), name: String(name ?? ''), email: normalizeEmail(email), image: null };
         },
     };
 }

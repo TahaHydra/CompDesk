@@ -10,7 +10,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createClientAssertion, createOidcProvider, createProviderFetch, oidcAccountId, readOidcConfig, type OidcRuntimeConfig } from '@/lib/oidc-provider';
+import { createClientAssertion, createOidcProvider, createProviderFetch, idTokenIssuer, oidcAccountId, readOidcConfig, type OidcRuntimeConfig } from '@/lib/oidc-provider';
 import { parseCertificates, parsePrivateKey, TlsMaterialError } from '@/lib/tls-material';
 import { createSmtpTransport, getSmtpConfig, hasSmtpAuthentication } from '@/lib/email';
 import { encryptSettingSecret } from '@/lib/settings-secret';
@@ -91,6 +91,27 @@ describe('OIDC configuration', () => {
         expect(profile.email).toBe('user@example.com');
         expect(provider.allowDangerousEmailAccountLinking).toBe(false);
         expect(provider.checks).toEqual(expect.arrayContaining(['pkce', 'state', 'nonce']));
+    });
+
+    it('reads the profile from userinfo and keeps the ID token issuer for the identity', () => {
+        // Authelia-style: email only from userinfo, which carries no `iss`; the configured issuer
+        // differs from the provider's canonical one by a trailing slash.
+        const config = readOidcConfig({ OIDC_ISSUER: 'https://auth.example.com/', OIDC_CLIENT_ID: 'c', OIDC_CLIENT_SECRET: 's' } as unknown as NodeJS.ProcessEnv)!;
+        const provider = createOidcProvider(config);
+        expect(provider.idToken).toBe(false);
+        const idToken = `e30.${Buffer.from(JSON.stringify({ iss: 'https://auth.example.com', sub: 'user-1' })).toString('base64url')}.sig`;
+        const profile = provider.profile!({ sub: 'user-1', email: 'User@Example.com', preferred_username: 'user' } as never, { id_token: idToken } as never) as { id: string; email: string; name: string };
+        expect(profile.id).toBe(oidcAccountId('https://auth.example.com', 'user-1'));
+        expect(profile.email).toBe('user@example.com');
+        expect(profile.name).toBe('user');
+    });
+
+    it('falls back to the configured issuer when no ID token issuer is readable', () => {
+        expect(idTokenIssuer(undefined)).toBeUndefined();
+        expect(idTokenIssuer('not-a-jwt')).toBeUndefined();
+        const config = readOidcConfig({ OIDC_ISSUER: ISSUER, OIDC_CLIENT_ID: 'c', OIDC_CLIENT_SECRET: 's' } as unknown as NodeJS.ProcessEnv)!;
+        const profile = createOidcProvider(config).profile!({ sub: 'user-1' } as never, {} as never) as { id: string };
+        expect(profile.id).toBe(oidcAccountId(ISSUER, 'user-1'));
     });
 });
 
