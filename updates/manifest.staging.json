@@ -1,8 +1,8 @@
 {
-  "latest": "0.9.0-beta.4.1",
-  "severity": "normal",
-  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.1",
-  "published_at": "2026-10-13T18:12:55Z",
-  "summary": "Fix release: OpenID Connect sign-in now works with providers that return email only from userinfo (such as Authelia), first-run setup can no longer replace the secrets of an existing installation, and Next.js is updated for two security advisories.",
+  "latest": "0.9.0-beta.4.2",
+  "severity": "critical",
+  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.2",
+  "published_at": "2026-10-23T13:30:48Z",
+  "summary": "Security update: Next.js 15.5.28 and DOMPurify 3.4.17 address advisories published on 22 October 2026, including a critical Next.js Image Optimization API issue. No feature, configuration or database changes.",
   "upgrade_notes": "Rehearsal manifest for upgrade testing. Point a test installation at it with COMPDESK_UPDATE_MANIFEST_URL; never at production. Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together before upgrading."
 }
