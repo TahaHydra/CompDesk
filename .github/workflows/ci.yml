@@ -52,7 +52,8 @@ jobs:
       - run: npm audit --omit=dev
 
   setup-e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.56 has no Chromium build for ubuntu-26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -93,7 +94,9 @@ jobs:
           if-no-files-found: ignore
 
   backup-restore:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04's postgresql-client is 16, matching the postgres:16 service;
+    # newer pg_dump output sets transaction_timeout, which PostgreSQL 16 rejects.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
