@@ -25,6 +25,7 @@ import logger from '@/lib/logger';
 import { authenticatedAttachmentUrl, privateAttachmentLocation, resolveTemporaryAttachmentPath } from '@/lib/attachment-storage';
 import { attachmentLimits, isAttachmentDownloadable } from '@/lib/attachment-security';
 import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
+import { tagAvailabilityWhere } from '@/lib/tag-scope';
 
 export interface TicketCreationActor {
     id: string;
@@ -211,8 +212,8 @@ export async function createTicketFromResolvedTemplate(options: CreateTicketOpti
 
     const uniqueTagIds = [...new Set(validated.tagIds)];
     if (uniqueTagIds.length > 0) {
-        const count = await prisma.tag.count({ where: { id: { in: uniqueTagIds } } });
-        if (count !== uniqueTagIds.length) throw new TicketFormValidationError({ tags: 'One or more selected tags are invalid' });
+        const count = await prisma.tag.count({ where: { id: { in: uniqueTagIds }, ...tagAvailabilityWhere(input.queueId, input.categoryId ?? null) } });
+        if (count !== uniqueTagIds.length) throw new TicketFormValidationError({ tags: 'One or more selected tags are not available for this department or category' });
     }
 
     const ticketId = randomUUID();

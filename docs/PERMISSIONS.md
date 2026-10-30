@@ -12,7 +12,9 @@ Authorization is enforced server-side by route guards and centralized department
 | Edit department configuration | No | No | Default form for administered departments | All department settings |
 | Withdraw own unassigned ticket | Yes | Yes, when requester | Yes, when requester | Yes |
 | Permanently remove ticket | No | No | No | Yes, with confirmation and audit |
-| Manage users, tags, settings, API clients, webhooks | No | No | No | Yes |
+| Add or remove tags on a ticket | At creation only, if the form shows Tags | Visible department tickets | Visible department tickets | All tickets |
+| Manage tags | No | No | Tags limited to administered departments | All tags |
+| Manage users, settings, API clients, webhooks | No | No | No | Yes |
 | View audit logs | No | No | No | Yes |
 
 “ADMIN” never means global access. It is a department-scoped administrator. `SUPER_ADMIN` is the only global administrative role. Group membership and direct membership are combined; no accessible department means no department ticket scope.

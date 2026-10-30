@@ -17,6 +17,7 @@ import { isAttachmentDownloadable } from '@/lib/attachment-security';
 import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipients';
 import { projectFormFileValues, projectPublicTicketTimelineEvent, projectTicketBuiltIns, projectTicketTimelineEvent, ticketAttachmentVisibleToRole, ticketBuiltInAllowed, ticketPublicTitle } from '@/lib/ticket-form/privacy';
 import { BuiltInTicketField } from '@prisma/client';
+import { tagAvailabilityWhere } from '@/lib/tag-scope';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -41,7 +42,7 @@ export async function GET(
                     include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } },
                     orderBy: { assignedAt: 'asc' },
                 },
-                tags: { include: { tag: true } },
+                tags: { include: { tag: { include: { scopes: { select: { queueId: true, categoryId: true, queue: { select: { name: true } }, category: { select: { name: true } } } } } } } },
                 watchers: { include: { user: { select: { id: true, name: true, email: true } } } },
                 timeline: {
                     include: { user: { select: { id: true, name: true, image: true } } },
@@ -143,8 +144,16 @@ export async function GET(
             expiresAfterSeconds: 90,
         };
 
+        const projectedTicket = projectTicketBuiltIns(ticket, session.user.role);
         const safeTicket = {
-            ...projectTicketBuiltIns(ticket, session.user.role),
+            ...projectedTicket,
+            // Staff see where each tag applies; requesters only see the tag itself.
+            tags: (projectedTicket.tags ?? []).map(({ tag, ...ticketTag }) => ({
+                ...ticketTag,
+                tag: session.user.role === 'USER'
+                    ? { id: tag.id, name: tag.name, color: tag.color }
+                    : { id: tag.id, name: tag.name, color: tag.color, allDepartments: tag.allDepartments, scopes: tag.scopes.map((scope) => ({ queueId: scope.queueId, categoryId: scope.categoryId, queueName: scope.queue.name, categoryName: scope.category?.name ?? null })) },
+            })),
             ...(session.user.role === 'USER' ? {
                 queue: { id: ticket.queue.id, name: ticket.queue.name, description: ticket.queue.description },
                 category: ticket.category ? { id: ticket.category.id, name: ticket.category.name, description: ticket.category.description } : null,
@@ -178,6 +187,11 @@ export async function GET(
             ...safeTicket,
             slaInfo,
             presenceInfo,
+            // Same checks the PATCH handler enforces, so the page never offers an edit the server refuses.
+            tagPermissions: {
+                visible: ticketBuiltInAllowed(ticket, BuiltInTicketField.TAGS, session.user.role),
+                editable: isAgentOrAbove(session.user.role) && ticketBuiltInAllowed(ticket, BuiltInTicketField.TAGS, session.user.role, true),
+            },
             historicalForm: snapshot ? {
                 templateId: snapshot.templateId,
                 templateName: snapshot.templateName,
@@ -276,8 +290,14 @@ export async function PATCH(
 
         const uniqueTagIds = tagIds ? [...new Set(tagIds)] : undefined;
         if (uniqueTagIds && uniqueTagIds.length > 0) {
-            const validTagCount = await prisma.tag.count({ where: { id: { in: uniqueTagIds } } });
-            if (validTagCount !== uniqueTagIds.length) return NextResponse.json({ error: 'One or more selected tags are invalid' }, { status: 400 });
+            // Tags already on the ticket stay even if its department or category no longer offers them;
+            // only newly added tags must be available where the ticket ends up.
+            const currentTagIds = new Set((await prisma.ticketTag.findMany({ where: { ticketId: id }, select: { tagId: true } })).map((row) => row.tagId));
+            const addedTagIds = uniqueTagIds.filter((tagId) => !currentTagIds.has(tagId));
+            if (addedTagIds.length > 0) {
+                const validTagCount = await prisma.tag.count({ where: { id: { in: addedTagIds }, ...tagAvailabilityWhere(targetQueueId, targetCategoryId ?? null) } });
+                if (validTagCount !== addedTagIds.length) return NextResponse.json({ error: 'One or more added tags are not available for this ticket\'s department or category' }, { status: 400 });
+            }
         }
 
         let updatedTicket;

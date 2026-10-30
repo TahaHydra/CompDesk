@@ -26,6 +26,9 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatTicketValue, getPriorityBadgeClass, getStatusBadgeClass } from '@/lib/ticket-display';
 import { TicketReminders } from '@/components/tickets/ticket-reminders';
+import { TagChip } from '@/components/tags/tag-chip';
+import { TagPicker, type TagPickerOption } from '@/components/tags/tag-picker';
+import { describeTagScope, isTagAvailable, type NamedTagScope } from '@/lib/tag-scope';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
 import { useLanguage } from '@/components/providers/language-provider';
 import { parseTicketContent } from '@/lib/ticket-content';
@@ -136,6 +139,19 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         },
         enabled: isAgent && !!ticket?.queueId,
     });
+
+    // Tags that can be added here; tags the ticket already carries stay even if they no longer fit.
+    const { data: availableTags = [] } = useQuery<Array<TagPickerOption & { allDepartments: boolean; scopes: NamedTagScope[] }>>({
+        queryKey: ['tags', 'ticket', ticket?.queueId, ticket?.categoryId ?? null],
+        queryFn: async () => {
+            const params = new URLSearchParams({ queueId: ticket.queueId, categoryId: ticket.categoryId ?? '' });
+            const res = await fetch(`/api/tags?${params}`);
+            if (!res.ok) throw new Error('Failed to load tags');
+            return res.json();
+        },
+        enabled: Boolean(ticket?.tagPermissions?.editable && ticket?.queueId),
+    });
+    const [tagDraft, setTagDraft] = useState<string[] | null>(null);
 
     const updateTicket = useMutation({
         mutationFn: async (data: Record<string, unknown>) => {
@@ -385,6 +401,23 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const removedAttachments = (ticket.attachments ?? []).filter((attachment: any) => Boolean(attachment.deletedAt));
     const isRequester = ticket.requesterId === session?.user?.id;
     const assignments = ticket.assignments ?? [];
+    type TicketTagView = { id: string; name: string; color: string; allDepartments?: boolean; scopes?: NamedTagScope[] };
+    const ticketTags: TicketTagView[] = (ticket.tags ?? []).map((entry: { tag: TicketTagView }) => entry.tag);
+    const ticketPlace = ticket.category?.name ? `${ticket.queue?.name} › ${ticket.category.name}` : ticket.queue?.name ?? '';
+    // Requesters receive tags without scopes; for them every tag simply displays.
+    const tagFits = (tag: TicketTagView) => !tag.scopes || isTagAvailable({ allDepartments: Boolean(tag.allDepartments), scopes: tag.scopes }, ticket.queueId, ticket.categoryId ?? null);
+    const tagHint = (tag: TicketTagView) => !tag.scopes ? undefined : tagFits(tag)
+        ? t('Available in: {scope}', { scope: t(describeTagScope({ allDepartments: Boolean(tag.allDepartments), scopes: tag.scopes })) })
+        : t('Not used in {place}. Kept from an earlier department or category; it can be removed but not added again here.', { place: ticketPlace });
+    const currentTagIds = ticketTags.map((tag) => tag.id);
+    const unavailableTagCount = ticketTags.filter((tag) => !tagFits(tag)).length;
+    const tagOptions: TagPickerOption[] = availableTags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color, hint: t(describeTagScope(tag)) }));
+    const commitTagDraft = (open: boolean) => {
+        if (open || !tagDraft) return;
+        const changed = tagDraft.length !== currentTagIds.length || tagDraft.some((tagId) => !currentTagIds.includes(tagId));
+        if (changed) updateTicket.mutate({ tagIds: tagDraft });
+        setTagDraft(null);
+    };
     const assignedToCurrentUser = assignments.some((assignment: any) => assignment.userId === session?.user?.id);
     const canDeleteTicket = ticket.status !== 'WITHDRAWN' && (session?.user?.role === 'SUPER_ADMIN' || (isRequester && assignments.length === 0));
     const conversationEvents = (ticket.timeline ?? []).filter((event: any) => isConversationEvent(event));
@@ -720,6 +753,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 <span className="text-muted-foreground">{t("Category")}</span>
                                 <span className="font-medium">{ticket.category?.name ?? '—'}</span>
                             </div>
+                            {ticket.tagPermissions?.visible ? (
+                                <div className="flex justify-between gap-4 text-sm">
+                                    <span className="shrink-0 text-muted-foreground">{t("Tags")}</span>
+                                    {ticketTags.length ? (
+                                        <div className="flex min-w-0 flex-wrap justify-end gap-1">
+                                            {ticketTags.map((tag) => <TagChip key={tag.id} tag={tag} size="sm" unavailable={!tagFits(tag)} hint={tagHint(tag)} />)}
+                                        </div>
+                                    ) : <span className="font-medium">—</span>}
+                                </div>
+                            ) : null}
                             <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">{t("Requester")}</span>
                                 <span className="font-semibold text-primary">{ticket.requester?.name}</span>
@@ -848,6 +891,25 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         </SelectContent>
                                     </Select>
                                 </div>
+
+                                {/* Tags: applied after triage; only tags that fit the current department and category can be added */}
+                                {ticket.tagPermissions?.editable ? (
+                                    <div className="space-y-2">
+                                        <label htmlFor="ticket-tags" className="text-xs font-medium text-muted-foreground">{t("Tags")}</label>
+                                        {ticketTags.length ? (
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {ticketTags.map((tag) => (
+                                                    <TagChip key={tag.id} tag={tag} unavailable={!tagFits(tag)} hint={tagHint(tag)}
+                                                        removeLabel={t('Remove tag {name}', { name: tag.name })}
+                                                        onRemove={updateTicket.isPending ? undefined : () => updateTicket.mutate({ tagIds: currentTagIds.filter((tagId) => tagId !== tag.id) })} />
+                                                ))}
+                                            </div>
+                                        ) : null}
+                                        <TagPicker id="ticket-tags" options={tagOptions} selected={tagDraft ?? currentTagIds} onChange={setTagDraft} onOpenChange={commitTagDraft}
+                                            label={t(ticketTags.length ? 'Edit tags' : 'Add tags')} emptyText={t('No tags are available for this department or category')} disabled={updateTicket.isPending} />
+                                        {unavailableTagCount > 0 ? <p className="text-[11px] text-muted-foreground">{t('Dashed tags do not apply to this department or category any more. They stay until you remove them.')}</p> : null}
+                                    </div>
+                                ) : null}
 
                                 {/* Escalate button */}
                                 {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && ticket.status !== 'WITHDRAWN' && (

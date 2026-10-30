@@ -42,7 +42,7 @@ describe('application route and access contracts', () => {
     });
 
     it('reserves global administration pages and APIs for super administrators', () => {
-        for (const segment of ['settings', 'users', 'logs', 'tags']) {
+        for (const segment of ['settings', 'users', 'logs']) {
             const layout = readFileSync(path.join(appRoot, '(dashboard)', 'admin', segment, 'layout.tsx'), 'utf8');
             expect(layout).toContain("role !== 'SUPER_ADMIN'");
         }
@@ -56,13 +56,21 @@ describe('application route and access contracts', () => {
             'api-clients/route.ts',
             'audit-logs/route.ts',
             'groups/route.ts',
-            'tags/route.ts',
             'users/route.ts',
         ];
         for (const route of globalRoutes) {
             const source = readFileSync(path.join(appRoot, 'api', ...route.split('/')), 'utf8');
             expect(source).toContain("role !== 'SUPER_ADMIN'");
         }
+    });
+
+    it('limits department administrators to tags inside the departments they administer', () => {
+        // Tags are no longer Super Admin-only: the admin layout admits both administrator roles, and the
+        // tags API decides per tag. Behaviour is covered in tag-scopes.test.ts.
+        const tags = readFileSync(path.join(appRoot, 'api', 'tags', 'route.ts'), 'utf8');
+        expect(tags).toContain('isAdminRole(session.user.role)');
+        expect(tags).toContain('getAdministeredQueueIds');
+        expect(tags).toContain("role === 'ADMIN' && !tag.allDepartments && tag.scopes.length > 0 && tag.scopes.every((scope) => administered.has(scope.queueId))");
     });
     it('keeps every non-public API route behind session or API-client authentication', () => {
         for (const file of apiFiles) {

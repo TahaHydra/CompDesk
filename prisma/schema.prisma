@@ -232,6 +232,7 @@ model Queue {
 
   tickets         Ticket[]
   categories      Category[]
+  tagScopes       TagScope[]
   groups          QueueGroup[]
   members         QueueMember[]
   slaPolices      SlaPolicy[]
@@ -281,9 +282,10 @@ model Category {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  queue    Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
-  template TicketFormTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  tickets  Ticket[]
+  queue     Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
+  template  TicketFormTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  tickets   Ticket[]
+  tagScopes TagScope[]
 
   @@unique([queueId, name])
   @@index([queueId, isActive])
@@ -292,13 +294,35 @@ model Category {
 }
 
 model Tag {
-  id        String      @id @default(uuid())
-  name      String      @unique
-  color     String      @default("#6366f1")
-  createdAt DateTime    @default(now()) @map("created_at")
-  tickets   TicketTag[]
+  id             String      @id @default(uuid())
+  name           String      @unique
+  color          String      @default("#6366f1")
+  /// Available in every department. When false the tag is limited to its scopes; a limited tag whose
+  /// scopes were all removed is available nowhere, never everywhere.
+  allDepartments Boolean     @default(true) @map("all_departments")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  tickets        TicketTag[]
+  scopes         TagScope[]
 
   @@map("tags")
+}
+
+/// Where a limited tag can be newly applied: a department, or one of its categories.
+model TagScope {
+  id         String  @id @default(uuid())
+  tagId      String  @map("tag_id")
+  queueId    String  @map("queue_id")
+  /// Null covers every category of the department.
+  categoryId String? @map("category_id")
+
+  tag      Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  queue    Queue     @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, queueId, categoryId])
+  @@index([queueId])
+  @@index([categoryId])
+  @@map("tag_scopes")
 }
 
 model TicketTag {

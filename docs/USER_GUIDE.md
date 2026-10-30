@@ -52,9 +52,24 @@ Categories offered during routing always belong to the selected department. Movi
 
 A five-minute lock warning helps prevent two agents editing the same ticket simultaneously.
 
+### Tags
+
+A category says what kind of request a ticket is; tags record what it turned out to be — a root cause (`vpn`), an affected system, a follow-up — so tickets can be found and reported on across categories. A ticket can carry several tags.
+
+- **Where tags appear.** Tags show under the ticket title in the ticket list and in the ticket's **Details**. Hover a tag (or focus it with the keyboard) to see where it is available.
+- **Adding and removing.** Agents and administrators change tags in the ticket's **Actions** panel: **Add tags** opens a searchable list of the tags that fit the ticket's department and category; changes are saved when the list closes. Requesters can pick tags on the new-ticket form when its template shows the Tags field, but cannot change them afterwards.
+- **Moving a ticket.** Tags stay when a ticket moves to another department or category. A tag that does not apply there is shown dashed and struck through; it can be removed but not added again in that department. Moving the ticket back makes it apply again.
+- **Filtering.** The ticket list's Tags filter is searchable and, like Category, narrows to the tags that fit the selected department and category. It matches tickets with any selected tag.
+
 ## Administrators
 
-Department Admins have server-authorized access to their assigned Departments and Categories, the shared Ticket Templates library, and Help Content. Super Admins additionally manage global Tags, Users, Logs, Branding, integrations, and Settings. Ticket, inbox, dashboard, and assignee data for a Department Admin is limited to departments they administer or where they are assigned as an agent.
+Department Admins have server-authorized access to their assigned Departments and Categories, the shared Ticket Templates library, Help Content, and tags limited to the departments they administer. Super Admins additionally manage tags for all departments, Users, Logs, Branding, integrations, and Settings.
+
+### Tags: Admin → Tags
+
+Each tag has a name (unique regardless of capitalisation), a color, and where it is available: **All departments**, or **Selected departments**, each covering all of its categories or only chosen ones. One tag can be shared by several departments, so a ticket moving between them keeps the same tag. Narrowing where a tag is available never removes it from tickets that already have it; deleting a tag removes it from every ticket, and the confirmation says how many.
+
+Department Admins can create and change tags whose availability is entirely within departments they administer. Tags for all departments, or tags also used by another department, are read-only for them and managed by a Super Admin. If a department's category is deleted, tags limited to it become available nowhere until their availability is edited; they never become available everywhere. Ticket, inbox, dashboard, and assignee data for a Department Admin is limited to departments they administer or where they are assigned as an agent.
 
 ### Branding: Super Admin → Settings → Branding
 

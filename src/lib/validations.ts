@@ -78,16 +78,22 @@ export const updateCategorySchema = z.object({
     isActive: z.boolean().optional(),
 }).refine((value) => Object.keys(value).some((key) => key !== 'id'), 'At least one category field is required');
 
+const tagScopeSchema = z.object({ queueId: z.string().uuid(), categoryId: z.string().uuid().nullable().optional() });
+
 export const createTagSchema = z.object({
-    name: z.string().min(1).max(50),
+    name: z.string().trim().min(1).max(50),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#6366f1'),
+    allDepartments: z.boolean().default(true),
+    scopes: z.array(tagScopeSchema).max(200).default([]),
 });
 
 export const updateTagSchema = z.object({
     id: z.string().uuid(),
-    name: z.string().min(1).max(50).optional(),
+    name: z.string().trim().min(1).max(50).optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-}).refine((data) => data.name !== undefined || data.color !== undefined, {
+    allDepartments: z.boolean().optional(),
+    scopes: z.array(tagScopeSchema).max(200).optional(),
+}).refine((data) => data.name !== undefined || data.color !== undefined || data.allDepartments !== undefined || data.scopes !== undefined, {
     message: 'At least one field is required',
 });
 

@@ -79,7 +79,7 @@ const adminItems: NavigationItem[] = [
     { href: '/admin/departments', label: 'Departments', icon: FolderKanban, roles: ['ADMIN', 'SUPER_ADMIN'] },
     { href: '/admin/categories', label: 'Categories', icon: Tags, roles: ['ADMIN', 'SUPER_ADMIN'] },
     { href: '/admin/templates', label: 'Ticket Templates', icon: FileText, roles: ['ADMIN', 'SUPER_ADMIN'] },
-    { href: '/admin/tags', label: 'Tags', icon: Tag, roles: ['SUPER_ADMIN'] },
+    { href: '/admin/tags', label: 'Tags', icon: Tag, roles: ['ADMIN', 'SUPER_ADMIN'] },
     { href: '/admin/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN'] },
     { href: '/admin/help', label: 'Help Content', icon: BookOpen, roles: ['ADMIN', 'SUPER_ADMIN'] },
     { href: '/admin/logs', label: 'Logs', icon: FileText, roles: ['SUPER_ADMIN'] },
