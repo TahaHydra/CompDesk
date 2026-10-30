@@ -7,7 +7,7 @@ import { encryptSettingSecret } from '@/lib/settings-secret';
 import { consumeDatabaseRateLimit } from '@/lib/database-rate-limit';
 import { getMailSettings, graphMailConfig, mailProvider, sendGraphMail } from '@/lib/graph-mail';
 
-const input = z.object({ provider: z.enum(['smtp', 'graph']), tenantId: z.string().uuid().or(z.literal('')), clientId: z.string().uuid().or(z.literal('')), sender: z.string().email().or(z.literal('')), secret: z.string().max(4096).optional() }).strict();
+const input = z.object({ provider: z.enum(['smtp', 'graph']), tenantId: z.guid().or(z.literal('')), clientId: z.guid().or(z.literal('')), sender: z.string().email().or(z.literal('')), secret: z.string().max(4096).optional() }).strict();
 export async function GET() {
     const session = await auth();
     if (session?.user?.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Super Admin privileges required' }, { status: 403 });

@@ -10,7 +10,7 @@ import logger from '@/lib/logger';
 
 const actionSchema = z.discriminatedUnion('action', [
     z.object({ action: z.literal('test') }).strict(),
-    z.object({ action: z.literal('retry'), deliveryId: z.string().uuid() }).strict(),
+    z.object({ action: z.literal('retry'), deliveryId: z.guid() }).strict(),
 ]);
 
 export async function GET(

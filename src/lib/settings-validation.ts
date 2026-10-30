@@ -41,7 +41,7 @@ const oidcIssuerSchema = z.string().trim().max(512).refine((value) => {
 
 export function normalizeSettingValue(key: string, rawValue: unknown): string {
     const value = String(rawValue);
-    let parsed: z.SafeParseReturnType<unknown, unknown>;
+    let parsed: z.ZodSafeParseResult<unknown>;
 
     if (booleanKeys.has(key)) {
         parsed = z.enum(['true', 'false']).safeParse(value);

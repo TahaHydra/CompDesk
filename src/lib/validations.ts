@@ -10,17 +10,17 @@ const uploadedFileSchema = z.object({
 });
 
 export const createTicketSchema = z.object({
-    idempotencyKey: z.string().uuid().optional(),
-    queueId: z.string().uuid(),
-    categoryId: z.string().uuid().optional(),
-    values: z.record(z.unknown()).optional(),
+    idempotencyKey: z.guid().optional(),
+    queueId: z.guid(),
+    categoryId: z.guid().optional(),
+    values: z.record(z.string(), z.unknown()).optional(),
     // Compatibility fields for existing API clients. The server maps them into the resolved template.
     title: z.string().max(200).optional(),
     description: z.string().max(10000).optional(),
     priority: z.nativeEnum(Priority).optional(),
     severity: z.nativeEnum(Severity).optional(),
-    tagIds: z.array(z.string().uuid()).max(100).optional(),
-    formData: z.record(z.unknown()).optional(),
+    tagIds: z.array(z.guid()).max(100).optional(),
+    formData: z.record(z.string(), z.unknown()).optional(),
     attachments: z.array(uploadedFileSchema).max(5).optional(),
 }).strict();
 
@@ -31,9 +31,9 @@ export const updateTicketSchema = z.object({
     status: z.nativeEnum(TicketStatus).optional(),
     priority: z.nativeEnum(Priority).optional(),
     severity: z.nativeEnum(Severity).nullable().optional(),
-    categoryId: z.string().uuid().nullable().optional(),
-    queueId: z.string().uuid().optional(),
-    tagIds: z.array(z.string().uuid()).max(100).optional(),
+    categoryId: z.guid().nullable().optional(),
+    queueId: z.guid().optional(),
+    tagIds: z.array(z.guid()).max(100).optional(),
 }).strict().refine(
     (value) => Object.keys(value).some((key) => key !== 'expectedVersion'),
     { message: 'At least one ticket field is required' }
@@ -44,41 +44,49 @@ export const createCommentSchema = z.object({
     isInternal: z.boolean().default(false),
 });
 
-export const createQueueSchema = z.object({
+const queueFieldsSchema = z.object({
     name: z.string().trim().min(1).max(100),
     description: z.string().trim().max(500).optional(),
+    isPublic: z.boolean(),
+    isActive: z.boolean(),
+    autoAssign: z.boolean(),
+    defaultTemplateId: z.guid().nullable().optional(),
+});
+
+export const createQueueSchema = queueFieldsSchema.extend({
     isPublic: z.boolean().default(false),
     isActive: z.boolean().default(true),
     autoAssign: z.boolean().default(false),
-    defaultTemplateId: z.string().uuid().nullable().optional(),
 });
 
-export const updateQueueSchema = createQueueSchema.partial().extend({
-    id: z.string().uuid(),
-    administratorIds: z.array(z.string().uuid()).max(100).optional(),
+// Built from the fields without defaults: Zod 4 keeps defaults through .partial(), which would reset
+// every omitted flag on update.
+export const updateQueueSchema = queueFieldsSchema.partial().extend({
+    id: z.guid(),
+    administratorIds: z.array(z.guid()).max(100).optional(),
 }).refine(
     (value) => Object.keys(value).some((key) => key !== 'id'),
     'At least one department field is required'
 );
 
 export const createCategorySchema = z.object({
-    queueId: z.string().uuid(),
+    queueId: z.guid(),
     name: z.string().trim().min(1).max(100),
     description: z.string().trim().max(500).optional(),
-    templateId: z.string().uuid().nullable().optional(),
+    templateId: z.guid().nullable().optional(),
     isActive: z.boolean().default(true),
 });
 
 export const updateCategorySchema = z.object({
-    id: z.string().uuid(),
-    queueId: z.string().uuid().optional(),
+    id: z.guid(),
+    queueId: z.guid().optional(),
     name: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().max(500).nullable().optional(),
-    templateId: z.string().uuid().nullable().optional(),
+    templateId: z.guid().nullable().optional(),
     isActive: z.boolean().optional(),
 }).refine((value) => Object.keys(value).some((key) => key !== 'id'), 'At least one category field is required');
 
-const tagScopeSchema = z.object({ queueId: z.string().uuid(), categoryId: z.string().uuid().nullable().optional() });
+const tagScopeSchema = z.object({ queueId: z.guid(), categoryId: z.guid().nullable().optional() });
 
 export const createTagSchema = z.object({
     name: z.string().trim().min(1).max(50),
@@ -88,7 +96,7 @@ export const createTagSchema = z.object({
 });
 
 export const updateTagSchema = z.object({
-    id: z.string().uuid(),
+    id: z.guid(),
     name: z.string().trim().min(1).max(50).optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     allDepartments: z.boolean().optional(),
@@ -98,7 +106,7 @@ export const updateTagSchema = z.object({
 });
 
 export const slaPolicySchema = z.object({
-    queueId: z.string().uuid(),
+    queueId: z.guid(),
     priority: z.nativeEnum(Priority),
     firstResponseMinutes: z.number().int().positive(),
     resolutionMinutes: z.number().int().positive(),

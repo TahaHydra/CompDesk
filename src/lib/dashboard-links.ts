@@ -16,8 +16,8 @@ export const externalDashboardLinkSchema = z.object({
 export const ticketFormDashboardLinkSchema = z.object({
     type: z.literal('ticket_form'),
     title: z.string().trim().min(1).max(80),
-    queueId: z.string().uuid(),
-    categoryId: z.string().uuid().optional(),
+    queueId: z.guid(),
+    categoryId: z.guid().optional(),
     iconUrl: iconSchema,
 }).strict();
 

@@ -3,6 +3,7 @@ import {
     createQueueSchema,
     createTagSchema,
     createTicketSchema,
+    updateQueueSchema,
     updateTagSchema,
     updateTicketSchema,
 } from '@/lib/validations';
@@ -66,6 +67,20 @@ describe('Department validation', () => {
 
     test('rejects an empty name', () => {
         expect(createQueueSchema.safeParse({ name: '' }).success).toBe(false);
+    });
+
+    test('applies creation defaults only when creating', () => {
+        expect(createQueueSchema.parse({ name: 'IT Support' })).toMatchObject({ isPublic: false, isActive: true, autoAssign: false });
+        // An update that omits the flags must leave them untouched rather than reset them to defaults.
+        expect(updateQueueSchema.parse({ id: queueId, defaultTemplateId: queueId })).toEqual({ id: queueId, defaultTemplateId: queueId });
+    });
+
+    test('accepts the fixed identifiers of built-in records', () => {
+        // System templates and fields use readable, non-RFC 4122 identifiers.
+        for (const id of ['00000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0001-000000000004']) {
+            expect(updateQueueSchema.safeParse({ id: queueId, defaultTemplateId: id }).success).toBe(true);
+        }
+        expect(updateQueueSchema.safeParse({ id: queueId, defaultTemplateId: 'not-an-id' }).success).toBe(false);
     });
 });
 

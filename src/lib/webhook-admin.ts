@@ -21,7 +21,7 @@ export const createWebhookSchema = z.object({
 }).strict();
 
 export const updateWebhookSchema = z.object({
-    id: z.string().uuid(),
+    id: z.guid(),
     name: z.string().trim().min(1).max(100).optional(),
     url: z.string().trim().url().max(2048).optional(),
     events: events.optional(),

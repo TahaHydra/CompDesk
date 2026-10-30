@@ -8,8 +8,8 @@ import logger from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 
 const querySchema = z.object({
-    queueId: z.string().uuid(),
-    categoryId: z.string().uuid().optional(),
+    queueId: z.guid(),
+    categoryId: z.guid().optional(),
     previewRole: z.nativeEnum(Role).optional(),
 });
 

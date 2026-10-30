@@ -29,7 +29,7 @@ export const conditionalRulesSchema = z.object({
 }).refine((rules) => Boolean(rules.fieldKey || rules.dependsOn), 'A controlling field is required');
 
 export const templateFieldInputSchema = z.object({
-    id: z.string().uuid().optional(),
+    id: z.guid().optional(),
     fieldKey: fieldKeySchema,
     label: z.string().trim().min(1).max(100),
     type: z.nativeEnum(FormFieldType),
@@ -86,7 +86,7 @@ export const templateFieldsSchema = z.array(templateFieldInputSchema).min(1).max
 export const createTemplateSchema = z.object({
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(500).nullable().optional(),
-    sourceTemplateId: z.string().uuid().optional(),
+    sourceTemplateId: z.guid().optional(),
 });
 
 export const updateTemplateSchema = z.object({
