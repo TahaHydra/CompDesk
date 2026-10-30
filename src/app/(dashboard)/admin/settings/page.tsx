@@ -122,6 +122,8 @@ function EmailTogglesTab() {
         const current = settings?.[key] === 'true';
         saveMutation.mutate({ [key]: String(!current) });
     };
+    // Same readiness the server enforces for the active provider; turning a notification off is always allowed.
+    const deliveryReady = settings?.email_delivery_ready === 'true';
 
     return (
         <Card className="border-0 shadow-sm">
@@ -131,6 +133,12 @@ function EmailTogglesTab() {
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+                {settings && !deliveryReady && settings.email_delivery_issue ? (
+                    <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{settings.email_delivery_issue}</span>
+                    </div>
+                ) : null}
                 {toggles.map((t) => {
                     const enabled = settings?.[t.key] === 'true';
                     return (
@@ -144,7 +152,7 @@ function EmailTogglesTab() {
                                 size="sm"
                                 onClick={() => handleToggle(t.key)}
                                 aria-pressed={enabled}
-                                disabled={saveMutation.isPending || (!enabled && !settings?.smtp_from)}
+                                disabled={saveMutation.isPending || (!enabled && !deliveryReady)}
                                 className="gap-1.5 min-w-[80px]"
                             >
                                 {enabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}

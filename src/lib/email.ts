@@ -1,5 +1,6 @@
 import { getMailSettings, mailProvider, graphMailConfig, sendGraphMail } from '@/lib/graph-mail';
 import nodemailer from 'nodemailer';
+import { ZodError } from 'zod';
 import logger from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { getBrandingConfig, type BrandingConfig } from '@/lib/branding';
@@ -100,6 +101,44 @@ export function createSmtpTransport(smtp: SmtpConfig) {
 
 export function requireValidSmtpFrom(smtp: SmtpConfig): void {
     if (!isValidSmtpFrom(smtp.from)) throw new Error('A valid SMTP From address is required before sending email.');
+}
+
+export interface EmailDeliveryStatus {
+    provider: 'smtp' | 'graph';
+    ready: boolean;
+    /** Why notifications cannot be enabled yet; never contains credentials. */
+    issue?: string;
+}
+
+/**
+ * Whether the active provider has what sendEmail needs. SMTP needs a valid From address and
+ * authentication; Microsoft 365 / Graph needs its complete configuration, including the sender mailbox.
+ * `smtpFrom` lets a settings request that also submits a From address be checked against it.
+ */
+export async function getEmailDeliveryStatus(options: { smtpFrom?: string } = {}): Promise<EmailDeliveryStatus> {
+    const mailSettings = await getMailSettings();
+    const provider = mailProvider(mailSettings);
+    if (provider === 'graph') {
+        try {
+            graphMailConfig(mailSettings);
+            return { provider, ready: true };
+        } catch (error) {
+            if (!(error instanceof ZodError)) return { provider, ready: false, issue: 'The saved Microsoft 365 client secret cannot be read. Check APP_SETTINGS_ENCRYPTION_KEY, then save the mail settings again.' };
+            const senderInvalid = error.issues.some((issue) => issue.path[0] === 'sender');
+            return { provider, ready: false, issue: senderInvalid
+                ? 'Configure a valid Microsoft 365 sender mailbox before enabling email notifications.'
+                : 'Complete the Microsoft 365 mail settings (tenant ID, application client ID and client secret) before enabling email notifications.' };
+        }
+    }
+    let smtp: SmtpConfig;
+    try {
+        smtp = await getSmtpConfig(await getBrandingConfig());
+    } catch {
+        return { provider, ready: false, issue: 'The saved SMTP password or client key cannot be read. Check APP_SETTINGS_ENCRYPTION_KEY, then save the SMTP settings again.' };
+    }
+    if (!isValidSmtpFrom(options.smtpFrom ?? smtp.from)) return { provider, ready: false, issue: 'Configure a valid SMTP From address before enabling email notifications.' };
+    if (!hasSmtpAuthentication(smtp)) return { provider, ready: false, issue: 'Configure SMTP authentication (a username and password, or a client certificate) before enabling email notifications.' };
+    return { provider, ready: true };
 }
 
 export function formatSmtpError(error: unknown, smtp?: { host: string; port: number }): string {

@@ -123,8 +123,8 @@ Canned responses remain reusable comment text for agents. They do not define tic
 
 ### Other settings
 
-- **SMTP**: outgoing server credentials and test mail.
-- **Email Notifications**: per-event delivery controls.
+- **SMTP**: the email delivery provider (SMTP or Microsoft 365 / Graph), its credentials and test mail.
+- **Email Notifications**: per-event delivery controls. They can be turned on once the selected provider is configured: SMTP needs a valid From address and authentication; Microsoft 365 / Graph needs its tenant ID, application client ID, sender mailbox and client secret. If something is missing, the tab says what. Turning a notification off is always possible.
 - **Entra ID**: Microsoft OIDC credentials; restart after environment changes.
 - **Quick Links**: up to 16 validated HTTP/HTTPS dashboard links with optional PNG, JPEG, WebP, GIF, or ICO images. Source files may be up to 5 MB and must have sensible icon proportions. CompDesk preserves the aspect ratio, resizes inside 128×128 without stretching or enlarging small images, stores a compact WebP, and renders it at 32 px on the dashboard.
 - **Security**: local login control (also reflected in Branding).
