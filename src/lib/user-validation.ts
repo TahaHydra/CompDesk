@@ -20,12 +20,12 @@ export const createUserSchema = z.object({
 }).strict();
 
 export const updateUserSchema = z.object({
-    userId: z.string().uuid(),
+    userId: z.guid(),
     role: z.nativeEnum(Role).optional(),
     name: userNameSchema.optional(),
     email: userEmailSchema.optional(),
     isActive: z.boolean().optional(),
-    queueIds: z.array(z.string().uuid()).max(100).optional(),
+    queueIds: z.array(z.guid()).max(100).optional(),
     resetPassword: z.boolean().optional(),
     password: strongPasswordSchema.optional(),
 }).strict().refine(
@@ -40,5 +40,5 @@ export const updateUserSchema = z.object({
 );
 
 export const deactivateUserSchema = z.object({
-    id: z.string().uuid(),
+    id: z.guid(),
 }).strict();

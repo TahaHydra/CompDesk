@@ -19,6 +19,7 @@ import { createTicketFromResolvedTemplate } from '@/lib/tickets/create-ticket';
 import { TemplateResolutionError } from '@/lib/ticket-form/service';
 import { TicketFormValidationError } from '@/lib/ticket-form/validation';
 import logger from '@/lib/logger';
+import { isTagAvailable } from '@/lib/tag-scope';
 
 const VALID_STATUSES = new Set(Object.values(TicketStatus));
 const VALID_PRIORITIES = new Set(Object.values(Priority));
@@ -119,7 +120,7 @@ export async function GET(req: NextRequest) {
                         select: { user: { select: { id: true, name: true, email: true, role: true } } },
                         orderBy: { assignedAt: 'asc' },
                     },
-                    tags: { include: { tag: true } },
+                    tags: { include: { tag: { include: { scopes: { select: { queueId: true, categoryId: true } } } } } },
                     _count: { select: { timeline: true } },
                 },
                 orderBy: { createdAt: 'desc' },
@@ -140,7 +141,10 @@ export async function GET(req: NextRequest) {
         const now = Date.now();
         const enrichedTickets = tickets.map((ticket) => {
             const slaBreached = resolutionSlaBreached(ticket, slaMap.get(`${ticket.queueId}:${ticket.priority}`), now);
-            return { ...projectTicketFormForRole(ticket, role), assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
+            const projected = projectTicketFormForRole(ticket, role);
+            // List chips need the tag and, for staff, whether it still fits the ticket's department and category.
+            const tags = (projected.tags ?? []).map(({ tag }) => ({ id: tag.id, name: tag.name, color: tag.color, ...(role === 'USER' ? {} : { available: isTagAvailable(tag, ticket.queueId, ticket.categoryId) }) }));
+            return { ...projected, tags, assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
         });
 
         return NextResponse.json(assertApiResponseSafe({

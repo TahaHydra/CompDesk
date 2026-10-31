@@ -106,10 +106,12 @@ export default function NewTicketPage() {
         }
         setCategoryId(category.id);
     }, [categoriesQuery.data, queueId, requestedCategoryId]);
-    const tagsQuery = useQuery<TagOption[]>({
-        queryKey: ['tags'], queryFn: async () => { const response = await fetch('/api/tags'); return response.ok ? response.json() : []; },
-    });
     const routeComplete = Boolean(queueId && categoriesQuery.data && (categoriesQuery.data.length === 0 || categoryId));
+    // Only tags that fit the chosen department and category are offered (the server enforces the same rule).
+    const tagsQuery = useQuery<TagOption[]>({
+        queryKey: ['tags', 'new-ticket', queueId, categoryId], enabled: routeComplete,
+        queryFn: async () => { const response = await fetch(`/api/tags?${new URLSearchParams({ queueId, categoryId })}`); return response.ok ? response.json() : []; },
+    });
     const templateQuery = useQuery<ResolvedResponse>({
         queryKey: ['ticket-form-resolution', queueId, categoryId], enabled: routeComplete,
         queryFn: async () => {
@@ -129,6 +131,18 @@ export default function NewTicketPage() {
         setErrors({});
         previousFields.current = fields;
     }, [templateQuery.data?.template.id, templateQuery.data?.template.version, templateQuery.data?.fields]);
+
+    // Changing department or category drops selected tags that no longer fit, instead of failing on submit.
+    useEffect(() => {
+        const tagField = templateQuery.data?.fields.find((field) => field.builtIn === 'TAGS');
+        if (!tagField || !tagsQuery.data) return;
+        const available = new Set(tagsQuery.data.map((tag) => tag.id));
+        setValues((current) => {
+            const selected = current[tagField.fieldKey];
+            if (!Array.isArray(selected) || selected.every((tagId) => available.has(tagId))) return current;
+            return { ...current, [tagField.fieldKey]: selected.filter((tagId) => available.has(tagId)) };
+        });
+    }, [templateQuery.data?.fields, tagsQuery.data]);
 
     const visibleRequiredErrors = useMemo(() => {
         const next: Record<string, string> = {};

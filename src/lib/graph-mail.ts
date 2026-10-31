@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { decryptSettingSecret } from '@/lib/settings-secret';
 
-export const graphMailSchema = z.object({ tenantId: z.string().uuid(), clientId: z.string().uuid(), sender: z.string().email().max(320), secret: z.string().min(1).max(4096) });
+export const graphMailSchema = z.object({ tenantId: z.guid(), clientId: z.guid(), sender: z.string().email().max(320), secret: z.string().min(1).max(4096) });
 export type GraphMailConfig = z.infer<typeof graphMailSchema>;
 type Mail = { to: string; subject: string; html: string; text?: string };
 let cached: { key: string; expiresAt: number; token: string } | undefined;

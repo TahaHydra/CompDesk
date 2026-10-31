@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { addAssignee, AssignmentServiceError, listAssignments, removeAssignee } from '@/lib/tickets/assignment-service';
 
-const addSchema = z.object({ userId: z.string().uuid(), expectedVersion: z.number().int().positive() }).strict();
+const addSchema = z.object({ userId: z.guid(), expectedVersion: z.number().int().positive() }).strict();
 
 function assignmentError(error: unknown) {
     if (error instanceof AssignmentServiceError) {
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const parsed = z.object({ userId: z.string().uuid(), expectedVersion: z.coerce.number().int().positive() }).safeParse({
+    const parsed = z.object({ userId: z.guid(), expectedVersion: z.coerce.number().int().positive() }).safeParse({
         userId: request.nextUrl.searchParams.get('userId'),
         expectedVersion: request.nextUrl.searchParams.get('expectedVersion'),
     });

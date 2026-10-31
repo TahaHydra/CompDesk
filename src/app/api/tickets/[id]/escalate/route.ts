@@ -13,7 +13,7 @@ import { canAccessQueue, canAccessTicket, isAgentRole } from '@/lib/permissions'
 import { restartedSlaDueAt } from '@/lib/tickets/lifecycle';
 
 const escalationSchema = z.object({
-    escalateToId: z.string().uuid().nullable().optional(),
+    escalateToId: z.guid().nullable().optional(),
     reason: z.string().trim().max(2_000).optional(),
     expectedVersion: z.number().int().positive(),
 }).strict();

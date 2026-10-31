@@ -23,13 +23,13 @@ async function save(req: NextRequest, params: Promise<{ id: string }>, edit: boo
     const ctx = await context(params); if (ctx.response) return ctx.response;
     if (['RESOLVED', 'CLOSED', 'WITHDRAWN'].includes(ctx.ticket!.status)) return NextResponse.json({ error: 'Reminders require an active ticket' }, { status: 409 });
     try {
-        const input = (edit ? draft.extend({ id: z.string().uuid() }) : draft).strict().parse(await req.json());
+        const input = (edit ? draft.extend({ id: z.guid() }) : draft).strict().parse(await req.json());
         const scheduledAt = new Date(input.scheduledAt);
         if (scheduledAt.getTime() <= Date.now() || scheduledAt.getTime() > Date.now() + 366 * 86400000) return NextResponse.json({ error: 'Choose a future reminder within one year' }, { status: 400 });
         const userId = ctx.session!.user.id, ticketId = ctx.ticket!.id;
         const data = { scheduledAt, note: input.note, email: input.email, nextAttemptAt: scheduledAt };
         if (edit && 'id' in input) {
-            const id = z.string().uuid().parse(input.id);
+            const id = z.guid().parse(input.id);
             const changed = await prisma.ticketReminder.updateMany({ where: { id, userId, ticketId, status: 'PENDING', deliveredAt: null, OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }] }, data: { ...data, attempts: 0, leaseToken: null, leaseUntil: null } });
             if (!changed.count) return NextResponse.json({ error: 'Reminder unavailable or already being delivered' }, { status: 409 });
         } else await prisma.$transaction(async (tx) => {
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: Params) { return save(
 export async function DELETE(req: NextRequest, { params }: Params) {
     const ctx = await context(params); if (ctx.response) return ctx.response;
     try {
-        const { id } = z.object({ id: z.string().uuid() }).strict().parse(await req.json());
+        const { id } = z.object({ id: z.guid() }).strict().parse(await req.json());
         const changed = await prisma.ticketReminder.updateMany({ where: { id, ticketId: ctx.ticket!.id, userId: ctx.session!.user.id, status: 'PENDING', OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }] }, data: { status: 'CANCELLED', leaseToken: null, leaseUntil: null } });
         if (changed.count) await auditLog({ userId: ctx.session!.user.id, action: 'ticket.reminder_cancelled', entity: 'ticket', entityId: ctx.ticket!.id });
         return NextResponse.json({ success: Boolean(changed.count) }, { status: changed.count ? 200 : 409 });

@@ -12,7 +12,7 @@ export type ApiClientScope = z.infer<typeof apiClientScopeSchema>;
 
 const uniqueScopes = z.array(apiClientScopeSchema).min(1).max(2)
     .transform((scopes) => [...new Set(scopes)]);
-const queueIds = z.array(z.string().uuid()).max(100)
+const queueIds = z.array(z.guid()).max(100)
     .transform((ids) => [...new Set(ids)]);
 
 export const createApiClientSchema = z.object({
@@ -27,7 +27,7 @@ export const createApiClientSchema = z.object({
 });
 
 export const updateApiClientSchema = z.object({
-    id: z.string().uuid(),
+    id: z.guid(),
     name: z.string().trim().min(1).max(100).optional(),
     scopes: uniqueScopes.optional(),
     allowedQueueIds: queueIds.optional(),

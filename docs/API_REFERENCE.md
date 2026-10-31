@@ -241,6 +241,14 @@ Returns the accessible ticket, conversation, category history, SLA/lock data, at
 
 Updates permitted ticket columns. Routing changes independently verify that the category belongs to the target department. End users cannot change routing, assignment, priority, severity, or tags.
 
+`tagIds` replaces the ticket's tags. Tags the ticket already carries are kept even when they no longer fit its department or category; every newly added tag must be available for the department and category the ticket has after the update, otherwise the request fails with 400. Ticket creation applies the same availability rule to every submitted tag. `GET` returns `tagPermissions.visible` and `tagPermissions.editable` for the caller, and, for staff, each tag's `allDepartments` flag and `scopes`.
+
+### `/api/tags`
+
+- `GET` lists tags. `?queueId=` (and optionally `?categoryId=`, empty for a ticket without a category) returns only the tags that can be added there; without `categoryId`, every tag usable anywhere in the department is returned. Requesters receive `id`, `name` and `color` only. Administrators can add `?manage=true` for `ticketCount` and `canManage`.
+- `POST` / `PATCH` take `name`, `color`, `allDepartments` and `scopes: [{ queueId, categoryId | null }]`. Names are unique regardless of case (409). Super Admins manage every tag; Department Admins only tags whose `scopes` are all in departments they administer, and never `allDepartments` tags. Narrowing `scopes` does not remove the tag from tickets.
+- `DELETE ?id=` removes the tag from every ticket and returns `removedFromTickets`.
+
 ### Comments and escalation
 
 - `POST /api/tickets/[id]/comments`
@@ -269,7 +277,7 @@ Download or remove an attachment subject to ticket authorization.
 - `/api/api-clients`
 - `/api/webhooks` and `/api/webhooks/[id]/deliveries` (Super Admin only)
 
-All write operations use server-side role checks. Global settings, branding, API clients, groups, audit logs, tags, and user management require Super Admin. Department Admin ticket data is restricted to administered or agent-assigned departments. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.
+All write operations use server-side role checks. Global settings, branding, API clients, groups, audit logs, all-department tags, and user management require Super Admin; Department Admins can manage tags limited to departments they administer. Department Admin ticket data is restricted to administered or agent-assigned departments. Branding is intentionally separate from `/api/settings` so the public endpoint can never leak administrative settings.
 
 ## External API v1
 

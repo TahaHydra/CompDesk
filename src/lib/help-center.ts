@@ -9,7 +9,7 @@ const localizedDescription = z.string().trim().max(500).nullable().optional();
 const localizedContent = z.string().trim().max(100_000).refine((value) => value.length === 0 || value.length >= 20, 'Use at least 20 characters or leave this translation empty');
 
 export const helpCollectionInputSchema = z.object({
-    id: z.string().uuid().optional(),
+    id: z.guid().optional(),
     slug: slugSchema,
     titleEn: localizedTitle,
     titleFr: localizedTitle,
@@ -25,8 +25,8 @@ export const helpCollectionInputSchema = z.object({
 });
 
 export const helpArticleInputSchema = z.object({
-    id: z.string().uuid().optional(),
-    collectionId: z.string().uuid(),
+    id: z.guid().optional(),
+    collectionId: z.guid(),
     slug: slugSchema,
     titleEn: localizedTitle,
     titleFr: localizedTitle,

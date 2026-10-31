@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useLanguage } from '@/components/providers/language-provider';
+import { TagChip } from '@/components/tags/tag-chip';
+import { TagPicker } from '@/components/tags/tag-picker';
 import { cn } from '@/lib/utils';
 import { isFieldConditionVisible } from '@/lib/ticket-form/conditions';
 import { ticketFormSubmissionValues } from '@/lib/ticket-form/client-submission';
@@ -128,7 +130,17 @@ export function DynamicTicketForm({
                                 <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
                             </Select>
                         ) : null}
-                        {field.type === 'MULTISELECT' ? (
+                        {field.type === 'MULTISELECT' && field.builtIn === 'TAGS' ? (
+                            <div id={inputId} role="group" aria-labelledby={`${inputId}-label`} aria-describedby={descriptionIds} className="flex min-h-10 flex-wrap items-center gap-2">
+                                <TagPicker options={tags} selected={selectedValues} disabled={fieldDisabled} label={t(selectedValues.length ? 'Edit tags' : 'Add tags')}
+                                    emptyText={t('No tags are available for this department or category')} onChange={(next) => onChange(field.fieldKey, next)} />
+                                {tags.filter((tag) => selectedValues.includes(tag.id)).map((tag) => (
+                                    <TagChip key={tag.id} tag={tag} removeLabel={t('Remove tag {name}', { name: tag.name })}
+                                        onRemove={fieldDisabled ? undefined : () => onChange(field.fieldKey, selectedValues.filter((item) => item !== tag.id))} />
+                                ))}
+                            </div>
+                        ) : null}
+                        {field.type === 'MULTISELECT' && field.builtIn !== 'TAGS' ? (
                             <div id={inputId} role="group" aria-labelledby={`${inputId}-label`} aria-describedby={descriptionIds} className="flex min-h-10 flex-wrap gap-2 rounded-md border p-2">
                                 {options.length === 0 ? <p className="px-1 text-xs text-muted-foreground">{t('No options available')}</p> : options.map((option) => {
                                     const selected = selectedValues.includes(option.value);

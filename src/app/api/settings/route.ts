@@ -9,7 +9,8 @@ import { MANAGED_ENV_NAMES, ManagedEnvironmentError, readManagedEnvironment } fr
 import { OidcConfigError } from '@/lib/oidc-provider';
 import { prisma } from '@/lib/prisma';
 import { removeUploadedImage } from '@/lib/uploaded-image';
-import { isValidSmtpFrom, normalizeSettingValue, SettingsValidationError, validateSmtpSecurityCombination } from '@/lib/settings-validation';
+import { getEmailDeliveryStatus } from '@/lib/email';
+import { normalizeSettingValue, SettingsValidationError, validateSmtpSecurityCombination } from '@/lib/settings-validation';
 import { decryptSettingSecret, encryptSettingSecret, getEnvironmentSmtpPassword, hasIgnoredEnvironmentSmtpPlaceholder, hasSettingsEncryptionKey, isEncryptedSettingSecret, SettingsSecretError } from '@/lib/settings-secret';
 import { applyEntraSettings, applyOidcSettings, certificateSummary, ENTRA_KEYS, normalizeOidcSetting, OIDC_KEYS, prefixOf, ssoSettingsSummary, type SettingValue } from '@/lib/sso-settings';
 import { defaultSsoButtonText, isDefaultSsoButtonText, parseSsoProvider, SSO_OIDC_SLOT_KEY } from '@/lib/sso-presets';
@@ -68,13 +69,18 @@ export async function GET() {
     try {
         const session = await auth();
         if (!session?.user || session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-        const [settings, legacyEntra, branding] = await Promise.all([
+        const [settings, legacyEntra, branding, delivery] = await Promise.all([
             prisma.appSetting.findMany({ where: { key: { in: DB_READ_KEYS } } }),
             prisma.appSetting.findMany({ where: { key: { in: [...ENTRA_KEYS] } } }),
             getBrandingConfig(),
+            getEmailDeliveryStatus(),
         ]);
         const ssoSummary = await ssoSettingsSummary(Object.fromEntries(legacyEntra.map((setting) => [setting.key, setting.value])));
-        return NextResponse.json(mergeSettingSources(Object.fromEntries(settings.map((setting) => [setting.key, setting.value])), ssoSummary, branding.microsoftButtonText));
+        return NextResponse.json({
+            ...mergeSettingSources(Object.fromEntries(settings.map((setting) => [setting.key, setting.value])), ssoSummary, branding.microsoftButtonText),
+            email_delivery_ready: String(delivery.ready),
+            email_delivery_issue: delivery.issue ?? '',
+        });
     } catch (error) {
         logger.error('Failed to load settings', { error });
         return NextResponse.json({ error: 'Failed to load settings' }, { status: 500 });
@@ -209,10 +215,8 @@ export async function PATCH(request: Request) {
         }
         const enablingEmail = [...values].some(([key, value]) => key.startsWith('email_on_') && value === 'true');
         if (enablingEmail) {
-            const existingFrom = await prisma.appSetting.findUnique({ where: { key: 'smtp_from' }, select: { value: true } });
-            if (!isValidSmtpFrom(submitted('smtp_from') ?? existingFrom?.value ?? process.env.SMTP_FROM ?? '')) {
-                return NextResponse.json({ error: 'Configure a valid SMTP From address before enabling email notifications.' }, { status: 400 });
-            }
+            const delivery = await getEmailDeliveryStatus({ smtpFrom: submitted('smtp_from') });
+            if (!delivery.ready) return NextResponse.json({ error: delivery.issue }, { status: 400 });
         }
 
         let restartRequired = false;
