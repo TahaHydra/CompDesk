@@ -1,8 +1,8 @@
 {
-  "latest": "0.9.0-beta.4.2",
+  "latest": "0.9.0-beta.5",
   "severity": "critical",
-  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.2",
-  "published_at": "2026-10-23T13:30:48Z",
-  "summary": "Security update: Next.js 15.5.28 and DOMPurify 3.4.17 address advisories published on 22 October 2026, including a critical Next.js Image Optimization API issue. No feature, configuration or database changes.",
+  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5",
+  "published_at": "2026-10-31T08:26:28Z",
+  "summary": "Email notifications now work with Microsoft 365 / Graph without an SMTP From address; tags show on tickets, can be changed after triage and can be limited to departments and categories; Nodemailer and Zod are updated for security advisories. Includes one additive database migration that runs automatically.",
   "upgrade_notes": "Rehearsal manifest for upgrade testing. Point a test installation at it with COMPDESK_UPDATE_MANIFEST_URL; never at production. Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together before upgrading."
 }

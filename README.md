@@ -19,15 +19,16 @@ Built by [xHydra](https://xhydra.fr).
 
 > **Public beta.** CompDesk is under active development and is not yet claimed as mature, production-hardened software. See [Known limitations](#known-limitations) and the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before deploying it for real users.
 
-## Current release — v0.9.0-beta.4.2
+## Current release — v0.9.0-beta.5
 
-[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.2) · [Security update notes](docs/releases/v0.9.0-beta.4.2.md)
+[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5) · [Changes and upgrade notes](docs/releases/v0.9.0-beta.5.md)
 
-This security update moves Next.js to 15.5.28 and DOMPurify to 3.4.17 for advisories published on 22 October 2026, with no feature or database changes. It follows beta.4.1, which made OpenID Connect sign-in work with providers that return the email only from userinfo (such as Authelia) and stopped a repeated first-run setup from replacing an existing installation's secrets. Both build on beta.4, which added generic OpenID Connect sign-in, guided SSO migration, private-CA and client-certificate support, and authentication setup. Email Delivery settings show the selected SMTP or Microsoft 365 / Graph configuration while preserving both providers' saved settings.
+Email notifications now work with Microsoft 365 / Graph without an SMTP From address, and tags have become a triage tool: they show on tickets, agents can change them after a ticket is created, and administrators can limit each tag to the departments and categories where it applies. Nodemailer and Zod are updated for security advisories. It builds on the beta.4 line, which added generic OpenID Connect sign-in, guided SSO migration, private-CA and client-certificate support, and authentication setup. Email Delivery settings show the selected SMTP or Microsoft 365 / Graph configuration while preserving both providers' saved settings; earlier beta.4 updates fixed OpenID Connect sign-in with userinfo-only providers (such as Authelia) and updated Next.js for security advisories. generic OpenID Connect sign-in, guided SSO migration, private-CA and client-certificate support, and authentication setup. Email Delivery settings show the selected SMTP or Microsoft 365 / Graph configuration while preserving both providers' saved settings.
 
 <details>
 <summary>Previous public betas</summary>
 
+- [v0.9.0-beta.4.2](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.2) — [release notes](docs/releases/v0.9.0-beta.4.2.md)
 - [v0.9.0-beta.4.1](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.1) — [release notes](docs/releases/v0.9.0-beta.4.1.md)
 - [v0.9.0-beta.4](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4) — [release notes](docs/releases/v0.9.0-beta.4.md)
 - [v0.9.0-beta.3](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.3) — [historical release notes and rollback guidance](docs/releases/v0.9.0-beta.3.md)
