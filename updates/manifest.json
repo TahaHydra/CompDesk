@@ -1,8 +1,8 @@
 {
-  "latest": "0.9.0-beta.5",
-  "severity": "critical",
-  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5",
-  "published_at": "2026-10-31T08:26:28Z",
-  "summary": "Email notifications now work with Microsoft 365 / Graph without an SMTP From address; tags show on tickets, can be changed after triage and can be limited to departments and categories; Nodemailer and Zod are updated for security advisories. Includes one additive database migration that runs automatically.",
-  "upgrade_notes": "Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together. Use this release's pinned Docker Compose asset, preserve existing volumes and deployment settings, then run docker compose pull and docker compose up -d. Database migrations run automatically; an older image alone is not a recovery point."
+  "latest": "0.9.0-beta.5.1",
+  "severity": "normal",
+  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5.1",
+  "published_at": "2026-10-31T10:37:46Z",
+  "summary": "Fix release: choose where a tag is available with searchable department and category lists grouped by department, and a cleaner notifications panel on computers and phones. No database or configuration changes.",
+  "upgrade_notes": "Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together. Use this release's pinned Docker Compose asset, preserve existing volumes and deployment settings, then run docker compose pull and docker compose up -d. This release has no database migrations; an older image alone is not a recovery point."
 }
