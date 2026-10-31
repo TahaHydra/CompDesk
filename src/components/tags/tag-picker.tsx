@@ -42,16 +42,15 @@ export function TagPicker({ options, selected, onChange, onOpenChange, label, em
             <PopoverTrigger asChild>
                 <Button id={id} type="button" variant="outline" size="sm" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} className="h-9 justify-between gap-2 font-normal">
                     <span className="flex items-center gap-2"><TagIcon className="h-3.5 w-3.5 text-muted-foreground" />{label}</span>
-                    <span className="flex items-center gap-1.5">
-                        {selectedCount > 0 ? <span className="rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-5 text-primary-foreground">{selectedCount}</span> : null}
-                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                    </span>
+                    {/* No count badge: the selected tags are always shown as chips next to this button. */}
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent align={align} className="w-72 p-0">
+            <PopoverContent align={align} collisionPadding={8} className="w-[min(18rem,calc(100vw-1rem))] p-0">
                 <div className="relative border-b p-2">
                     <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search tags…')} aria-label={t('Search tags…')} className="h-8 pl-8" />
+                    {/* Focus search for mouse and keyboard users; on touch screens it would raise the keyboard over the list. */}
+                    <Input autoFocus={typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search tags…')} aria-label={t('Search tags…')} className="h-8 pl-8" />
                 </div>
                 <div role="listbox" aria-multiselectable="true" aria-label={label} className="max-h-64 overflow-y-auto p-1">
                     {visible.length === 0 ? <p className="px-3 py-6 text-center text-xs text-muted-foreground">{search ? t('No matching tags') : emptyText ?? t('No tags available here')}</p> : visible.map((option) => {

@@ -607,6 +607,22 @@ const french: Record<string, string> = {
     'No tags are available for this department or category': 'Aucune étiquette n’est disponible pour ce département ou cette catégorie',
     'Dashed tags do not apply to this department or category any more. They stay until you remove them.': 'Les étiquettes en pointillés ne s’appliquent plus à ce département ou à cette catégorie. Elles restent jusqu’à ce que vous les retiriez.',
     'Kept from an earlier department or category': 'Conservée d’un ancien département ou d’une ancienne catégorie',
+    '{count} selected': '{count} sélectionné(s)',
+    'Search…': 'Rechercher…',
+    'No matches': 'Aucun résultat',
+    'Nothing to choose from': 'Rien à sélectionner',
+    'Choose departments': 'Choisir des départements',
+    'Search departments…': 'Rechercher un département…',
+    '(optional)': '(facultatif)',
+    'Choose departments first': 'Choisissez d’abord des départements',
+    'Search categories…': 'Rechercher une catégorie…',
+    'These departments have no categories': 'Ces départements n’ont aucune catégorie',
+    'A department without selected categories covers all of its categories.': 'Un département sans catégorie sélectionnée couvre toutes ses catégories.',
+    'all categories': 'toutes les catégories',
+    'Archived category': 'Catégorie archivée',
+    'New comment': 'Nouveau commentaire',
+    'Internal note': 'Note interne',
+    'Unread': 'Non lu',
 };
 
 export function normalizeLanguage(value: unknown): AppLanguage {

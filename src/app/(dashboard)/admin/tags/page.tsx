@@ -14,8 +14,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MULTI_SELECT_OPEN_ATTRIBUTE, MultiSelect } from '@/components/ui/multi-select';
 import { useToast } from '@/components/ui/use-toast';
-import { describeTagScope, normalizeTagScopes, type NamedTagScope, type TagScopeRule } from '@/lib/tag-scope';
+import { describeTagScope, normalizeTagScopes, scopesFromSelection, type NamedTagScope, type TagScopeRule } from '@/lib/tag-scope';
 import { cn } from '@/lib/utils';
 
 interface ManagedTag { id: string; name: string; color: string; allDepartments: boolean; scopes: NamedTagScope[]; ticketCount: number; canManage: boolean }
@@ -133,7 +134,9 @@ export default function AdminTagsPage() {
 
             <Dialog open={Boolean(draft)} onOpenChange={(open) => { if (!open) setDraft(null); }}>
                 {draft ? (
-                    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+                    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
+                        // Escape first closes an open department/category list; the dialog closes on the next one.
+                        onEscapeKeyDown={(event) => { if (document.querySelector(`[${MULTI_SELECT_OPEN_ATTRIBUTE}]`)) event.preventDefault(); }}>
                         <DialogHeader>
                             <DialogTitle>{t(draft.id ? 'Edit Tag' : 'New Tag')}</DialogTitle>
                             <DialogDescription>{t('Narrowing where a tag is available never removes it from tickets that already have it.')}</DialogDescription>
@@ -159,23 +162,23 @@ function TagEditor({ draft, onChange, departments, categories, isSuperAdmin }: {
 }) {
     const { t } = useLanguage();
     const update = (changes: Partial<Draft>) => onChange({ ...draft, ...changes });
-    const scopesFor = (queueId: string) => draft.scopes.filter((scope) => scope.queueId === queueId);
-    const setDepartment = (queueId: string, included: boolean) => update({
-        scopes: included ? [...draft.scopes.filter((scope) => scope.queueId !== queueId), { queueId, categoryId: null }] : draft.scopes.filter((scope) => scope.queueId !== queueId),
-    });
-    const setCategoryMode = (queueId: string, wholeDepartment: boolean) => {
-        const first = categories.find((category) => category.queueId === queueId);
-        update({ scopes: [...draft.scopes.filter((scope) => scope.queueId !== queueId), { queueId, categoryId: wholeDepartment || !first ? null : first.id }] });
-    };
-    const toggleCategory = (queueId: string, categoryId: string) => {
-        const current = scopesFor(queueId).flatMap((scope) => scope.categoryId ? [scope.categoryId] : []);
-        const next = current.includes(categoryId) ? current.filter((id) => id !== categoryId) : [...current, categoryId];
-        // Unchecking the last category keeps the department instead of silently dropping it.
-        update({ scopes: [...draft.scopes.filter((scope) => scope.queueId !== queueId), ...(next.length ? next.map((id) => ({ queueId, categoryId: id })) : [{ queueId, categoryId: null }])] });
-    };
     // Scopes in departments missing from the list (archived, or outside an Admin's view) are kept untouched.
     const listedIds = new Set(departments.map((department) => department.id));
     const unlistedScopes = draft.scopes.filter((scope) => !listedIds.has(scope.queueId));
+    const selectedQueueIds = [...new Set(draft.scopes.filter((scope) => listedIds.has(scope.queueId)).map((scope) => scope.queueId))];
+    const selectedCategoryIds = draft.scopes.flatMap((scope) => scope.categoryId && listedIds.has(scope.queueId) ? [scope.categoryId] : []);
+    // Saved category rules may point to archived categories the list no longer offers; keep their department.
+    const categoryQueue = new Map<string, string>([
+        ...draft.scopes.flatMap((scope) => scope.categoryId ? [[scope.categoryId, scope.queueId] as [string, string]] : []),
+        ...categories.map((category) => [category.id, category.queueId] as [string, string]),
+    ]);
+    const scopesFor = (queueIds: string[], categoryIds: string[]): TagScopeRule[] => [...unlistedScopes, ...scopesFromSelection(queueIds, categoryIds, categoryQueue)];
+    const departmentName = new Map(departments.map((department) => [department.id, department.name]));
+    const categoryName = new Map(categories.map((category) => [category.id, category.name]));
+    const categoryGroups = selectedQueueIds.map((queueId) => {
+        const count = selectedCategoryIds.filter((categoryId) => categoryQueue.get(categoryId) === queueId).length;
+        return { id: queueId, label: departmentName.get(queueId) ?? '', hint: count ? t('{count} selected', { count }) : t('All categories') };
+    });
 
     return (
         <div className="space-y-4">
@@ -210,43 +213,35 @@ function TagEditor({ draft, onChange, departments, categories, isSuperAdmin }: {
                 </div>
 
                 {!draft.allDepartments ? (
-                    <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
-                        {departments.length === 0 ? <p className="p-2 text-xs text-muted-foreground">{t('No departments available')}</p> : departments.map((department) => {
-                            const departmentScopes = scopesFor(department.id);
-                            const included = departmentScopes.length > 0;
-                            const wholeDepartment = departmentScopes.some((scope) => scope.categoryId === null);
-                            const departmentCategories = categories.filter((category) => category.queueId === department.id);
-                            return (
-                                <div key={department.id} className={cn('rounded-md p-2', included && 'bg-muted/40')}>
-                                    <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                                        <input type="checkbox" checked={included} onChange={(event) => setDepartment(department.id, event.target.checked)} />
-                                        {department.name}
-                                    </label>
-                                    {included && departmentCategories.length > 0 ? (
-                                        <div className="ml-6 mt-2 space-y-2">
-                                            <Select value={wholeDepartment ? 'all' : 'some'} onValueChange={(value) => setCategoryMode(department.id, value === 'all')}>
-                                                <SelectTrigger className="h-8 text-xs" aria-label={t('Categories in {department}', { department: department.name })}><SelectValue /></SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">{t('All categories')}</SelectItem>
-                                                    <SelectItem value="some">{t('Only selected categories')}</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            {!wholeDepartment ? (
-                                                <div className="grid gap-1 sm:grid-cols-2">
-                                                    {departmentCategories.map((category) => (
-                                                        <label key={category.id} className="flex cursor-pointer items-center gap-2 text-xs">
-                                                            <input type="checkbox" checked={departmentScopes.some((scope) => scope.categoryId === category.id)} onChange={() => toggleCategory(department.id, category.id)} />
-                                                            <span className="truncate">{category.name}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
-                                </div>
-                            );
-                        })}
-                        {unlistedScopes.length > 0 ? <p className="px-2 text-[11px] text-muted-foreground">{t('Also kept in {count} department(s) not listed here.', { count: new Set(unlistedScopes.map((scope) => scope.queueId)).size })}</p> : null}
+                    <div className="space-y-4 rounded-md border p-3">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="tag-departments">{t('Departments')}</Label>
+                            <MultiSelect id="tag-departments" options={departments.map((department) => ({ value: department.id, label: department.name }))}
+                                selected={selectedQueueIds} onChange={(queueIds) => update({ scopes: scopesFor(queueIds, selectedCategoryIds) })}
+                                placeholder={t('Choose departments')} searchPlaceholder={t('Search departments…')} emptyText={t('No departments available')} />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="tag-categories">{t('Categories')} <span className="font-normal text-muted-foreground">{t('(optional)')}</span></Label>
+                            <MultiSelect id="tag-categories" disabled={selectedQueueIds.length === 0} groups={categoryGroups}
+                                options={categories.filter((category) => selectedQueueIds.includes(category.queueId)).map((category) => ({ value: category.id, label: category.name, group: category.queueId }))}
+                                selected={selectedCategoryIds} onChange={(categoryIds) => update({ scopes: scopesFor(selectedQueueIds, categoryIds) })}
+                                placeholder={t(selectedQueueIds.length ? 'All categories' : 'Choose departments first')} searchPlaceholder={t('Search categories…')} emptyText={t('These departments have no categories')} />
+                            <p className="text-xs text-muted-foreground">{t('A department without selected categories covers all of its categories.')}</p>
+                        </div>
+                        {selectedQueueIds.length ? (
+                            <ul className="space-y-1 border-t pt-3 text-xs" aria-label={t('Available in')}>
+                                {selectedQueueIds.map((queueId) => {
+                                    const chosen = selectedCategoryIds.filter((categoryId) => categoryQueue.get(categoryId) === queueId);
+                                    return (
+                                        <li key={queueId} className="leading-5">
+                                            <span className="font-medium">{departmentName.get(queueId)}</span>
+                                            <span className="text-muted-foreground"> — {chosen.length ? chosen.map((categoryId) => categoryName.get(categoryId) ?? t('Archived category')).join(', ') : t('all categories')}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        ) : null}
+                        {unlistedScopes.length > 0 ? <p className="text-[11px] text-muted-foreground">{t('Also kept in {count} department(s) not listed here.', { count: new Set(unlistedScopes.map((scope) => scope.queueId)).size })}</p> : null}
                     </div>
                 ) : null}
                 {!draft.allDepartments && draft.scopes.length === 0 ? <p className="text-xs text-amber-700 dark:text-amber-300">{t('Choose at least one department.')}</p> : null}
