@@ -40,6 +40,18 @@ export function normalizeTagScopes(scopes: TagScopeRule[]): TagScopeRule[] {
         });
 }
 
+/**
+ * Scopes for a department and category selection: each selected department covers the chosen
+ * categories that belong to it, or all of its categories when none of them is chosen. Categories of
+ * departments that are not selected are ignored. `categoryQueue` maps category IDs to departments.
+ */
+export function scopesFromSelection(queueIds: string[], categoryIds: string[], categoryQueue: Map<string, string>): TagScopeRule[] {
+    return [...new Set(queueIds)].flatMap((queueId): TagScopeRule[] => {
+        const chosen = [...new Set(categoryIds)].filter((categoryId) => categoryQueue.get(categoryId) === queueId);
+        return chosen.length ? chosen.map((categoryId) => ({ queueId, categoryId })) : [{ queueId, categoryId: null }];
+    });
+}
+
 /** Human-readable availability, e.g. "All departments" or "IT Support · HR › Leave & absence". */
 export function describeTagScope(tag: { allDepartments: boolean; scopes?: NamedTagScope[] }): string {
     if (tag.allDepartments) return 'All departments';

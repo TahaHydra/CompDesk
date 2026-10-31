@@ -57,11 +57,12 @@ export async function GET() {
                 type: item.type,
                 content: item.deletedAt && role !== 'SUPER_ADMIN' ? '[Deleted comment]' : projectTicketTimelineEvent(item.ticket, item, role).content,
                 createdAt: item.createdAt,
+                unread: item.createdAt > lastReadAt,
                 userName: item.user.name,
                 ticketId: item.ticket.id,
                 ticketKey: item.ticket.key,
                 ticketTitle: projectTicketBuiltIns(item.ticket, role).title,
-            })), ...reminders.map((reminder) => ({ id: reminder.id, type: 'REMINDER', content: reminder.note, createdAt: reminder.deliveredAt, userName: session.user.name || '', ticketId: reminder.ticketId, ticketKey: reminder.ticket.key, ticketTitle: projectTicketBuiltIns(reminder.ticket, role).title }))].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()).slice(0, 20),
+            })), ...reminders.map((reminder) => ({ id: reminder.id, type: 'REMINDER', content: reminder.note, createdAt: reminder.deliveredAt, unread: Boolean(reminder.deliveredAt && reminder.deliveredAt > lastReadAt), userName: session.user.name || '', ticketId: reminder.ticketId, ticketKey: reminder.ticket.key, ticketTitle: projectTicketBuiltIns(reminder.ticket, role).title }))].sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()).slice(0, 20),
             unreadCount: unreadCount + reminderUnread,
         });
     } catch (error) {

@@ -7,6 +7,7 @@ import type { Session } from 'next-auth';
 import type { LucideIcon } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { notificationText } from '@/lib/notification-text';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -354,16 +355,20 @@ export default function AppShell({
                                     )}
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent align="end" className="w-[calc(100vw-2rem)] max-w-96 p-0">
-                                <div className="flex items-center justify-between border-b px-4 py-3">
-                                    <h3 className="text-sm font-semibold">{t('Notifications')}</h3>
+                            <PopoverContent align="end" collisionPadding={8} className="w-[min(24rem,calc(100vw-1rem))] p-0">
+                                <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <h3 className="text-sm font-semibold">{t('Notifications')}</h3>
+                                        {unreadCount > 0 ? <span className="rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-5 text-primary-foreground">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+                                    </div>
                                     {unreadCount > 0 && (
-                                        <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={markAllRead}>
+                                        <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs text-primary" onClick={markAllRead}>
                                             {t('Mark all as read')}
                                         </Button>
                                     )}
                                 </div>
-                                <ScrollArea className="max-h-80">
+                                {/* A plain scroller: ScrollArea's table-layout viewport lets long lines grow past the panel instead of truncating. */}
+                                <div className="max-h-[min(24rem,70vh)] overflow-y-auto overscroll-contain">
                                     {(!notifications?.items || notifications.items.length === 0) ? (
                                         <div className="flex flex-col items-center justify-center py-10 text-center">
                                             <Bell className="mb-2 h-8 w-8 text-muted-foreground/40" />
@@ -372,26 +377,33 @@ export default function AppShell({
                                         </div>
                                     ) : (
                                         <div className="divide-y">
-                                            {notifications.items.map((n: any) => (
-                                                <Link
-                                                    key={n.id}
-                                                    href={`/tickets/${n.ticketId}`}
-                                                    onClick={() => setNotifOpen(false)}
-                                                    className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
-                                                >
-                                                    <div className="mt-0.5 shrink-0">{notificationIcon(n.type)}</div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-sm font-medium">{n.ticketKey}: {n.ticketTitle}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">{n.content || (n.type === 'REMINDER' ? t('Ticket reminder') : n.type.replace(/_/g, ' ').toLowerCase())}</p>
-                                                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                                                            {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: language === 'fr' ? fr : undefined })}
-                                                        </p>
-                                                    </div>
-                                                </Link>
-                                            ))}
+                                            {notifications.items.map((n: any) => {
+                                                const { title, detail } = notificationText(n, t);
+                                                return (
+                                                    <Link
+                                                        key={n.id}
+                                                        href={`/tickets/${n.ticketId}`}
+                                                        onClick={() => setNotifOpen(false)}
+                                                        className={cn('flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none', n.unread && 'bg-primary/[0.05]')}
+                                                    >
+                                                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">{notificationIcon(n.type)}</span>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
+                                                                {n.unread ? <span className="h-2 w-2 shrink-0 rounded-full bg-primary" role="img" aria-label={t('Unread')} /> : null}
+                                                            </div>
+                                                            <p className="truncate text-xs text-foreground/80"><span className="font-mono">{n.ticketKey}</span> · {n.ticketTitle}</p>
+                                                            {detail ? <p className="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">{detail}</p> : null}
+                                                            <p className="mt-1 truncate text-[11px] text-muted-foreground/70">
+                                                                {n.userName} · {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: language === 'fr' ? fr : undefined })}
+                                                            </p>
+                                                        </div>
+                                                    </Link>
+                                                );
+                                            })}
                                         </div>
                                     )}
-                                </ScrollArea>
+                                </div>
                             </PopoverContent>
                         </Popover>
 
