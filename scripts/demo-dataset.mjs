@@ -507,11 +507,17 @@ export async function seedDemoDataset(prisma, options = {}) {
                 values: { title: 'Teams meeting room microphone not detected', description: 'The microphone in meeting room Atlas is not available in Teams.', priority: 'HIGH', device_type: 'Other', work_location: 'Paris office - Atlas', business_impact: 'Several people', error_message: 'USB conference device was not listed in Teams.' },
             },
         ];
+        // Tickets with a conversation are opened a little in the past so their messages are not
+        // dated in the future; the conversation itself is added below, only on first install.
+        const openedMinutesAgo = { 'TCK-2026-DEMO01': 180, 'TCK-2026-DEMO02': 40, 'TCK-2026-DEMO04': 120, 'TCK-2026-DEMO05': 240 };
+        const createdTickets = new Map();
         for (const item of tickets) {
             const existing = await prisma.ticket.findUnique({ where: { key: item.key } });
+            const openedAt = new Date(Date.now() - (openedMinutesAgo[item.key] ?? 0) * 60_000);
             const ticket = await prisma.ticket.upsert({
                 where: { key: item.key }, update: {},
                 create: {
+                    createdAt: openedAt,
                     key: item.key, title: item.title, description: item.description, status: item.status,
                     priority: item.priority, queueId: item.queueId, categoryId: item.categoryId,
                     requesterId: item.requesterId,
@@ -536,10 +542,50 @@ export async function seedDemoDataset(prisma, options = {}) {
                 where: { ticketId_userId: { ticketId: ticket.id, userId: item.requesterId } },
                 update: {}, create: { ticketId: ticket.id, userId: item.requesterId },
             });
-            if (!existing)
+            if (!existing) {
                 await prisma.timelineEvent.create({
-                    data: { ticketId: ticket.id, userId: item.requesterId, type: 'CREATED', content: `Ticket created: ${item.title}` },
+                    data: { ticketId: ticket.id, userId: item.requesterId, type: 'CREATED', content: `Ticket created: ${item.title}`, createdAt: openedAt },
                 });
+                createdTickets.set(item.key, ticket);
+            }
+        }
+        // Conversations that show role labels, person cards, internal notes, a saved reply in use,
+        // a message its author deleted (staff see who deleted it; Super Admins still see the text)
+        // and a reply pointing to a Help Center article.
+        const conversations = {
+            'TCK-2026-DEMO01': [
+                { by: agent1, type: 'COMMENT', after: 20, content: 'Please uninstall the VPN client, restart your computer, then install the latest version from the Software Center. Reply here if the connection still drops after signing in.' },
+                { by: agent1, type: 'INTERNAL_NOTE', after: 24, content: 'Gateway logs show error 812 for this account only: the device certificate on the laptop expired yesterday. Reissue it if the reinstall does not help.' },
+                { by: user1, type: 'COMMENT', after: 70, content: 'Sorry, this was meant for my other ticket.', deletedAfter: 72 },
+                { by: user1, type: 'COMMENT', after: 95, content: 'I reinstalled the client and restarted. It still disconnects about ten seconds after signing in.' },
+            ],
+            'TCK-2026-DEMO02': [
+                { by: applicationAdmin, type: 'INTERNAL_NOTE', after: 25, content: 'Access approved by the Finance reporting owner. Grant read-only access once someone picks this up.' },
+            ],
+            'TCK-2026-DEMO04': [
+                { by: agent2, type: 'COMMENT', after: 35, content: 'Reports approved after the 20th are paid with the following month’s salary, so ER-1048 is scheduled for next month. The Help Center article “Expense reports: deadlines and receipts” has the details.' },
+                { by: user2, type: 'COMMENT', after: 60, content: 'Thanks, that explains it: I approved it on the 22nd.' },
+            ],
+            'TCK-2026-DEMO05': [
+                { by: agent1, type: 'COMMENT', after: 30, content: 'The USB cable of the conference unit was faulty. I replaced it and Teams now detects the microphone in Atlas.' },
+                { by: user1, type: 'COMMENT', after: 200, content: 'Confirmed in this morning’s meeting, it works. Thank you!' },
+            ],
+        };
+        for (const [key, messages] of Object.entries(conversations)) {
+            const ticket = createdTickets.get(key);
+            if (!ticket) continue;
+            const at = (minutes) => new Date(ticket.createdAt.getTime() + minutes * 60_000);
+            for (const message of messages) {
+                const deletedAt = message.deletedAfter ? at(message.deletedAfter) : null;
+                await prisma.timelineEvent.create({
+                    data: {
+                        ticketId: ticket.id, userId: message.by.id, type: message.type, content: message.content, createdAt: at(message.after),
+                        ...(deletedAt ? { deletedAt, deletedById: message.by.id, deleteReason: 'user_requested', metadata: { deleted: true, deletedAt: deletedAt.toISOString() } } : {}),
+                    },
+                });
+            }
+            const firstStaffReply = messages.find((message) => message.type === 'COMMENT' && message.by.role !== Role.USER);
+            if (firstStaffReply) await prisma.ticket.update({ where: { id: ticket.id }, data: { firstPublicResponseAt: at(firstStaffReply.after) } });
         }
         const cannedResponses = [
             { title: 'Request received', content: 'Thank you. Your request has been received and is being reviewed. We will update this ticket if we need more information.', category: 'General' },

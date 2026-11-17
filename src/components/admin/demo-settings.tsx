@@ -52,7 +52,7 @@ export function DemoSettings() {
     return <Card>
         <CardHeader><CardTitle className="text-base">{t('Demo data')}</CardTitle></CardHeader>
         <CardContent className="space-y-4 text-sm">
-            <p className="text-muted-foreground">{t('Explore CompDesk with 3 departments, 18 categories, 5 example tickets, 6 demo accounts, templates and bilingual help articles.')}</p>
+            <p className="text-muted-foreground">{t('Explore CompDesk with 3 departments, 18 categories, 5 example tickets with conversations, 6 demo accounts, templates, saved replies and bilingual help articles suggested on matching categories.')}</p>
             <p className="text-xs text-muted-foreground">{t('Your Super Admin and settings are preserved. Demo accounts use a random password shown once and require local sign-in.')}</p>
             {state.data && <dl className="grid grid-cols-2 gap-2 text-xs">
                 <dt>{t('Demo accounts')}</dt><dd>{state.data.accounts}</dd>

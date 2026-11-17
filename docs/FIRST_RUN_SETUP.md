@@ -32,6 +32,14 @@ Everything that used to live in `.compdesk/compdesk.env` (database URL, `AUTH_SE
 
 If the `compdesk_pgdata` volume already holds an initialized database but `compdesk_config` has no matching secrets (for example, `compdesk_config` was deleted independently), `config-init` refuses to mint a new random database password and exits with a recovery message instead of silently generating credentials PostgreSQL will not recognize. Restore `compdesk_config` from backup, import an existing installation with `node scripts/import-legacy-deployment.mjs`, or discard the existing database on purpose with `node scripts/docker-reset.mjs` before re-running `docker compose up -d`.
 
+### After setup
+
+The wizard only covers what CompDesk needs to start. Review these in the application afterwards; each has a safe default:
+
+- **Admin → Settings → Privacy:** who sees email addresses, preferred language and job titles. The default shows them only to higher roles, plus the requester's details to staff handling their ticket. A small internal team may prefer **Everyone**.
+- **Admin → Categories:** suggested Help Center articles shown while people create tickets.
+- **My Profile:** each person's job title and, for staff, their saved replies.
+
 The previous two-stack flow (`docker-compose.setup.yml` + a separate production `docker-compose.yml`) is deprecated but still present for migration/rollback — see the "Migration from the two-stack deployment" section of [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md).
 
 ## Wizard screenshots
