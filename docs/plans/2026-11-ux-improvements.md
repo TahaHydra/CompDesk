@@ -238,12 +238,7 @@ No new sidebar items, and no per-user privacy switches in v1.
 
 ## Release plan
 
-| Release | Contents | Size | Notes |
-|---|---|---|---|
-| **beta.6** | Phase 0 and Phase 1 | S–M | Fixes and security; behaviour changes in release notes |
-| **beta.7** | Phase 2: saved replies | M | `/api/canned-responses` deprecated |
-| **beta.8** | Phase 3a and 3b: person card and privacy setting (plus 3c if wanted) | M–L | Builds on beta.6's data fixes |
-| **beta.9** | Phase 4: help suggestions; remove `/api/canned-responses` | M | |
+All four phases ship together as **v0.9.0-beta.6** (decided after implementation): one upgrade for self-hosters, tested end to end as one step from beta.5.1. The phases remain separate commits on the release branch for review. `/api/canned-responses` is kept, not removed.
 
 **Per phase:**
 1. Branch and implement.
