@@ -18,6 +18,7 @@ import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipie
 import { projectFormFileValues, projectPublicTicketTimelineEvent, projectTicketBuiltIns, projectTicketTimelineEvent, ticketAttachmentVisibleToRole, ticketBuiltInAllowed, ticketPublicTitle } from '@/lib/ticket-form/privacy';
 import { BuiltInTicketField } from '@prisma/client';
 import { tagAvailabilityWhere } from '@/lib/tag-scope';
+import { canDeleteTicketAttachment, canDeleteTimelineEntry, canEditTimelineEntry, canModerateTicketConversation } from '@/lib/ticket-moderation';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -45,7 +46,8 @@ export async function GET(
                 tags: { include: { tag: { include: { scopes: { select: { queueId: true, categoryId: true, queue: { select: { name: true } }, category: { select: { name: true } } } } } } } },
                 watchers: { include: { user: { select: { id: true, name: true, email: true } } } },
                 timeline: {
-                    include: { user: { select: { id: true, name: true, image: true } } },
+                    // The author role is read only to evaluate moderation rights; it is stripped from the response.
+                    include: { user: { select: { id: true, name: true, image: true, role: true } } },
                     orderBy: { createdAt: 'asc' },
                 },
                 attachments: true,
@@ -60,6 +62,33 @@ export async function GET(
         if (!hasAccess) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
+
+        // Per-entry rights come from the same rules the comment and upload APIs enforce,
+        // so the page never offers an action the server refuses.
+        const actor = { id: session.user.id, role: session.user.role };
+        const isStaffViewer = isAgentOrAbove(session.user.role);
+        const canModerate = await canModerateTicketConversation(actor, ticket);
+        const deleterIds = isStaffViewer
+            ? [...new Set(ticket.timeline.flatMap((event) => event.deletedAt && event.deletedById ? [event.deletedById] : []))]
+            : [];
+        const deleterNames = new Map(
+            deleterIds.length > 0
+                ? (await prisma.user.findMany({ where: { id: { in: deleterIds } }, select: { id: true, name: true } })).map((user) => [user.id, user.name] as const)
+                : [],
+        );
+        const timelineExtras = new Map(ticket.timeline.map((event) => {
+            const entry = { ...event, authorRole: event.user?.role ?? null };
+            return [event.id, {
+                permissions: {
+                    canEdit: canEditTimelineEntry(actor, entry, canModerate),
+                    canDelete: canDeleteTimelineEntry(actor, entry, canModerate),
+                },
+                // Staff see who removed an entry; requesters only see that it was removed.
+                deletedBy: event.deletedAt && isStaffViewer && event.deletedById
+                    ? { id: event.deletedById, name: deleterNames.get(event.deletedById) ?? null }
+                    : null,
+            }] as const;
+        }));
 
         // Filter internal notes and historical form fields for the requesting role.
         if (session.user.role === 'USER') {
@@ -167,6 +196,13 @@ export async function GET(
                 id: watcher.id,
                 user: { id: watcher.user.id, name: watcher.user.name },
             })),
+            timeline: (projectedTicket.timeline ?? []).map((event) => ({
+                ...event,
+                user: event.user ? { id: event.user.id, name: event.user.name, image: event.user.image } : null,
+                deletedById: isStaffViewer ? event.deletedById : null,
+                ...timelineExtras.get(event.id),
+            })),
+            conversationPermissions: { canModerate },
             attachments: ticket.attachments.filter((attachment) => ticketAttachmentVisibleToRole(ticket, attachment, session.user.role)).map((attachment) => ({
                 id: attachment.id,
                 isInternal: attachment.isInternal,
@@ -179,6 +215,7 @@ export async function GET(
                 path: !attachment.deletedAt && isAttachmentDownloadable(attachment.scanStatus)
                     ? authenticatedAttachmentUrl(attachment.id)
                     : null,
+                canDelete: ticketAttachmentVisibleToRole(ticket, attachment, session.user.role, true) && canDeleteTicketAttachment(actor, attachment, hasAccess),
             })),
             formSchemaSnapshot: undefined,
             submittedFormValues: undefined,

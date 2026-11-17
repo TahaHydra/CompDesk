@@ -8,7 +8,7 @@ This checklist defines the release gates for **CompDesk v0.9.0-beta.5.1**. Histo
 - `npm audit --omit=dev` exits successfully with zero known production findings.
 - Inspect the full `npm audit` and distinguish development-tool exposure from production dependencies. The existing [dependency assessment](audits/2026-10-03-beta3-dependencies.md) records the build-tool scope; do not claim the full audit is clean.
 - `npm run verify` passes ESLint, TypeScript, the complete Jest suite and the production build.
-- Prisma schema validation, fresh installation and previous-release migration rehearsal pass.
+- Prisma schema validation, fresh installation and previous-release migration rehearsal pass. `npm run test:migration:upgrade` rehearses both the historical upgrade path and an upgrade from the latest published release; after publishing, set `LATEST_RELEASE_MIGRATION` in `scripts/validate-migration-upgrade.mjs` to the newest migration that release shipped.
 - Canonical, build, setup, legacy, external-database and beta.5.1-pinned Compose files parse successfully. Parsing is not a claim that the external topology is validated.
 - Disposable bundled-PostgreSQL lifecycle and backup/restore checks pass.
 - Runtime image remains non-root/read-only with bounded writable cache; build-only CSS/glob dependencies are absent.

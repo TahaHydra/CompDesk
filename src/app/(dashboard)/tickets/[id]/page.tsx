@@ -92,7 +92,6 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const assignmentRequestLock = useRef(false);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
-    const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
     useEffect(() => {
         if (!isAgent) return;
@@ -361,23 +360,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
     const isConversationEvent = (event: any) => CONVERSATION_EVENT_TYPES.includes(event.type);
 
-    // Administrators can moderate conversation history. Agents and users can
-    // modify only their own entries; users can never modify internal notes.
-    const canEditTimelineEvent = (event: any) => {
-        if (event.deletedAt || !event.content || !isConversationEvent(event)) return false;
-        if (isAdministrator) return true;
-        if (event.userId !== session?.user?.id) return false;
-        if (session?.user?.role === 'USER' && event.type !== 'COMMENT') return false;
-        const hours = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
-        return hours <= 24;
-    };
-
-    const canDeleteTimelineEvent = (event: any) => {
-        if (event.deletedAt || !isConversationEvent(event)) return false;
-        if (isAdministrator) return true;
-        return event.userId === session?.user?.id
-            && !(session?.user?.role === 'USER' && event.type === 'INTERNAL_NOTE');
-    };
+    // The server decides who may edit or delete each entry (own entries, or
+    // moderation by an administrator of this ticket's department); see src/lib/ticket-moderation.ts.
+    const canEditTimelineEvent = (event: any) => Boolean(event.permissions?.canEdit && event.content && isConversationEvent(event));
+    const canDeleteTimelineEvent = (event: any) => Boolean(event.permissions?.canDelete && isConversationEvent(event));
 
     if (isLoading) {
         return (
@@ -473,7 +459,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <span className="text-xs text-muted-foreground italic">{t("(edited)")}</span>
                         )}
                         {isDeleted && (
-                            <Badge variant="outline" className="text-xs text-muted-foreground">{t("Deleted · history retained")}</Badge>
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                                {event.deletedBy?.name
+                                    ? t('Deleted by {name} · {time}', { name: event.deletedBy.name, time: new Date(event.deletedAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB') })
+                                    : t('Deleted')}
+                            </Badge>
+                        )}
+                        {isDeleted && session?.user?.role === 'SUPER_ADMIN' && (
+                            <span className="text-xs text-muted-foreground italic">{t('Original text visible to Super Admins only')}</span>
                         )}
                         <span className="text-xs text-muted-foreground">
                             {new Date(event.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}
@@ -490,7 +483,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 {showDeleteBtn && (
                                     <ConfirmDestructiveAction
                                         title={t("Remove timeline entry?")}
-                                        description={t("The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators.")}
+                                        description={t("Everyone will see a \"Deleted\" placeholder instead of this message. Super Admins can still read the original text for audit purposes.")}
                                         pending={deleteComment.isPending}
                                         onConfirm={() => deleteComment.mutate(event.id)}
                                         trigger={
@@ -641,12 +634,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {t(att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured')}</p>
                                         </div>
                                         <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={t("Download {name}", { name: att.filename })}><Download className="h-3.5 w-3.5" /></a></Button>
-                                        <ConfirmDestructiveAction
-                                            title={t("Remove attachment?")}
-                                            description={<>{t("The stored file")} <strong>{att.filename}</strong> {t("will be removed, while its history record and audit evidence are retained.")}</>}
-                                            onConfirm={() => void deleteAttachment(att.id)}
-                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={t("Remove {name}", { name: att.filename })}><Trash2 className="h-3.5 w-3.5" /></Button>}
-                                        />
+                                        {att.canDelete ? (
+                                            <ConfirmDestructiveAction
+                                                title={t("Remove attachment?")}
+                                                description={<>{t("The file")} <strong>{att.filename}</strong> {t("will be permanently deleted and cannot be recovered. Only its name, size and who removed it are kept.")}</>}
+                                                onConfirm={() => void deleteAttachment(att.id)}
+                                                trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={t("Remove {name}", { name: att.filename })}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                            />
+                                        ) : null}
                                     </div>
                                 ))}
                                 {removedAttachments.map((att: any) => (
@@ -654,7 +649,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <FileIcon className="h-8 w-8 p-1 shrink-0" />
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs">{t("Removed · history retained")}</p>
+                                            <p className="text-xs">{t("File permanently removed")}</p>
                                         </div>
                                     </div>
                                 ))}                            </CardContent>
@@ -895,7 +890,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 {/* Tags: applied after triage; only tags that fit the current department and category can be added */}
                                 {ticket.tagPermissions?.editable ? (
                                     <div className="space-y-2">
-                                        <label htmlFor="ticket-tags" className="text-xs font-medium text-muted-foreground">{t("Tags")}</label>
+                                        <label htmlFor="ticket-tags" className="block text-xs font-medium text-muted-foreground">{t("Tags")}</label>
                                         {ticketTags.length ? (
                                             <div className="flex flex-wrap gap-1.5">
                                                 {ticketTags.map((tag) => (
@@ -905,7 +900,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                 ))}
                                             </div>
                                         ) : null}
-                                        <TagPicker id="ticket-tags" options={tagOptions} selected={tagDraft ?? currentTagIds} onChange={setTagDraft} onOpenChange={commitTagDraft}
+                                        <TagPicker id="ticket-tags" className="w-full" options={tagOptions} selected={tagDraft ?? currentTagIds} onChange={setTagDraft} onOpenChange={commitTagDraft}
                                             label={t(ticketTags.length ? 'Edit tags' : 'Add tags')} emptyText={t('No tags are available for this department or category')} disabled={updateTicket.isPending} />
                                         {unavailableTagCount > 0 ? <p className="text-[11px] text-muted-foreground">{t('Dashed tags do not apply to this department or category any more. They stay until you remove them.')}</p> : null}
                                     </div>

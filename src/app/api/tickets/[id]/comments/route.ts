@@ -7,6 +7,7 @@ import { sendNewCommentEmail } from '@/lib/email';
 import { auditLog } from '@/lib/audit';
 import logger from '@/lib/logger';
 import { canAccessTicket } from '@/lib/permissions';
+import { canDeleteTimelineEntry, canEditTimelineEntry, canModerateTicketConversation } from '@/lib/ticket-moderation';
 import { ticketNotificationRecipients } from '@/lib/tickets/notification-recipients';
 import { ticketPublicTitle } from '@/lib/ticket-form/privacy';
 
@@ -107,7 +108,7 @@ export async function PATCH(
             return NextResponse.json({ error: 'eventId and content are required' }, { status: 400 });
         }
 
-        const event = await prisma.timelineEvent.findUnique({ where: { id: eventId } });
+        const event = await prisma.timelineEvent.findUnique({ where: { id: eventId }, include: { user: { select: { role: true } } } });
         if (!event || event.ticketId !== id) {
             return NextResponse.json({ error: 'Timeline entry not found' }, { status: 404 });
         }
@@ -134,18 +135,15 @@ export async function PATCH(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const isAdministrator = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN';
-        const isOwnConversationEntry = event.userId === session.user.id
-            && (event.type === 'COMMENT' || (event.type === 'INTERNAL_NOTE' && session.user.role !== 'USER'));
-        if (!isAdministrator && !isOwnConversationEntry) {
-            return NextResponse.json({ error: 'You can only edit your own comments' }, { status: 403 });
-        }
-
-        if (!isAdministrator) {
-            const hoursSinceCreation = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
-            if (hoursSinceCreation > 24) {
+        const actor = { id: session.user.id, role: session.user.role };
+        const entry = { ...event, authorRole: event.user?.role ?? null };
+        const canModerate = await canModerateTicketConversation(actor, ticket);
+        if (!canEditTimelineEntry(actor, entry, canModerate)) {
+            // Allowed at creation time means only the 24-hour edit window has closed.
+            if (canEditTimelineEntry(actor, entry, canModerate, new Date(event.createdAt).getTime())) {
                 return NextResponse.json({ error: 'Comments can only be edited within 24 hours' }, { status: 400 });
             }
+            return NextResponse.json({ error: 'You can only edit your own comments' }, { status: 403 });
         }
 
         const oldContent = event.content;
@@ -199,7 +197,7 @@ export async function DELETE(
             return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
         }
 
-        const event = await prisma.timelineEvent.findUnique({ where: { id: eventId } });
+        const event = await prisma.timelineEvent.findUnique({ where: { id: eventId }, include: { user: { select: { role: true } } } });
         if (!event || event.ticketId !== id) {
             return NextResponse.json({ error: 'Timeline entry not found' }, { status: 404 });
         }
@@ -226,27 +224,22 @@ export async function DELETE(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const isAdministrator = session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN';
-        const isOwnConversationEntry = event.userId === session.user.id
-            && (event.type === 'COMMENT' || (event.type === 'INTERNAL_NOTE' && session.user.role !== 'USER'));
-        if (!isAdministrator && !isOwnConversationEntry) {
+        const actor = { id: session.user.id, role: session.user.role };
+        const canModerate = await canModerateTicketConversation(actor, ticket);
+        if (!canDeleteTimelineEntry(actor, { ...event, authorRole: event.user?.role ?? null }, canModerate)) {
             return NextResponse.json({ error: 'You can only delete your own comments' }, { status: 403 });
         }
 
         const deletedAt = new Date();
-        await prisma.timelineEvent.update({
-            where: { id: eventId },
-            data: {
-                deletedAt,
-                deletedById: session.user.id,
-                deleteReason: 'user_requested',
-                metadata: {
-                    ...((event.metadata as Record<string, unknown>) ?? {}),
-                    deleted: true,
-                    deletedAt: deletedAt.toISOString(),
-                },
-            },
+        const metadata = { ...((event.metadata as Record<string, unknown>) ?? {}), deleted: true, deletedAt: deletedAt.toISOString() };
+        // Guard against a concurrent delete: only the first request tombstones the entry.
+        const tombstoned = await prisma.timelineEvent.updateMany({
+            where: { id: eventId, deletedAt: null },
+            data: { deletedAt, deletedById: session.user.id, deleteReason: 'user_requested', metadata },
         });
+        if (tombstoned.count === 0) {
+            return NextResponse.json({ error: 'Timeline entry is already deleted' }, { status: 409 });
+        }
 
         void auditLog({
             userId: session.user.id,

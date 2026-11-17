@@ -144,7 +144,9 @@ export async function GET(req: NextRequest) {
             const projected = projectTicketFormForRole(ticket, role);
             // List chips need the tag and, for staff, whether it still fits the ticket's department and category.
             const tags = (projected.tags ?? []).map(({ tag }) => ({ id: tag.id, name: tag.name, color: tag.color, ...(role === 'USER' ? {} : { available: isTagAvailable(tag, ticket.queueId, ticket.categoryId) }) }));
-            return { ...projected, tags, assignees: ticket.assignments.map((assignment) => assignment.user), assignments: undefined, slaBreached };
+            // Requesters get assignee names only; staff contact details are not theirs to list.
+            const assignees = ticket.assignments.map(({ user }) => role === 'USER' ? { id: user.id, name: user.name } : user);
+            return { ...projected, tags, assignees, assignments: undefined, slaBreached };
         });
 
         return NextResponse.json(assertApiResponseSafe({
