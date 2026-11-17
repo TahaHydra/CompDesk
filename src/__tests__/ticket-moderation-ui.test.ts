@@ -22,6 +22,12 @@ describe('ticket page moderation and tag layout contract', () => {
         expect(ticketPage).toContain('will be permanently deleted and cannot be recovered');
     });
 
+    it('keeps a gap between every Details label and its value, even when the value wraps', () => {
+        const details = ticketPage.slice(ticketPage.indexOf('{t("Details")}'), ticketPage.indexOf('</CardContent>', ticketPage.indexOf('{t("Details")}')));
+        expect(details).not.toContain('className="flex justify-between text-sm"');
+        expect(details).toContain('<span className="shrink-0 text-muted-foreground">{t("Category")}</span>');
+    });
+
     it('stacks the Tags label above a full-width picker like the other action fields', () => {
         expect(ticketPage).toMatch(/htmlFor="ticket-tags" className="block /);
         expect(ticketPage).toMatch(/<TagPicker id="ticket-tags" className="w-full"/);

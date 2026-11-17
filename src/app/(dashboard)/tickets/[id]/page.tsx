@@ -740,13 +740,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <CardTitle className="text-base">{t("Details")}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">{t("Department")}</span>
-                                <span className="font-medium">{ticket.queue?.name}</span>
+                            <div className="flex justify-between gap-4 text-sm">
+                                <span className="shrink-0 text-muted-foreground">{t("Department")}</span>
+                                <span className="text-right font-medium">{ticket.queue?.name}</span>
                             </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">{t("Category")}</span>
-                                <span className="font-medium">{ticket.category?.name ?? '—'}</span>
+                            <div className="flex justify-between gap-4 text-sm">
+                                <span className="shrink-0 text-muted-foreground">{t("Category")}</span>
+                                <span className="text-right font-medium">{ticket.category?.name ?? '—'}</span>
                             </div>
                             {ticket.tagPermissions?.visible ? (
                                 <div className="flex justify-between gap-4 text-sm">
@@ -758,11 +758,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     ) : <span className="font-medium">—</span>}
                                 </div>
                             ) : null}
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Requester")}</span>
                                 <span className="font-semibold text-primary">{ticket.requester?.name}</span>
                             </div>
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Assignees")}</span>
                                 <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : t('Unassigned')}</span>
                             </div>
@@ -773,16 +773,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
                             ) : null}
                             <Separator />
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Created")}</span>
                                 <span className="text-xs">{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</span>
                             </div>
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Updated")}</span>
                                 <span className="text-xs">{new Date(ticket.updatedAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</span>
                             </div>
                             {ticket.dueAt && (
-                                <div className="flex justify-between text-sm">
+                                <div className="flex justify-between gap-4 text-sm">
                                     <span className="text-muted-foreground">{t("Due")}</span>
                                     <span className={`text-xs ${ticket.slaInfo?.resolutionBreached ? 'text-destructive font-bold' : ''}`}>
                                         {new Date(ticket.dueAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}
