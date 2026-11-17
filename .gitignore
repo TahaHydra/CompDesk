@@ -83,3 +83,10 @@ ci-e2e-artifacts/
 /e2e/sso-lab/*.crt
 /e2e/sso-lab/*.p12
 /e2e/sso-lab/*.pfx
+
+# Separate local projects and leftovers that must never be committed
+/promo-video/
+/node_modules.*/
+
+# Release handouts generated for the website team (shared as zip files, not versioned)
+/handout/
