@@ -128,6 +128,7 @@ model User {
   uploadedAttachments  Attachment[]          @relation("AttachmentUploader")
   temporaryAttachments TemporaryAttachment[]
   ticketReminders      TicketReminder[]
+  savedReplies         SavedReply[]
 
   @@map("users")
 }
@@ -765,6 +766,23 @@ model TicketReminder {
   @@index([status, scheduledAt, nextAttemptAt])
   @@index([userId, deliveredAt])
   @@map("ticket_reminders")
+}
+
+/// A staff member's personal reply snippet. Only its owner can list, use, change or delete it.
+model SavedReply {
+  id         String    @id @default(uuid())
+  ownerId    String    @map("owner_id")
+  title      String
+  content    String    @db.Text
+  useCount   Int       @default(0) @map("use_count")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, title])
+  @@index([ownerId, useCount])
+  @@map("saved_replies")
 }
 
 model TicketCounter {

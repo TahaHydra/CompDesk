@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { getEffectiveLoginPolicy, getSsoState, isRuntimeProviderConfigured, isUsableBinding, providerAccountFilter } from '@/lib/login-policy';
 import { targetProviderId, type RuntimeSsoProviderId, type SsoProviderOption } from '@/lib/sso-presets';
 import { SsoAccountLink } from '@/components/sso-account-link';
+import { SavedRepliesManager } from '@/components/profile/saved-replies-manager';
 
 export default async function ProfilePage() {
     const session = await auth();
@@ -126,6 +127,8 @@ export default async function ProfilePage() {
                             )}
                         </CardContent>
                     </Card>
+
+                    {isAgentRole ? <SavedRepliesManager /> : null}
                 </div>
             </div>
         </div>

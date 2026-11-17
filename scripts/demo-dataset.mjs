@@ -535,6 +535,19 @@ export async function seedDemoDataset(prisma, options = {}) {
             if (!existing)
                 await prisma.cannedResponse.create({ data: response });
         }
+        // Personal saved replies for the IT agent. They belong to the demo account, so they are
+        // removed with it (cascade) or cleared when the account is retained.
+        const agentSavedReplies = [
+            { title: 'VPN: reinstall client', content: 'Please uninstall the VPN client, restart your computer, then install the latest version from the Software Center. Reply here if the connection still drops after signing in.' },
+            { title: 'Remote session request', content: 'Could you share a convenient time for a short remote session? I will call you on Teams and we can look at the issue together.' },
+        ];
+        for (const reply of agentSavedReplies) {
+            await prisma.savedReply.upsert({
+                where: { ownerId_title: { ownerId: agent1.id, title: reply.title } },
+                update: {},
+                create: { ownerId: agent1.id, ...reply },
+            });
+        }
         await seedHelpCenter();
         const brandingConfig = {
             applicationName: 'CompDesk', shortApplicationName: 'CompDesk', subtitle: 'Helpdesk',

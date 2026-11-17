@@ -108,6 +108,7 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(await prisma.ticket.count(), 5);
             assert.equal(await prisma.helpArticle.count(), 8);
             assert.equal(await prisma.user.count({ where: { isDemo: true } }), 7);
+            assert.equal(await prisma.savedReply.count({ where: { owner: { isDemo: true, role: 'AGENT' } } }), 2);
             assert.equal((await prisma.user.findUnique({ where: { id: admin.id } })).passwordHash, 'preserve-this-hash');
             assert.equal((await prisma.appSetting.findUnique({ where: { key: 'login_local_enabled' } })).value, 'false');
             const ledger = (await prisma.appSetting.findUnique({ where: { key: DEMO_LEDGER_KEY } })).value;
@@ -123,6 +124,7 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(await prisma.queue.count(), 0);
             assert.equal(await prisma.category.count(), 0);
             assert.equal(await prisma.helpArticle.count(), 0);
+            assert.equal(await prisma.savedReply.count(), 0);
             assert.equal((await prisma.appSetting.findUnique({ where: { key: 'branding_config' } })).value, '{"applicationName":"My real installation"}');
             assert.equal((await getDemoState(prisma)).installed, false);
             await installDemoData(prisma, options);
@@ -165,6 +167,7 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(disabled.isActive, false);
             assert.equal(disabled.passwordHash, null);
             assert.equal(disabled.sessionVersion, demoUser.sessionVersion + 1);
+            assert.equal(await prisma.savedReply.count({ where: { ownerId: demoUser.id } }), 0, 'retained demo accounts lose their saved replies');
             assert.ok(await prisma.ticket.findUnique({ where: { id: realTicket.id } }));
         });
         await t.test('corrupted ownership fails safely without deleting personal records', async () => {

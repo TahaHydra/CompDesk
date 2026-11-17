@@ -55,6 +55,30 @@ Authenticated. Returns the current user's saved interface language.
 
 Authenticated. Updates only the current user's preference. The strict request body is `{ "preferredLanguage": "en" }` or `{ "preferredLanguage": "fr" }`. The change is audited and takes effect across the application shell, dashboard, profile, ticket creation, and Help Center.
 
+## Saved replies
+
+Personal reply snippets for staff (Agent, Department Admin, Super Admin). Requesters receive 403. Every query is scoped to the signed-in user, so another user's reply returns 404. Titles are unique per user (1–80 characters), content is 1–10,000 characters (the same limit as a reply), and each user can keep up to 200. Writes are rate-limited and audited without their content.
+
+### `GET /api/saved-replies`
+
+The caller's replies, most used first: `id`, `title`, `content`, `useCount`, `lastUsedAt`, `updatedAt`.
+
+### `POST /api/saved-replies`
+
+Body `{ "title": "...", "content": "..." }` (no other fields). Returns 201 with the reply, or 409 for a duplicate title or when the 200-reply limit is reached.
+
+### `PATCH /api/saved-replies/[id]`
+
+Body with `title` and/or `content`.
+
+### `DELETE /api/saved-replies/[id]`
+
+### `POST /api/saved-replies/[id]/use`
+
+Counts one insertion so the list stays ordered by use. Not audited.
+
+The shared `/api/canned-responses` endpoint is unchanged: its entries appear read-only under **Shared responses** in the reply box.
+
 ## Help Center
 
 Help Center reads require an authenticated session. Normal users receive only published content localized to their saved profile language. Admin and Super Admin write access is always enforced server-side.

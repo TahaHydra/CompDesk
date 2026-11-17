@@ -30,6 +30,8 @@ import { TagChip } from '@/components/tags/tag-chip';
 import { TagPicker, type TagPickerOption } from '@/components/tags/tag-picker';
 import { describeTagScope, isTagAvailable, type NamedTagScope } from '@/lib/tag-scope';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
+import { SavedRepliesMenu } from '@/components/tickets/saved-replies-menu';
+import { insertAtSelection } from '@/lib/saved-replies';
 import { useLanguage } from '@/components/providers/language-provider';
 import { parseTicketContent } from '@/lib/ticket-content';
 
@@ -89,6 +91,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [editContent, setEditContent] = useState('');
     const [timelineOpen, setTimelineOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const commentInputRef = useRef<HTMLTextAreaElement>(null);
     const assignmentRequestLock = useRef(false);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
@@ -357,6 +360,17 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
             }
         }
     }, [uploadToTicket]);
+
+    // Saved replies are inserted where the caret was, never replacing the draft or sending it.
+    const insertIntoComment = useCallback((text: string) => {
+        const input = commentInputRef.current;
+        const next = insertAtSelection(comment, text, input?.selectionStart ?? null, input?.selectionEnd ?? null);
+        setComment(next.value);
+        requestAnimationFrame(() => {
+            input?.focus();
+            input?.setSelectionRange(next.caret, next.caret);
+        });
+    }, [comment]);
 
     const isConversationEvent = (event: any) => CONVERSATION_EVENT_TYPES.includes(event.type);
 
@@ -687,9 +701,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             <Eye className="h-3.5 w-3.5 mr-1" />
                                             {t(isInternal ? 'Internal Note' : 'Public Reply')}
                                         </Button>
+                                        <SavedRepliesMenu draft={comment} onInsert={insertIntoComment} disabled={addComment.isPending} />
                                     </div>
                                 )}
                                 <Textarea
+                                    ref={commentInputRef}
                                     placeholder={t(isInternal ? 'Write an internal note... (Paste screenshots with Ctrl+V)' : 'Write a reply... (Paste screenshots with Ctrl+V)')}
                                     value={comment}
                                     disabled={addComment.isPending}

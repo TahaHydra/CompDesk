@@ -46,7 +46,9 @@ You can add public comments and view notifications. Internal notes are never sho
 
 ## Agents
 
-Agents see **Department Inbox** for departments assigned directly or through a group. They can claim/assign tickets, change permitted status/priority values, add internal notes, use canned response reply macros, and escalate tickets.
+Agents see **Department Inbox** for departments assigned directly or through a group. They can claim/assign tickets, change permitted status/priority values, add internal notes, use saved replies, and escalate tickets.
+
+**Saved replies.** In the reply box, **Saved replies** (next to Public reply / Internal note) lists your own replies, most used first, plus any **Shared responses** your installation already had. Search by title or text, use the arrow keys and Enter, or click an entry: its text is inserted where your cursor is and nothing is sent until you press Send. **Save current reply** stores what you have typed under a title of your choice. Edit, rename or delete your replies in **My Profile → My saved replies**. Saved replies are personal: nobody else, including administrators, can see or use yours. Requesters do not have this feature.
 
 Categories offered during routing always belong to the selected department. Moving a ticket to another department requires a compatible category from that target department.
 
