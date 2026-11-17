@@ -1,6 +1,6 @@
 {
   "name": "compdesk",
-  "version": "0.9.0-beta.5.1",
+  "version": "0.9.0-beta.6",
   "private": true,
   "author": "Taha Laachari",
   "license": "MIT",
@@ -55,6 +55,8 @@
     "test:watch": "jest --watch",
     "postinstall": "prisma generate",
     "test:migration:upgrade": "node scripts/validate-migration-upgrade.mjs",
+    "release:prepare": "node scripts/release-version.mjs prepare",
+    "release:announce": "node scripts/release-version.mjs announce",
     "test:integration:entra": "node --test scripts/entra-account-link.integration.test.mjs"
   },
   "dependencies": {

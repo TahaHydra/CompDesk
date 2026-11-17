@@ -8,6 +8,7 @@ describe('release metadata and version precedence', () => {
         ['0.9.0', '0.9.0-beta.2', 1], ['0.9.0-beta.10', '0.9.0-beta.2', 1],
         ['0.9.0-beta.2', '0.9.0-beta.2+build.4', 0], ['0.9.0-alpha', '0.9.0-beta', -1],
         ['0.9.0-1', '0.9.0-alpha', -1], ['1.0.0', '0.99.99', 1],
+        ['0.9.0-beta.6', '0.9.0-beta.5.1', 1], ['0.9.0-beta.5.1', '0.9.0-beta.6', -1], ['0.9.0-beta.5.1', '0.9.0-beta.5', 1],
     ])('compares %s against %s', (a, b, expected) => expect(compareVersions(a, b)).toBe(expected));
 
     it.each([null, {}, { ...manifest, latest: 'garbage' }, { ...manifest, latest: '01.9.4' },
