@@ -656,7 +656,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         {att.canDelete ? (
                                             <ConfirmDestructiveAction
                                                 title={t("Remove attachment?")}
-                                                description={<>{t("The file")} <strong>{att.filename}</strong> {t("will be permanently deleted and cannot be recovered. Only its name, size and who removed it are kept.")}</>}
+                                                description={<>{t("The file")} <strong>{att.filename}</strong> {t("will be deleted from CompDesk. Only its name, size and who removed it are kept; copies may remain in your backups.")}</>}
                                                 onConfirm={() => void deleteAttachment(att.id)}
                                                 trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={t("Remove {name}", { name: att.filename })}><Trash2 className="h-3.5 w-3.5" /></Button>}
                                             />
@@ -668,7 +668,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <FileIcon className="h-8 w-8 p-1 shrink-0" />
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs">{t("File permanently removed")}</p>
+                                            <p className="text-xs">{t("File removed")}</p>
                                         </div>
                                     </div>
                                 ))}                            </CardContent>

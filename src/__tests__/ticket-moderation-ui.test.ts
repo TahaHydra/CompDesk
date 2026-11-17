@@ -19,7 +19,8 @@ describe('ticket page moderation and tag layout contract', () => {
         expect(ticketPage).not.toContain('authorized administrators');
         expect(ticketPage).not.toContain('Removed · history retained');
         expect(ticketPage).toContain('Super Admins can still read the original text');
-        expect(ticketPage).toContain('will be permanently deleted and cannot be recovered');
+        expect(ticketPage).toContain('will be deleted from CompDesk');
+        expect(ticketPage).toContain('copies may remain in your backups');
     });
 
     it('keeps a gap between every Details label and its value, even when the value wraps', () => {
@@ -32,5 +33,11 @@ describe('ticket page moderation and tag layout contract', () => {
         expect(ticketPage).toMatch(/htmlFor="ticket-tags" className="block /);
         expect(ticketPage).toMatch(/<TagPicker id="ticket-tags" className="w-full"/);
         expect(read('src/components/tags/tag-picker.tsx')).toContain("cn('h-9 justify-between gap-2 font-normal', className)");
+    });
+
+    it('never shows a cached person card: contact details are fetched again on every opening', () => {
+        const card = read('src/components/people/person-name.tsx');
+        expect(card).toContain('gcTime: 0');
+        expect(card).toContain("refetchOnMount: 'always'");
     });
 });

@@ -230,7 +230,7 @@ export async function GET(
             ...safeTicket.assignments.map((assignment) => assignment.user),
             ...safeTicket.watchers.map((watcher) => watcher.user),
             ...safeTicket.timeline.flatMap((event) => event.user ? [event.user] : []),
-        ], privacy, [ticket.queueId]);
+        ], privacy, [ticket.queueId], ticket.requesterId);
         return NextResponse.json(assertApiResponseSafe({
             ...safeTicket,
             peopleHints,

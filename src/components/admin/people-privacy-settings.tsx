@@ -7,6 +7,7 @@ import { useLanguage } from '@/components/providers/language-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import {
     DEFAULT_PEOPLE_PRIVACY,
@@ -33,14 +34,20 @@ const LEVEL_HINTS: Record<PrivacyLevel, string> = {
 };
 
 type PreviewViewer = 'USER' | 'AGENT' | 'ADMIN_OWN' | 'ADMIN_OTHER';
-type PreviewSubject = 'USER' | 'AGENT' | 'ADMIN' | 'SUPER_ADMIN';
+type PreviewSubject = 'USER' | 'AGENT' | 'ADMIN' | 'SUPER_ADMIN' | 'TICKET_REQUESTER';
 const VIEWER_LABELS: Record<PreviewViewer, string> = {
     USER: 'A requester',
     AGENT: 'An agent',
     ADMIN_OWN: 'A department admin (same department)',
     ADMIN_OTHER: 'A department admin (other department)',
 };
-const SUBJECT_LABELS: Record<PreviewSubject, string> = { USER: 'a requester', AGENT: 'an agent', ADMIN: 'a department admin', SUPER_ADMIN: 'a Super Admin' };
+const SUBJECT_LABELS: Record<PreviewSubject, string> = {
+    USER: 'a requester',
+    AGENT: 'an agent',
+    ADMIN: 'a department admin',
+    SUPER_ADMIN: 'a Super Admin',
+    TICKET_REQUESTER: 'a colleague who requested a ticket they handle',
+};
 
 async function request(method: 'GET' | 'PUT', body?: PeoplePrivacyPolicy) {
     const response = await fetch('/api/settings/people-privacy', {
@@ -83,8 +90,10 @@ export function PeoplePrivacySettings() {
         return visibleFieldsFor(
             draft,
             { id: 'preview-viewer', role: viewerRole, administeredQueueIds: new Set(viewer === 'ADMIN_OWN' ? [department] : []) },
-            { id: 'preview-subject', role: subject },
+            // The ticket-requester case is shown with an agent who opened a ticket.
+            { id: 'preview-subject', role: subject === 'TICKET_REQUESTER' ? 'AGENT' : subject },
             [department],
+            { subjectIsTicketRequester: subject === 'TICKET_REQUESTER' },
         );
     }, [draft, viewer, subject]);
 
@@ -121,6 +130,17 @@ export function PeoplePrivacySettings() {
                                 </Select>
                             </div>
                         ))}
+                    </div>
+                    <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+                        <div>
+                            <p className="text-sm font-medium">{t('Ticket requesters')}</p>
+                            <p className="text-xs text-muted-foreground">{t('Staff who can open a ticket always see its requester’s details, even a colleague with the same or a higher role. Turn off to apply the levels above everywhere.')}</p>
+                        </div>
+                        <Switch
+                            checked={draft.requesterVisibleToHandlers}
+                            onCheckedChange={(checked) => setDraft({ ...draft, requesterVisibleToHandlers: checked })}
+                            aria-label={t('Ticket requesters')}
+                        />
                     </div>
                     <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                         <li>{t('Details are only ever shown for people someone already works with: people on a ticket they can open, or staff in their departments.')}</li>

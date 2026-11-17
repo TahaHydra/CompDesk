@@ -61,9 +61,11 @@ Contact details of other people (`email`, `preferredLanguage`, `jobTitle`) follo
 
 ### `GET /api/users/[id]/card?ticketId=uuid`
 
-Authenticated. The person card. With `ticketId`, the caller must be able to open the ticket and the person must be on it; without it, staff can open cards of staff in a department they can reach. Anything else returns 404. Returns `id`, `name`, `image`, `role`, `isSelf`, `departments` (only the ticket's department for requesters), plus, when allowed, `email`, `preferredLanguage`, `jobTitle`; for staff `isActive`, `openRequests` and `requestsHref`; for Super Admins `manageHref`.
+Authenticated. The person card. With `ticketId`, the caller must be able to open the ticket and the person must be on it; without it, staff can open cards of staff in a department they can reach. Anything else returns 404. Returns `id`, `name`, `image`, `role`, `isSelf`, `departments` (the department the person is reached through and, for staff, departments the caller also works in; all of them for Super Admins and for oneself), plus, when allowed, `email`, `preferredLanguage`, `jobTitle`; for staff `isActive`, `openRequests` and `requestsHref`; for Super Admins `manageHref`.
 
 ### `GET` / `PUT /api/settings/people-privacy`
+
+The policy also has `requesterVisibleToHandlers` (boolean, default `true`): staff who can open a ticket always see its requester's details. It may be omitted from `PUT`, in which case it is set to `true`.
 
 Super Admin only. `GET` returns `{ policy, defaults }`. `PUT` replaces the policy with `{ "email": level, "language": level, "jobTitle": level }`, where `level` is `higher`, `same_or_higher`, `staff` or `everyone`. Changes are audited with the previous and new policy.
 

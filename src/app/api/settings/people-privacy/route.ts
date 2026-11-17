@@ -16,6 +16,7 @@ export async function GET() {
 }
 
 // PUT /api/settings/people-privacy: replaces the whole policy (Super Admin only).
+// `requesterVisibleToHandlers` may be omitted by older clients; it then defaults to on.
 export async function PUT(req: NextRequest) {
     const session = await auth();
     if (!session?.user || session.user.role !== 'SUPER_ADMIN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

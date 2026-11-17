@@ -112,8 +112,11 @@ function PersonCardBody({ personId, ticketId, fallbackName }: { personId: string
             if (!response.ok) throw new Error('Unavailable');
             return response.json();
         },
-        // Short cache: permission or policy changes show up the next time the card opens.
-        staleTime: 60_000,
+        // Never reuse a previous answer: contact details depend on permissions and the privacy
+        // policy, which may have changed since. Each opening asks the server again.
+        staleTime: 0,
+        gcTime: 0,
+        refetchOnMount: 'always',
         retry: false,
     });
 

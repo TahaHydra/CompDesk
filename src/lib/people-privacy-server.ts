@@ -67,6 +67,7 @@ export async function sameNameHints(
     people: ReadonlyArray<{ id: string; name: string }>,
     { policy, viewer }: PrivacyContext,
     contextQueueIds: readonly string[],
+    ticketRequesterId?: string,
 ): Promise<Record<string, string>> {
     const byName = new Map<string, Set<string>>();
     for (const person of people) {
@@ -83,7 +84,7 @@ export async function sameNameHints(
     ]);
     const hints: Record<string, string> = {};
     for (const user of users) {
-        const visible = visibleFieldsFor(policy, viewer, user, contextQueueIds);
+        const visible = visibleFieldsFor(policy, viewer, user, contextQueueIds, { subjectIsTicketRequester: user.id === ticketRequesterId });
         const userDepartments = (departments.get(user.id) ?? [])
             .filter((department) => viewer.role !== 'USER' || contextQueueIds.includes(department.id))
             .map((department) => department.name);
@@ -108,7 +109,8 @@ export function redactTicketPeople<T extends {
     const redact = <P extends Person>(person: P) => redactPerson(person, policy, viewer, context);
     return {
         ...ticket,
-        ...(ticket.requester ? { requester: redact(ticket.requester) } : {}),
+        // Whoever can see this ticket is handling (or watching) the requester's request.
+        ...(ticket.requester ? { requester: redactPerson(ticket.requester, policy, viewer, context, { subjectIsTicketRequester: true }) } : {}),
         ...(ticket.assignments ? { assignments: ticket.assignments.map((assignment) => ({ ...assignment, user: redact(assignment.user) })) } : {}),
         ...(ticket.assignees ? { assignees: ticket.assignees.map(redact) } : {}),
         ...(ticket.escalatedTo ? { escalatedTo: redact(ticket.escalatedTo) } : {}),

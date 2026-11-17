@@ -8,6 +8,8 @@ import { loadPrivacyContext } from '@/lib/people-privacy-server';
 import logger from '@/lib/logger';
 
 const EMPTY_SCOPE = ['__none__'];
+// How many email-only matches are considered before the visibility filter.
+const EMAIL_MATCH_CANDIDATES = 50;
 
 export async function GET(request: NextRequest) {
     try {
@@ -36,13 +38,14 @@ export async function GET(request: NextRequest) {
         }
 
         const scopeQueueIds = queueId ? [queueId] : accessibleQueueIds;
-        const textWhere: Prisma.UserWhereInput = query
-            ? { OR: [
-                { id: query },
-                { name: { contains: query, mode: 'insensitive' } },
-                { email: { contains: query, mode: 'insensitive' } },
-            ] }
+        // Name (or exact id) matches and email-only matches are fetched separately, so that people
+        // matched only through an email the viewer may not see can never crowd out real name matches.
+        const nameWhere: Prisma.UserWhereInput = query
+            ? { OR: [{ id: query }, { name: { contains: query, mode: 'insensitive' } }] }
             : {};
+        const emailOnlyWhere: Prisma.UserWhereInput | null = query
+            ? { email: { contains: query, mode: 'insensitive' }, NOT: nameWhere }
+            : null;
         let relevance: Prisma.UserWhereInput;
         if (kind === 'assignee') {
             relevance = {
@@ -64,46 +67,50 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        const users = await prisma.user.findMany({
-            where: { AND: [textWhere, relevance] },
-            select: {
-                id: true, name: true, email: true, role: true,
-                queueMemberships: {
+        const select = {
+            id: true, name: true, email: true, role: true,
+            queueMemberships: {
+                where: scopeQueueIds ? { queueId: { in: scopeQueueIds.length ? scopeQueueIds : EMPTY_SCOPE } } : {},
+                select: { queueId: true, queue: { select: { name: true } } },
+            },
+            groupMemberships: {
+                where: scopeQueueIds ? { group: { queueAssignments: { some: { queueId: { in: scopeQueueIds.length ? scopeQueueIds : EMPTY_SCOPE } } } } } : {},
+                select: { group: { select: { queueAssignments: {
                     where: scopeQueueIds ? { queueId: { in: scopeQueueIds.length ? scopeQueueIds : EMPTY_SCOPE } } : {},
                     select: { queueId: true, queue: { select: { name: true } } },
-                },
-                groupMemberships: {
-                    where: scopeQueueIds ? { group: { queueAssignments: { some: { queueId: { in: scopeQueueIds.length ? scopeQueueIds : EMPTY_SCOPE } } } } } : {},
-                    select: { group: { select: { queueAssignments: {
-                        where: scopeQueueIds ? { queueId: { in: scopeQueueIds.length ? scopeQueueIds : EMPTY_SCOPE } } : {},
-                        select: { queueId: true, queue: { select: { name: true } } },
-                    } } } },
-                },
+                } } } },
             },
-            orderBy: [{ name: 'asc' }, { email: 'asc' }],
-            take: limit,
-        });
-        // Contact details follow the people privacy policy. A person who matched the search only
-        // through an email the viewer may not see is dropped, so hidden addresses cannot be probed.
+        } satisfies Prisma.UserSelect;
+        const orderBy: Prisma.UserOrderByWithRelationInput[] = [{ name: 'asc' }, { email: 'asc' }];
+        const [nameMatches, emailMatches] = await Promise.all([
+            prisma.user.findMany({ where: { AND: [nameWhere, relevance] }, select, orderBy, take: limit }),
+            emailOnlyWhere
+                ? prisma.user.findMany({ where: { AND: [emailOnlyWhere, relevance] }, select, orderBy, take: EMAIL_MATCH_CANDIDATES })
+                : Promise.resolve([]),
+        ]);
+
+        // Contact details follow the people privacy policy, and an email-only match is kept only
+        // when the viewer may see that email, so hidden addresses cannot be probed.
         const privacy = await loadPrivacyContext(session.user);
-        const needle = query.toLocaleLowerCase();
-        return NextResponse.json(users.flatMap((user) => {
+        const present = (user: (typeof nameMatches)[number]) => {
             const queueIds = [...new Set([
                 ...user.queueMemberships.map((membership) => membership.queueId),
                 ...user.groupMemberships.flatMap((membership) => membership.group.queueAssignments.map((assignment) => assignment.queueId)),
             ])];
             const context = kind === 'requester' ? (scopeQueueIds ?? queueIds) : queueIds;
-            const visible = redactPerson({ id: user.id, name: user.name, email: user.email, role: user.role }, privacy.policy, privacy.viewer, context);
-            const matchedOnlyByEmail = Boolean(needle) && user.id !== query && !user.name.toLocaleLowerCase().includes(needle);
-            if (matchedOnlyByEmail && !('email' in visible)) return [];
-            return [{
-                ...visible,
+            return {
+                ...redactPerson({ id: user.id, name: user.name, email: user.email, role: user.role }, privacy.policy, privacy.viewer, context),
                 departmentNames: [...new Set([
                     ...user.queueMemberships.map((membership) => membership.queue.name),
                     ...user.groupMemberships.flatMap((membership) => membership.group.queueAssignments.map((assignment) => assignment.queue.name)),
                 ])].sort(),
-            }];
-        }));
+            };
+        };
+        const results = [
+            ...nameMatches.map(present),
+            ...emailMatches.map(present).filter((user) => 'email' in user),
+        ].sort((left, right) => left.name.localeCompare(right.name)).slice(0, limit);
+        return NextResponse.json(results);
     } catch (error) {
         logger.error('Failed to search scoped users', { error });
         return NextResponse.json({ error: 'Failed to search users' }, { status: 500 });

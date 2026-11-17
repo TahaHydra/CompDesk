@@ -17,7 +17,7 @@ describe('people privacy policy', () => {
     const defaults = DEFAULT_PEOPLE_PRIVACY;
 
     it('defaults to "higher roles only" for every field', () => {
-        expect(defaults).toEqual({ email: 'higher', language: 'higher', jobTitle: 'higher' });
+        expect(defaults).toEqual({ email: 'higher', language: 'higher', jobTitle: 'higher', requesterVisibleToHandlers: true });
     });
 
     it('lets higher roles see lower ones by default, never the reverse', () => {
@@ -38,7 +38,7 @@ describe('people privacy policy', () => {
 
     it('always shows everything to Super Admins and to the person themself', () => {
         expect(visibleFieldsFor(defaults, viewer('SUPER_ADMIN'), person('SUPER_ADMIN', 'other'), [])).toEqual({ email: true, language: true, jobTitle: true });
-        expect(visibleFieldsFor({ email: 'higher', language: 'higher', jobTitle: 'higher' }, viewer('USER', [], 'me'), person('USER', 'me'), [])).toEqual({ email: true, language: true, jobTitle: true });
+        expect(visibleFieldsFor({ ...defaults }, viewer('USER', [], 'me'), person('USER', 'me'), [])).toEqual({ email: true, language: true, jobTitle: true });
     });
 
     it('widens visibility level by level', () => {
@@ -53,14 +53,28 @@ describe('people privacy policy', () => {
     });
 
     it('evaluates each field independently', () => {
-        const policy: PeoplePrivacyPolicy = { email: 'higher', language: 'everyone', jobTitle: 'staff' };
+        const policy: PeoplePrivacyPolicy = { email: 'higher', language: 'everyone', jobTitle: 'staff', requesterVisibleToHandlers: true };
         expect(visibleFieldsFor(policy, viewer('USER'), person('AGENT'), [IT])).toEqual({ email: false, language: true, jobTitle: false });
+    });
+
+    it('lets staff handling a ticket see its requester, even a colleague of the same rank', () => {
+        // An IT agent working a ticket another agent submitted, and an admin on an admin's ticket.
+        const onTicket = { subjectIsTicketRequester: true };
+        expect(visibleFieldsFor(defaults, viewer('AGENT'), person('AGENT'), [IT], onTicket)).toEqual({ email: true, language: true, jobTitle: true });
+        expect(visibleFieldsFor(defaults, viewer('ADMIN', [IT]), person('ADMIN'), [IT], onTicket).email).toBe(true);
+        // Never for requesters, and not when the organisation turns it off.
+        expect(visibleFieldsFor(defaults, viewer('USER'), person('AGENT'), [IT], onTicket).email).toBe(false);
+        expect(visibleFieldsFor({ ...defaults, requesterVisibleToHandlers: false }, viewer('AGENT'), person('AGENT'), [IT], onTicket).email).toBe(false);
+        // Only the ticket's requester: other staff on the same ticket still follow the levels.
+        expect(visibleFieldsFor(defaults, viewer('AGENT'), person('AGENT'), [IT]).email).toBe(false);
     });
 
     it('falls back to the safe default for missing, malformed or unknown stored values', () => {
         expect(parsePeoplePrivacy(null)).toEqual(defaults);
         expect(parsePeoplePrivacy('not json')).toEqual(defaults);
         expect(parsePeoplePrivacy(JSON.stringify({ email: 'everyone', language: 'public' }))).toEqual({ ...defaults, email: 'everyone' });
+        expect(parsePeoplePrivacy(JSON.stringify({ ...defaults, requesterVisibleToHandlers: 'yes' })).requesterVisibleToHandlers).toBe(true);
+        expect(parsePeoplePrivacy(JSON.stringify({ ...defaults, requesterVisibleToHandlers: false })).requesterVisibleToHandlers).toBe(false);
     });
 
     it('removes hidden fields and treats an unknown role as the most protected', () => {

@@ -107,8 +107,28 @@ describe('person card endpoint', () => {
         mockAdministered.mockResolvedValue([IT]);
         const card = await (await open(AGENT_ID, TICKET_ID)).json();
         expect(card.email).toBe('martin@example.com');
-        expect(card.departments).toEqual(['HR', 'IT Support']);
+        // The agent also works in HR, which this IT admin cannot reach: not disclosed.
+        expect(card.departments).toEqual(['IT Support']);
         expect(card).toMatchObject({ isActive: true, openRequests: 2, requestsHref: `/tickets?view=all&requesterId=${AGENT_ID}` });
+    });
+
+    it('shows staff the departments they share with the person, and Super Admins all of them', async () => {
+        as('44444444-4444-4444-8444-444444444444', 'AGENT');
+        mockInbox.mockResolvedValue([IT, HR]);
+        expect((await (await open(AGENT_ID)).json()).departments).toEqual(['HR', 'IT Support']);
+        as('99999999-9999-4999-8999-999999999999', 'SUPER_ADMIN');
+        mockInbox.mockResolvedValue(null);
+        expect((await (await open(AGENT_ID)).json()).departments).toEqual(['HR', 'IT Support']);
+    });
+
+    it('shows an agent the contact details of a colleague whose ticket they handle', async () => {
+        as('44444444-4444-4444-8444-444444444444', 'AGENT');
+        mockPrisma.ticket.findUnique.mockResolvedValue({ id: TICKET_ID, requesterId: AGENT_ID, queueId: IT, assignments: [], watchers: [] });
+        const card = await (await open(AGENT_ID, TICKET_ID)).json();
+        expect(card.email).toBe('martin@example.com');
+        // Turned off by the organisation: back to the role levels (an agent does not see an agent).
+        mockPrisma.appSetting.findUnique.mockResolvedValue({ value: JSON.stringify({ email: 'higher', language: 'higher', jobTitle: 'higher', requesterVisibleToHandlers: false }) });
+        expect(await (await open(AGENT_ID, TICKET_ID)).json()).not.toHaveProperty('email');
     });
 
     it('treats malformed ids as not found', async () => {

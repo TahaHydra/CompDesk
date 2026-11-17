@@ -15,8 +15,11 @@ const notFound = () => NextResponse.json({ error: 'Person not found' }, { status
  * Decides whether the viewer has a working relationship with the person, and through which
  * departments. Returns null when there is none.
  */
-async function relationship(viewer: { id: string; role: Role }, subjectId: string, ticketId: string | null, subjectDepartmentIds: string[]): Promise<string[] | null> {
-    if (viewer.id === subjectId) return subjectDepartmentIds;
+type Relationship = { context: string[]; subjectIsTicketRequester: boolean };
+
+async function relationship(viewer: { id: string; role: Role }, subjectId: string, ticketId: string | null, subjectDepartmentIds: string[]): Promise<Relationship | null> {
+    const via = (context: string[], subjectIsTicketRequester = false) => ({ context, subjectIsTicketRequester });
+    if (viewer.id === subjectId) return via(subjectDepartmentIds);
     if (ticketId) {
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
@@ -30,14 +33,14 @@ async function relationship(viewer: { id: string; role: Role }, subjectId: strin
             || await prisma.timelineEvent.count({
                 where: { ticketId: ticket.id, userId: subjectId, ...(viewer.role === 'USER' ? { type: { not: 'INTERNAL_NOTE' } } : {}) },
             }) > 0;
-        return onTicket ? [ticket.queueId] : null;
+        return onTicket ? via([ticket.queueId], ticket.requesterId === subjectId) : null;
     }
-    if (viewer.role === 'SUPER_ADMIN') return subjectDepartmentIds;
+    if (viewer.role === 'SUPER_ADMIN') return via(subjectDepartmentIds);
     if (viewer.role === 'USER') return null;
     // Without a ticket, staff can open cards of staff who work in a department they can reach.
     const reachable = new Set(await getQueueInboxQueueIds(viewer.id, viewer.role) ?? []);
     const shared = subjectDepartmentIds.filter((queueId) => reachable.has(queueId));
-    return shared.length > 0 ? shared : null;
+    return shared.length > 0 ? via(shared) : null;
 }
 
 // GET /api/users/[id]/card?ticketId=…: the person card shown when hovering or clicking a name.
@@ -57,17 +60,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const viewer = { id: session.user.id, role: session.user.role };
     const departments = (await staffDepartmentsByUser([subject.id])).get(subject.id) ?? [];
-    const context = await relationship(viewer, subject.id, ticketId?.data ?? null, departments.map((department) => department.id));
-    if (!context) return notFound();
+    const related = await relationship(viewer, subject.id, ticketId?.data ?? null, departments.map((department) => department.id));
+    if (!related) return notFound();
+    const { context } = related;
 
     const privacy = await loadPrivacyContext(viewer);
-    const visible = visibleFieldsFor(privacy.policy, privacy.viewer, subject, context);
+    const visible = visibleFieldsFor(privacy.policy, privacy.viewer, subject, context, { subjectIsTicketRequester: related.subjectIsTicketRequester });
     const isStaffViewer = viewer.role !== 'USER';
     const isSelf = viewer.id === subject.id;
 
+    // Departments the viewer can reach themself (null: every department, for Super Admins).
+    const scope = isStaffViewer && !isSelf ? await getQueueInboxQueueIds(viewer.id, viewer.role) : null;
     let openRequests: number | undefined;
     if (isStaffViewer && !isSelf) {
-        const scope = await getQueueInboxQueueIds(viewer.id, viewer.role);
         openRequests = await prisma.ticket.count({
             where: { requesterId: subject.id, status: { in: OPEN_STATUSES }, ...(scope ? { queueId: { in: scope } } : {}) },
         });
@@ -79,9 +84,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         image: subject.image,
         role: subject.role,
         isSelf,
-        // Requesters see only the department of the ticket they are looking at, never a staff member's full list.
+        // Only departments relevant to the viewer: the one they reach the person through and, for
+        // staff, departments they work in themselves. Super Admins and the person see them all.
         departments: departments
-            .filter((department) => isStaffViewer || isSelf || context.includes(department.id))
+            .filter((department) => isSelf || viewer.role === 'SUPER_ADMIN' || context.includes(department.id)
+                || (isStaffViewer && Boolean(scope?.includes(department.id))))
             .map((department) => department.name),
         ...(isStaffViewer ? { isActive: subject.isActive } : {}),
         ...(visible.email ? { email: subject.email } : {}),

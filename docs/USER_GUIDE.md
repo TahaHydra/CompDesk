@@ -145,7 +145,7 @@ Canned responses remain reusable comment text for agents. They do not define tic
 
 ### Privacy: Super Admin → Settings → Privacy
 
-Choose who can see each person's email address, preferred language and job title: **Higher roles only** (default), **Same role and higher**, **All staff**, or **Everyone**. A preview shows what, for example, a requester sees on an agent's card before you save. Name, photo, role and the relevant department are always visible. Details are only ever shown for people someone already works with, a department admin counts as an administrator only in the departments they administer, and Super Admins always see everything. A small internal team can simply set **Email address → Everyone**. Super Admins can also set anyone's job title in **Admin → Users**.
+Choose who can see each person's email address, preferred language and job title: **Higher roles only** (default), **Same role and higher**, **All staff**, or **Everyone**. A preview shows what, for example, a requester sees on an agent's card before you save. Name, photo, role and the relevant department are always visible. Details are only ever shown for people someone already works with, a department admin counts as an administrator only in the departments they administer, and Super Admins always see everything. **Ticket requesters** (on by default) lets staff who can open a ticket always see its requester's details, even a colleague with the same role: an agent handling a ticket another agent submitted can still email them. A small internal team can simply set **Email address → Everyone**. Super Admins can also set anyone's job title in **Admin → Users**.
 
 ### Other settings
 
