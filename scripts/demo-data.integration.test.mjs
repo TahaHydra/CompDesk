@@ -106,7 +106,8 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(await prisma.queue.count(), 3);
             assert.equal(await prisma.category.count(), 18);
             assert.equal(await prisma.ticket.count(), 5);
-            assert.equal(await prisma.helpArticle.count(), 8);
+            assert.equal(await prisma.helpArticle.count(), 10);
+            assert.equal(await prisma.categoryHelpArticle.count(), 3);
             assert.equal(await prisma.user.count({ where: { isDemo: true } }), 7);
             assert.equal(await prisma.savedReply.count({ where: { owner: { isDemo: true, role: 'AGENT' } } }), 2);
             assert.equal((await prisma.user.findUnique({ where: { id: admin.id } })).passwordHash, 'preserve-this-hash');
@@ -125,6 +126,7 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(await prisma.category.count(), 0);
             assert.equal(await prisma.helpArticle.count(), 0);
             assert.equal(await prisma.savedReply.count(), 0);
+            assert.equal(await prisma.categoryHelpArticle.count(), 0);
             assert.equal((await prisma.appSetting.findUnique({ where: { key: 'branding_config' } })).value, '{"applicationName":"My real installation"}');
             assert.equal((await getDemoState(prisma)).installed, false);
             await installDemoData(prisma, options);

@@ -147,6 +147,7 @@ export async function seedDemoDataset(prisma, options = {}) {
             { id: '51000000-0000-0000-0000-000000000002', slug: 'tickets', titleEn: 'Tickets and requests', titleFr: 'Tickets et demandes', descriptionEn: 'Create, follow, and update support requests.', descriptionFr: 'Créez, suivez et mettez à jour vos demandes.', icon: 'ticket', sortOrder: 20 },
             { id: '51000000-0000-0000-0000-000000000003', slug: 'account', titleEn: 'Account and preferences', titleFr: 'Compte et préférences', descriptionEn: 'Manage your profile, language, and sign-in.', descriptionFr: 'Gérez votre profil, votre langue et votre connexion.', icon: 'user', sortOrder: 30 },
             { id: '51000000-0000-0000-0000-000000000004', slug: 'agents', titleEn: 'For agents', titleFr: 'Pour les agents', descriptionEn: 'Practical guidance for handling the support queue.', descriptionFr: 'Conseils pratiques pour traiter la file d’assistance.', icon: 'agent', sortOrder: 40 },
+            { id: '51000000-0000-0000-0000-000000000005', slug: 'common-requests', titleEn: 'Common requests', titleFr: 'Demandes courantes', descriptionEn: 'Answers to requests the support teams receive most often.', descriptionFr: 'Réponses aux demandes les plus fréquentes.', icon: 'book', sortOrder: 15 },
         ];
         for (const collection of collections)
             await prisma.helpCollection.upsert({ where: { id: collection.id }, update: { ...collection, isPublished: true }, create: { ...collection, isPublished: true } });
@@ -207,9 +208,24 @@ export async function seedDemoDataset(prisma, options = {}) {
                 contentEn: '## Before resolving\n\nConfirm that the requested action is complete or that a tested solution has been provided. Summarize what changed.\n\n## Set the status\n\nUse **Resolved** when work is complete but may need confirmation. Use **Closed** only when no further interaction is expected.\n\n## Preserve context\n\nRecord important reference numbers, affected systems, and the final action.',
                 contentFr: '## Avant de résoudre\n\nConfirmez que l’action est terminée ou qu’une solution testée a été fournie. Résumez les changements.\n\n## Définir le statut\n\nUtilisez **Résolu** lorsque le travail est terminé mais peut nécessiter une confirmation. Utilisez **Fermé** si aucun échange n’est attendu.\n\n## Conserver le contexte\n\nNotez les références, les systèmes concernés et l’action finale.',
             },
+            {
+                id: '52000000-0000-0000-0000-000000000009', collectionId: collections[4].id, slug: 'delegate-a-mailbox', sortOrder: 10,
+                titleEn: 'Give a colleague access to your mailbox', titleFr: 'Donner accès à votre boîte aux lettres à un collègue',
+                summaryEn: 'Share your Outlook mailbox or calendar yourself, without a ticket.', summaryFr: 'Partagez vous-même votre boîte Outlook ou votre calendrier, sans ticket.',
+                contentEn: '## Share your calendar\n\n1. In Outlook, open **Calendar**.\n2. Right-click your calendar and select **Sharing and permissions**.\n3. Add your colleague and choose what they can see or edit.\n\n## Delegate your mailbox\n\n1. In Outlook, select **File → Account settings → Delegate access**.\n2. Select **Add**, choose your colleague, then set their permissions for Inbox and Calendar.\n3. Your colleague can then open your mailbox from **File → Open & Export → Other user’s folder**.\n\n## When to create a ticket\n\nCreate an **IT Support → Email & collaboration** ticket if you need a shared or team mailbox, if the person has left the company, or if you cannot change permissions yourself.',
+                contentFr: '## Partager votre calendrier\n\n1. Dans Outlook, ouvrez **Calendrier**.\n2. Faites un clic droit sur votre calendrier et sélectionnez **Partage et autorisations**.\n3. Ajoutez votre collègue et choisissez ce qu’il peut voir ou modifier.\n\n## Déléguer votre boîte aux lettres\n\n1. Dans Outlook, sélectionnez **Fichier → Paramètres du compte → Accès délégué**.\n2. Sélectionnez **Ajouter**, choisissez votre collègue puis définissez ses autorisations pour la boîte de réception et le calendrier.\n3. Votre collègue peut ensuite ouvrir votre boîte depuis **Fichier → Ouvrir et exporter → Dossier d’un autre utilisateur**.\n\n## Quand créer un ticket\n\nCréez un ticket **Support informatique → Email & collaboration** pour une boîte partagée ou d’équipe, si la personne a quitté l’entreprise ou si vous ne pouvez pas modifier les autorisations vous-même.',
+            },
+            {
+                id: '52000000-0000-0000-0000-000000000010', collectionId: collections[4].id, slug: 'expense-report-deadlines', sortOrder: 20,
+                titleEn: 'Expense reports: deadlines and receipts', titleFr: 'Notes de frais : délais et justificatifs',
+                summaryEn: 'When reimbursements are paid and what to attach.', summaryFr: 'Quand les remboursements sont versés et quels justificatifs joindre.',
+                contentEn: '## Payment dates\n\nExpense reports approved by the 20th are reimbursed with that month’s salary. Reports approved later are paid the following month.\n\n## What to attach\n\n- An itemised receipt for each expense (a card statement is not enough).\n- The attendee list for meals with guests.\n- The approval email for purchases over 500 EUR.\n\n## Check the status\n\nYour manager approves the report first, then Finance. If a report has been approved for more than 10 working days without payment, create a **Finance → Expenses & reimbursements** ticket with its reference.',
+                contentFr: '## Dates de paiement\n\nLes notes de frais validées avant le 20 sont remboursées avec le salaire du mois. Celles validées après sont payées le mois suivant.\n\n## Justificatifs à joindre\n\n- Un reçu détaillé pour chaque dépense (un relevé de carte ne suffit pas).\n- La liste des participants pour les repas avec invités.\n- L’e-mail d’approbation pour les achats de plus de 500 EUR.\n\n## Vérifier le statut\n\nVotre responsable valide d’abord la note, puis la Finance. Si une note est validée depuis plus de 10 jours ouvrés sans paiement, créez un ticket **Finance → Notes de frais et remboursements** avec sa référence.',
+            },
         ];
         for (const article of articles)
             await prisma.helpArticle.upsert({ where: { id: article.id }, update: { ...article, isPublished: true }, create: { ...article, isPublished: true } });
+        return Object.fromEntries(articles.map((article) => [article.slug, article.id]));
     }
     async function main() {
         const suppliedPassword = options.password;
@@ -548,7 +564,23 @@ export async function seedDemoDataset(prisma, options = {}) {
                 create: { ownerId: agent1.id, ...reply },
             });
         }
-        await seedHelpCenter();
+        const helpArticleIds = await seedHelpCenter();
+        // Suggested while creating a ticket in these categories (Admin → Categories → Suggested help articles).
+        const suggestions = [
+            [categories.get(`${itQueue.id}:Email & collaboration`), ['delegate-a-mailbox']],
+            [categories.get(`${financeQueue.id}:Expenses & reimbursements`), ['expense-report-deadlines']],
+            [categories.get(`${itQueue.id}:Access & permissions`), ['sign-in-troubleshooting']],
+        ];
+        for (const [category, slugs] of suggestions) {
+            if (!category) continue;
+            for (const [sortOrder, slug] of slugs.entries()) {
+                await prisma.categoryHelpArticle.upsert({
+                    where: { categoryId_articleId: { categoryId: category.id, articleId: helpArticleIds[slug] } },
+                    update: { sortOrder },
+                    create: { categoryId: category.id, articleId: helpArticleIds[slug], sortOrder },
+                });
+            }
+        }
         const brandingConfig = {
             applicationName: 'CompDesk', shortApplicationName: 'CompDesk', subtitle: 'Helpdesk',
             description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',

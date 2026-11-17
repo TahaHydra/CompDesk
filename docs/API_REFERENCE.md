@@ -109,6 +109,10 @@ Admin only. Creates or replaces a collection definition containing `slug`, Engli
 
 Admin only. Deletion is rejected with `409` while the collection still has articles.
 
+### `GET /api/help/suggestions?categoryId=uuid`
+
+Authenticated. The help articles linked to a category, for the ticket creation page: `id`, `slug`, localized `title` and `summary`, in the chosen order. Only published articles in published collections are returned, and only for an active category. The caller must be allowed to create a ticket in the category's department (the same rule as `/api/ticket-form/resolve`); otherwise 403.
+
 ### `GET /api/help/articles`
 
 Returns localized published articles. Optional `collectionId` filters one collection and `q` searches the selected language's title, summary, and content. Administrators may use `includeDrafts=true&raw=true` for editing.
@@ -189,7 +193,7 @@ Names are unique within one department, so different departments may both use `N
 
 A Super Admin can rename, activate/archive, move an unused category, and set its template override. Moving is rejected when tickets already reference the category.
 
-A department admin can patch only `id` and `templateId`, and only for a category in an administered department. The override may use any active template in the shared library; `null` inherits the department default. The server rejects category edits and assignments outside that scope.
+Both roles can also send `suggestedArticleIds`: up to three distinct published Help Center article ids, in display order (an empty array removes the suggestions). Unpublished articles, or articles in an unpublished collection, are rejected with 400. A department admin can patch only `id`, `templateId` and `suggestedArticleIds`, and only for a category in an administered department. The override may use any active template in the shared library; `null` inherits the department default. The server rejects category edits and assignments outside that scope.
 
 ### `DELETE /api/categories?id=uuid`
 

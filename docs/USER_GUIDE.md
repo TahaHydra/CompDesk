@@ -23,7 +23,8 @@ Select **Help Center** in the sidebar. Search looks through the current language
 2. Select a **Department** first.
 3. Select one of that department’s active **Categories**, when categories exist.
 4. CompDesk resolves the effective **Ticket Template**.
-5. Complete the visible fields and submit.
+5. If administrators linked Help Center articles to the category, **This might answer your question** appears above the form. Open an article to read it without losing what you've entered. Select **This solved it** to leave without creating a ticket, or **Continue with my request** to hide the suggestions. They never block submitting.
+6. Complete the visible fields and submit.
 
 Changing department always clears an incompatible category. If the resulting template changes after you entered data, CompDesk warns you. Values are retained only when the same stable field key and compatible type exist in the new form.
 
@@ -104,6 +105,8 @@ A department with categories or historical tickets cannot be hard-deleted. Deact
 Every category belongs to exactly one department. Different departments may reuse the same name. Category administration shows the owner, ticket count, and whether its effective template is inherited or overridden.
 
 Super administrators can rename, move, archive/restore, or delete categories where history permits. Department administrators can choose any active shared template as an override for categories in departments they administer, or restore inheritance from the department default. They cannot modify categories in another department. A category with tickets cannot be moved or hard-deleted; archive it to preserve historical ticket relationships.
+
+**Suggested help articles.** When editing a category, Super Admins and the department's administrators can choose up to three published Help Center articles, in the order they should appear. People who pick that category while creating a ticket see them first, for example a "Give a colleague access to your mailbox" article on **Email & collaboration**. An article (or its collection) that is later unpublished is simply no longer suggested; deleting it removes the link. Nothing is tracked about who read a suggestion.
 
 ### Ticket Templates
 

@@ -285,10 +285,11 @@ model Category {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  queue     Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
-  template  TicketFormTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  tickets   Ticket[]
-  tagScopes TagScope[]
+  queue             Queue                 @relation(fields: [queueId], references: [id], onDelete: Restrict)
+  template          TicketFormTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  tickets           Ticket[]
+  tagScopes         TagScope[]
+  suggestedArticles CategoryHelpArticle[]
 
   @@unique([queueId, name])
   @@index([queueId, isActive])
@@ -695,10 +696,26 @@ model HelpArticle {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  collection HelpCollection @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collection   HelpCollection        @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  suggestedFor CategoryHelpArticle[]
 
   @@index([collectionId, isPublished, sortOrder])
   @@map("help_articles")
+}
+
+/// Help articles suggested to requesters who choose this category while creating a ticket.
+/// Links disappear with either side; an unpublished article or collection is simply not suggested.
+model CategoryHelpArticle {
+  categoryId String @map("category_id")
+  articleId  String @map("article_id")
+  sortOrder  Int    @default(0) @map("sort_order")
+
+  category Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  article  HelpArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, articleId])
+  @@index([articleId])
+  @@map("category_help_articles")
 }
 
 // ── External API Clients ───────────────────────────────────────
