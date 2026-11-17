@@ -1,8 +1,8 @@
 {
-  "latest": "0.9.0-beta.5.1",
+  "latest": "0.9.0-beta.6",
   "severity": "normal",
-  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5.1",
-  "published_at": "2026-10-31T10:37:46Z",
-  "summary": "Fix release: choose where a tag is available with searchable department and category lists grouped by department, and a cleaner notifications panel on computers and phones. No database or configuration changes.",
-  "upgrade_notes": "Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together. Use this release's pinned Docker Compose asset, preserve existing volumes and deployment settings, then run docker compose pull and docker compose up -d. This release has no database migrations; an older image alone is not a recovery point."
+  "release_url": "https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.6",
+  "published_at": "2026-11-17T19:57:38Z",
+  "summary": "Know who you're talking to, answer faster, and help people help themselves. This release adds person cards with an organisation privacy setting, personal saved replies for staff, Help Center suggestions while creating a ticket, and tightens who can moderate conversations.",
+  "upgrade_notes": "Back up PostgreSQL, private attachments, uploaded branding, and the private configuration volume together. Use this release's pinned Docker Compose asset, preserve existing volumes and deployment settings, then run docker compose pull and docker compose up -d. This release applies additive database migrations automatically on start; an older image alone is not a recovery point."
 }

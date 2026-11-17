@@ -19,15 +19,16 @@ Built by [xHydra](https://xhydra.fr).
 
 > **Public beta.** CompDesk is under active development and is not yet claimed as mature, production-hardened software. See [Known limitations](#known-limitations) and the [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md) before deploying it for real users.
 
-## Current release — v0.9.0-beta.5.1
+## Current release — v0.9.0-beta.6
 
-[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5.1) · [Fixes](docs/releases/v0.9.0-beta.5.1.md) · [beta.5 changes and upgrade notes](docs/releases/v0.9.0-beta.5.md)
+[Release and installation assets](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.6) · [Changes and upgrade notes](docs/releases/v0.9.0-beta.6.md)
 
-This update makes choosing where a tag is available scale to many departments and categories, and fixes how the notifications panel looks on computers and phones. It builds on beta.5, in which email notifications started working with Microsoft 365 / Graph without an SMTP From address, tags became a triage tool (shown on tickets, editable after a ticket is created, and limited to the departments and categories where they apply), and Nodemailer and Zod were updated for security advisories. The beta.4 line added generic OpenID Connect sign-in, guided SSO migration, private-CA and client-certificate support, and authentication setup; Email Delivery settings show the selected SMTP or Microsoft 365 / Graph configuration while preserving both providers' saved settings.
+Know who you're talking to, answer faster, and help people help themselves. This release adds person cards with an organisation privacy setting, personal saved replies for staff, Help Center suggestions while creating a ticket, and tightens who can moderate conversations.
 
 <details>
 <summary>Previous public betas</summary>
 
+- [v0.9.0-beta.5.1](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5.1) — [release notes](docs/releases/v0.9.0-beta.5.1.md)
 - [v0.9.0-beta.5](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.5) — [release notes](docs/releases/v0.9.0-beta.5.md)
 - [v0.9.0-beta.4.2](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.2) — [release notes](docs/releases/v0.9.0-beta.4.2.md)
 - [v0.9.0-beta.4.1](https://github.com/TahaHydra/CompDesk/releases/tag/v0.9.0-beta.4.1) — [release notes](docs/releases/v0.9.0-beta.4.1.md)

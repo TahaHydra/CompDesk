@@ -13,7 +13,7 @@ const { Client } = pg;
 // - latest: the schema of the most recent published release, seeded with the data later
 //   releases touch. Bump LATEST_RELEASE_MIGRATION to the newest shipped migration on every release.
 const HISTORICAL_RELEASE_MIGRATION = '20260727130000_add_multiple_ticket_assignees';
-const LATEST_RELEASE_MIGRATION = '20261031120000_tag_scopes'; // v0.9.0-beta.5.1
+const LATEST_RELEASE_MIGRATION = '20261117140000_category_help_suggestions'; // v0.9.0-beta.6
 const sourcePrisma = path.resolve('prisma');
 const suppliedUrl = process.env.MIGRATION_TEST_DATABASE_URL;
 
