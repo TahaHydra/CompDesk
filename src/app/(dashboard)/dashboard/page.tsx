@@ -22,6 +22,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useBranding } from '@/components/providers/branding-provider';
 import { useLanguage } from '@/components/providers/language-provider';
 import { AssigneeSummary } from '@/components/tickets/assignee-summary';
+import { PersonName } from '@/components/people/person-name';
 import type { DashboardLink } from '@/lib/dashboard-links';
 
 interface RecentTicket {
@@ -32,7 +33,7 @@ interface RecentTicket {
     priority: string | null;
     createdAt: string;
     slaBreached?: boolean;
-    requester?: { name: string } | null;
+    requester?: { id: string; name: string } | null;
     assignments?: Array<{ user: { id: string; name: string } }>;
 }
 
@@ -131,8 +132,8 @@ export default function DashboardPage() {
                                         <tr key={ticket.id} className="transition-colors hover:bg-muted/30">
                                             <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">{ticket.key}{ticket.slaBreached ? <AlertTriangle className="ml-1 inline h-3 w-3 text-destructive" /> : null}</td>
                                             <td className="max-w-[200px] px-4 py-3 font-medium"><Link href={`/tickets/${ticket.id}`} className="block truncate rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{ticket.title}</Link></td>
-                                            <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{ticket.requester?.name ?? '—'}</td>
-                                            <td className="hidden px-4 py-3 lg:table-cell"><AssigneeSummary assignees={(ticket.assignments ?? []).map((assignment) => assignment.user)} /></td>
+                                            <td className="hidden px-4 py-3 text-muted-foreground md:table-cell"><PersonName person={ticket.requester} ticketId={ticket.id} /></td>
+                                            <td className="hidden px-4 py-3 lg:table-cell"><AssigneeSummary assignees={(ticket.assignments ?? []).map((assignment) => assignment.user)} ticketId={ticket.id} /></td>
                                             <td className="px-4 py-3"><Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>{ticket.status.replaceAll('_', ' ')}</Badge></td>
                                             <td className="hidden px-4 py-3 sm:table-cell">{ticket.priority ? <Badge variant="outline" className={`priority-${ticket.priority.toLowerCase()} text-xs`}>{ticket.priority}</Badge> : null}</td>
                                             <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-muted-foreground lg:table-cell">{dateFormatter.format(new Date(ticket.createdAt))}</td>

@@ -23,7 +23,8 @@ Select **Help Center** in the sidebar. Search looks through the current language
 2. Select a **Department** first.
 3. Select one of that department’s active **Categories**, when categories exist.
 4. CompDesk resolves the effective **Ticket Template**.
-5. Complete the visible fields and submit.
+5. If administrators linked Help Center articles to the category, **This might answer your question** appears above the form. Open an article to read it without losing what you've entered. Select **This solved it** to leave without creating a ticket, or **Continue with my request** to hide the suggestions. They never block submitting.
+6. Complete the visible fields and submit.
 
 Changing department always clears an incompatible category. If the resulting template changes after you entered data, CompDesk warns you. Values are retained only when the same stable field key and compatible type exist in the new form.
 
@@ -44,9 +45,13 @@ Visible required fields and configured rules are shown in the browser, then inde
 
 You can add public comments and view notifications. Internal notes are never shown to end users.
 
+**Who am I talking to?** Hover or click any name (requester, assignee, message author, watcher, or a name in a ticket list) to open the person's card: their name, photo, role and department. Each message also shows the author's role (Requester, Agent, Department admin) and your own messages say **You**. If two people in the same ticket share a name, a short hint (part of their email, or their department) appears next to it. Whether the card also shows an email address, preferred language or job title depends on your organisation's privacy setting. Set your own job title in **My Profile**.
+
 ## Agents
 
-Agents see **Department Inbox** for departments assigned directly or through a group. They can claim/assign tickets, change permitted status/priority values, add internal notes, use canned response reply macros, and escalate tickets.
+Agents see **Department Inbox** for departments assigned directly or through a group. They can claim/assign tickets, change permitted status/priority values, add internal notes, use saved replies, and escalate tickets.
+
+**Saved replies.** In the reply box, **Saved replies** (next to Public reply / Internal note) lists your own replies, most used first, plus any **Shared responses** your installation already had. Search by title or text, use the arrow keys and Enter, or click an entry: its text is inserted where your cursor is and nothing is sent until you press Send. **Save current reply** stores what you have typed under a title of your choice. Edit, rename or delete your replies in **My Profile → My saved replies**. Saved replies are personal: nobody else, including administrators, can see or use yours. Requesters do not have this feature.
 
 Categories offered during routing always belong to the selected department. Moving a ticket to another department requires a compatible category from that target department.
 
@@ -101,6 +106,8 @@ Every category belongs to exactly one department. Different departments may reus
 
 Super administrators can rename, move, archive/restore, or delete categories where history permits. Department administrators can choose any active shared template as an override for categories in departments they administer, or restore inheritance from the department default. They cannot modify categories in another department. A category with tickets cannot be moved or hard-deleted; archive it to preserve historical ticket relationships.
 
+**Suggested help articles.** When editing a category, Super Admins and the department's administrators can choose up to three published Help Center articles, in the order they should appear. People who pick that category while creating a ticket see them first, for example a "Give a colleague access to your mailbox" article on **Email & collaboration**. An article (or its collection) that is later unpublished is simply no longer suggested; deleting it removes the link. Nothing is tracked about who read a suggestion.
+
 ### Ticket Templates
 
 **Ticket Templates** are ticket-creation forms. They are separate from **Canned Responses**, which are reply macros.
@@ -134,7 +141,11 @@ Template precedence is always:
 **Admin → Help Content** manages the shared bilingual documentation library. Administrators can create, reorder, publish, draft, edit, and delete articles and collections. Each article requires meaningful English and French content so changing a profile language never produces an empty document. Article content supports headings, paragraphs, lists, links, emphasis, inline code, code blocks, and blockquotes. Preview both languages before publishing. A collection must be emptied before it can be deleted.
 ### Canned responses
 
-Canned responses remain reusable comment text for agents. They do not define ticket fields and are not managed on the Ticket Templates page.
+Canned responses remain reusable comment text for agents. They do not define ticket fields and are not managed on the Ticket Templates page. They appear read-only under **Shared responses** in each agent's Saved replies menu.
+
+### Privacy: Super Admin → Settings → Privacy
+
+Choose who can see each person's email address, preferred language and job title: **Higher roles only** (default), **Same role and higher**, **All staff**, or **Everyone**. A preview shows what, for example, a requester sees on an agent's card before you save. Name, photo, role and the relevant department are always visible. Details are only ever shown for people someone already works with, a department admin counts as an administrator only in the departments they administer, and Super Admins always see everything. **Ticket requesters** (on by default) lets staff who can open a ticket always see its requester's details, even a colleague with the same role: an agent handling a ticket another agent submitted can still email them. A small internal team can simply set **Email address → Everyone**. Super Admins can also set anyone's job title in **Admin → Users**.
 
 ### Other settings
 
@@ -143,6 +154,7 @@ Canned responses remain reusable comment text for agents. They do not define tic
 - **Entra ID**: Microsoft OIDC credentials; restart after environment changes.
 - **Quick Links**: up to 16 validated HTTP/HTTPS dashboard links with optional PNG, JPEG, WebP, GIF, or ICO images. Source files may be up to 5 MB and must have sensible icon proportions. CompDesk preserves the aspect ratio, resizes inside 128×128 without stretching or enlarging small images, stores a compact WebP, and renders it at 32 px on the dashboard.
 - **Security**: local login control (also reflected in Branding).
+- **Privacy**: who sees email addresses, preferred language and job titles (see above).
 - **Features**: attachments, quick links, external API, and webhooks.
 - **API Clients**: scoped API keys and optional department restrictions.
 

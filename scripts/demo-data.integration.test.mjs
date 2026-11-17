@@ -70,6 +70,11 @@ async function checkSetup(databaseUrl) {
     }
 }
 
+// Local runs skip without a database; CI must never skip it silently.
+test('demo lifecycle database is configured in CI', { skip: !process.env.CI }, () => {
+    assert.ok(process.env.DEMO_TEST_DATABASE_URL, 'Set DEMO_TEST_DATABASE_URL so the demo lifecycle test runs in CI.');
+});
+
 test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !process.env.DEMO_TEST_DATABASE_URL }, async (t) => {
     const sourceUrl = process.env.DEMO_TEST_DATABASE_URL;
     const name = `compdesk_demo_test_${crypto.randomBytes(6).toString('hex')}`;
@@ -106,8 +111,20 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(await prisma.queue.count(), 3);
             assert.equal(await prisma.category.count(), 18);
             assert.equal(await prisma.ticket.count(), 5);
-            assert.equal(await prisma.helpArticle.count(), 8);
+            assert.equal(await prisma.helpArticle.count(), 10);
+            assert.equal(await prisma.categoryHelpArticle.count(), 3);
+            assert.equal(await prisma.timelineEvent.count({ where: { type: 'COMMENT' } }), 7);
+            assert.equal(await prisma.timelineEvent.count({ where: { type: 'INTERNAL_NOTE' } }), 2);
+            const deleted = await prisma.timelineEvent.findMany({ where: { deletedAt: { not: null } }, include: { user: true } });
+            assert.equal(deleted.length, 1);
+            assert.equal(deleted[0].deletedById, deleted[0].userId, 'the demo message was deleted by its own author');
+            assert.ok(deleted[0].content, 'the original text is kept for Super Admins');
+            assert.equal(await prisma.ticket.count({ where: { firstPublicResponseAt: { not: null } } }), 3);
+            for (const event of await prisma.timelineEvent.findMany({ include: { ticket: { select: { createdAt: true } } } })) {
+                assert.ok(event.createdAt >= event.ticket.createdAt && event.createdAt <= new Date(), 'demo messages are dated after their ticket and not in the future');
+            }
             assert.equal(await prisma.user.count({ where: { isDemo: true } }), 7);
+            assert.equal(await prisma.savedReply.count({ where: { owner: { isDemo: true, role: 'AGENT' } } }), 2);
             assert.equal((await prisma.user.findUnique({ where: { id: admin.id } })).passwordHash, 'preserve-this-hash');
             assert.equal((await prisma.appSetting.findUnique({ where: { key: 'login_local_enabled' } })).value, 'false');
             const ledger = (await prisma.appSetting.findUnique({ where: { key: DEMO_LEDGER_KEY } })).value;
@@ -123,6 +140,9 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(await prisma.queue.count(), 0);
             assert.equal(await prisma.category.count(), 0);
             assert.equal(await prisma.helpArticle.count(), 0);
+            assert.equal(await prisma.savedReply.count(), 0);
+            assert.equal(await prisma.categoryHelpArticle.count(), 0);
+            assert.equal(await prisma.timelineEvent.count(), 0);
             assert.equal((await prisma.appSetting.findUnique({ where: { key: 'branding_config' } })).value, '{"applicationName":"My real installation"}');
             assert.equal((await getDemoState(prisma)).installed, false);
             await installDemoData(prisma, options);
@@ -165,6 +185,7 @@ test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !proc
             assert.equal(disabled.isActive, false);
             assert.equal(disabled.passwordHash, null);
             assert.equal(disabled.sessionVersion, demoUser.sessionVersion + 1);
+            assert.equal(await prisma.savedReply.count({ where: { ownerId: demoUser.id } }), 0, 'retained demo accounts lose their saved replies');
             assert.ok(await prisma.ticket.findUnique({ where: { id: realTicket.id } }));
         });
         await t.test('corrupted ownership fails safely without deleting personal records', async () => {

@@ -45,6 +45,11 @@ jobs:
         env:
           MIGRATION_TEST_DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/postgres
       - run: npm run test:integration:entra
+      # Installs, removes and reinstalls the demo dataset (including first-run setup) on
+      # isolated databases created inside this PostgreSQL service.
+      - run: npm run test:integration:demo
+        env:
+          DEMO_TEST_DATABASE_URL: postgresql://compdesk:compdesk_ci@localhost:5432/postgres
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:ci

@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
-import { isAdmin } from '@/lib/utils';
 import { canAccessTicket } from '@/lib/permissions';
+import { canDeleteTicketAttachment } from '@/lib/ticket-moderation';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { resolveStoredAttachmentPath } from '@/lib/attachment-storage';
 import { isAttachmentDownloadable } from '@/lib/attachment-security';
@@ -77,12 +77,12 @@ export async function DELETE(
         if (!ticketAttachmentVisibleToRole(attachment.ticket, attachment, session.user.role, true)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const hasTicketAccess = await canAccessTicket(session.user.id, session.user.role, attachment.ticket);
-        const isOwner = attachment.ticket.requesterId === session.user.id;
-        if (!hasTicketAccess || (!isOwner && !isAdmin(session.user.role) && session.user.role !== 'AGENT')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-        }
         if (attachment.deletedAt) {
+            if (!hasTicketAccess) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             return NextResponse.json({ success: true, deletedAt: attachment.deletedAt, retained: true });
+        }
+        if (!canDeleteTicketAttachment({ id: session.user.id, role: session.user.role }, attachment, hasTicketAccess)) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
         const deletedAt = new Date();

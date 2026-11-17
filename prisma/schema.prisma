@@ -100,6 +100,8 @@ model User {
   normalizedEmail      String           @unique @default(dbgenerated()) @map("normalized_email")
   emailVerified        DateTime?        @map("email_verified")
   name                 String
+  /// Optional job title shown on person cards; visibility follows the people privacy policy.
+  jobTitle             String?          @map("job_title")
   image                String?
   passwordHash         String?          @map("password_hash")
   role                 Role             @default(USER)
@@ -128,6 +130,7 @@ model User {
   uploadedAttachments  Attachment[]          @relation("AttachmentUploader")
   temporaryAttachments TemporaryAttachment[]
   ticketReminders      TicketReminder[]
+  savedReplies         SavedReply[]
 
   @@map("users")
 }
@@ -282,10 +285,11 @@ model Category {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  queue     Queue               @relation(fields: [queueId], references: [id], onDelete: Restrict)
-  template  TicketFormTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  tickets   Ticket[]
-  tagScopes TagScope[]
+  queue             Queue                 @relation(fields: [queueId], references: [id], onDelete: Restrict)
+  template          TicketFormTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  tickets           Ticket[]
+  tagScopes         TagScope[]
+  suggestedArticles CategoryHelpArticle[]
 
   @@unique([queueId, name])
   @@index([queueId, isActive])
@@ -692,10 +696,26 @@ model HelpArticle {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  collection HelpCollection @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collection   HelpCollection        @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  suggestedFor CategoryHelpArticle[]
 
   @@index([collectionId, isPublished, sortOrder])
   @@map("help_articles")
+}
+
+/// Help articles suggested to requesters who choose this category while creating a ticket.
+/// Links disappear with either side; an unpublished article or collection is simply not suggested.
+model CategoryHelpArticle {
+  categoryId String @map("category_id")
+  articleId  String @map("article_id")
+  sortOrder  Int    @default(0) @map("sort_order")
+
+  category Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  article  HelpArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, articleId])
+  @@index([articleId])
+  @@map("category_help_articles")
 }
 
 // ── External API Clients ───────────────────────────────────────
@@ -765,6 +785,23 @@ model TicketReminder {
   @@index([status, scheduledAt, nextAttemptAt])
   @@index([userId, deliveredAt])
   @@map("ticket_reminders")
+}
+
+/// A staff member's personal reply snippet. Only its owner can list, use, change or delete it.
+model SavedReply {
+  id         String    @id @default(uuid())
+  ownerId    String    @map("owner_id")
+  title      String
+  content    String    @db.Text
+  useCount   Int       @default(0) @map("use_count")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, title])
+  @@index([ownerId, useCount])
+  @@map("saved_replies")
 }
 
 model TicketCounter {

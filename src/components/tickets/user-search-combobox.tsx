@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 export interface ScopedUserOption {
     id: string;
     name: string;
-    email: string;
+    /** Absent when the people privacy policy hides it from the viewer. */
+    email?: string;
     role: string;
     departmentNames: string[];
 }
@@ -69,7 +70,7 @@ export function UserSearchCombobox({ value, onValueChange, kind, queueId, select
                     {allowAny ? <Option active={value === 'all'} onClick={() => choose('all')} title={`Any ${kind}`} detail="Do not filter" /> : null}
                     {allowUnassigned ? <Option active={value === 'unassigned'} onClick={() => choose('unassigned')} title="Unassigned" detail="Tickets without an assignee" /> : null}
                     {loading ? <div className="flex items-center justify-center gap-2 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Searching…</div> : null}
-                    {!loading && options.map((option) => <Option key={option.id} active={value === option.id} onClick={() => choose(option.id)} title={option.name} detail={`${option.email} · ${option.role}${option.departmentNames.length ? ` · ${option.departmentNames.join(', ')}` : ''}`} />)}
+                    {!loading && options.map((option) => <Option key={option.id} active={value === option.id} onClick={() => choose(option.id)} title={option.name} detail={[option.email, option.role, option.departmentNames.join(', ')].filter(Boolean).join(' · ')} />)}
                     {!loading && !options.length ? <p className="py-5 text-center text-sm text-muted-foreground">No matching users</p> : null}
                 </div>
             </PopoverContent>

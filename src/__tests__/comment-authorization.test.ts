@@ -1,12 +1,16 @@
 const mockAuth = jest.fn();
 const mockPrisma = {
-    timelineEvent: { findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    timelineEvent: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
     ticket: { findUnique: jest.fn() },
 };
 
 jest.mock('@/lib/auth', () => ({ auth: mockAuth }));
 jest.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
-jest.mock('@/lib/permissions', () => ({ canAccessTicket: jest.fn().mockResolvedValue(true) }));
+const mockCanAdministerQueue = jest.fn();
+jest.mock('@/lib/permissions', () => ({
+    canAccessTicket: jest.fn().mockResolvedValue(true),
+    canAdministerQueue: (...args: unknown[]) => mockCanAdministerQueue(...args),
+}));
 jest.mock('@/lib/audit', () => ({ auditLog: jest.fn() }));
 jest.mock('@/lib/email', () => ({ sendNewCommentEmail: jest.fn() }));
 jest.mock('@/lib/logger', () => ({ __esModule: true, default: { error: jest.fn() } }));
@@ -20,6 +24,9 @@ const eventId = '550e8400-e29b-41d4-a716-446655440001';
 describe('comment authorization', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        // Only Super Admins administer every department unless a test says otherwise.
+        mockCanAdministerQueue.mockImplementation(async (_userId: string, role: string) => role === 'SUPER_ADMIN');
+        mockPrisma.timelineEvent.updateMany.mockResolvedValue({ count: 1 });
         mockPrisma.ticket.findUnique.mockResolvedValue({
             id: ticketId,
             requesterId: 'user-id',
@@ -112,5 +119,69 @@ describe('comment authorization', () => {
         );
         expect(response.status).toBe(403);
         expect(mockPrisma.timelineEvent.delete).not.toHaveBeenCalled();
+    });
+
+    const deleteRequest = () => DELETE(
+        new NextRequest(`http://localhost/api/tickets/${ticketId}/comments?eventId=${eventId}`, { method: 'DELETE' }),
+        { params: Promise.resolve({ id: ticketId }) }
+    );
+    const otherAgentComment = (authorRole: string) => ({
+        id: eventId,
+        ticketId,
+        userId: 'other-id',
+        type: 'COMMENT',
+        content: 'Original reply',
+        createdAt: new Date(),
+        deletedAt: null,
+        user: { role: authorRole },
+    });
+
+    it('does not let an ADMIN moderate a ticket in a department it does not administer', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'admin-id', email: 'admin@example.com', name: 'Admin', role: 'ADMIN', groupIds: [] } });
+        mockPrisma.timelineEvent.findUnique.mockResolvedValue(otherAgentComment('AGENT'));
+        const response = await deleteRequest();
+        expect(response.status).toBe(403);
+        expect(mockCanAdministerQueue).toHaveBeenCalledWith('admin-id', 'ADMIN', 'queue-id');
+        expect(mockPrisma.timelineEvent.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('lets the administrator of the ticket department remove an agent reply', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'admin-id', email: 'admin@example.com', name: 'Admin', role: 'ADMIN', groupIds: [] } });
+        mockCanAdministerQueue.mockResolvedValue(true);
+        mockPrisma.timelineEvent.findUnique.mockResolvedValue(otherAgentComment('AGENT'));
+        const response = await deleteRequest();
+        expect(response.status).toBe(200);
+        expect(mockPrisma.timelineEvent.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: eventId, deletedAt: null },
+            data: expect.objectContaining({ deletedById: 'admin-id', deleteReason: 'user_requested' }),
+        }));
+    });
+
+    it('never lets a department administrator remove a Super Admin reply', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'admin-id', email: 'admin@example.com', name: 'Admin', role: 'ADMIN', groupIds: [] } });
+        mockCanAdministerQueue.mockResolvedValue(true);
+        mockPrisma.timelineEvent.findUnique.mockResolvedValue(otherAgentComment('SUPER_ADMIN'));
+        const response = await deleteRequest();
+        expect(response.status).toBe(403);
+        expect(mockPrisma.timelineEvent.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('reports a closed edit window for an author editing after 24 hours', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'agent-id', email: 'agent@example.com', name: 'Agent', role: 'AGENT', groupIds: [] } });
+        mockPrisma.timelineEvent.findUnique.mockResolvedValue({
+            ...otherAgentComment('AGENT'),
+            userId: 'agent-id',
+            createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        });
+        const response = await PATCH(
+            new NextRequest(`http://localhost/api/tickets/${ticketId}/comments`, {
+                method: 'PATCH',
+                body: JSON.stringify({ eventId, content: 'Late change' }),
+                headers: { 'Content-Type': 'application/json' },
+            }),
+            { params: Promise.resolve({ id: ticketId }) }
+        );
+        expect(response.status).toBe(400);
+        expect(mockPrisma.timelineEvent.update).not.toHaveBeenCalled();
     });
 });

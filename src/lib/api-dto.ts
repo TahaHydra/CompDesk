@@ -22,6 +22,8 @@ export const PUBLIC_REQUESTER_SELECT = {
     name: true,
     email: true,
     image: true,
+    // Identity, and required to apply the people privacy policy (src/lib/people-privacy.ts).
+    role: true,
 } satisfies Prisma.UserSelect;
 
 export const TIMELINE_USER_SELECT = {

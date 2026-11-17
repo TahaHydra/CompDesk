@@ -273,7 +273,7 @@ export default function AdminDepartmentsPage() {
                                                         checked={administratorIds.includes(administrator.id)}
                                                         onChange={(event) => toggleAdministrator(administrator.id, event.target.checked)}
                                                     />
-                                                    <span><span className="block text-sm font-medium">{administrator.name}</span><span className="block text-xs text-muted-foreground">{administrator.email}</span></span>
+                                                    <span><span className="block text-sm font-medium">{administrator.name}</span>{administrator.email ? <span className="block text-xs text-muted-foreground">{administrator.email}</span> : null}</span>
                                                 </label>
                                             ))}
                                         </div>

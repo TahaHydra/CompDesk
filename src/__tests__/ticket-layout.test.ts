@@ -20,6 +20,7 @@ function render(file: string, props: any, ticket?: any, globals = {}, overrides 
         '@/lib/ticket-display': { formatTicketValue: (value: string) => value, getStatusBadgeClass: () => '', getPriorityBadgeClass: () => '' },
         '@/lib/ticket-form/conditions': { isFieldConditionVisible },
         '@/lib/ticket-form/client-submission': { ticketFormSubmissionValues },
+        '@/components/people/person-name': { PersonName: 'PersonName', roleLabel: (role?: string) => role ?? null },
         ...overrides,
     };
     const compiledModule = { exports: {} as any };

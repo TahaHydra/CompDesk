@@ -17,6 +17,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/layout/page-header';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { useLanguage } from '@/components/providers/language-provider';
+import { MultiSelect } from '@/components/ui/multi-select';
+import { MAX_SUGGESTED_ARTICLES } from '@/lib/help-suggestions';
 
 interface Queue { id: string; name: string; defaultTemplateId: string | null; defaultTemplate?: { id: string; name: string } | null }
 interface Template { id: string; name: string; isSystemDefault: boolean; archivedAt: string | null }
@@ -31,7 +33,9 @@ interface Category {
     queue: Queue;
     template: { id: string; name: string } | null;
     _count: { tickets: number };
+    suggestedArticles?: Array<{ articleId: string }>;
 }
+interface PublishedArticle { id: string; title: string; collectionId: string; collection: { title: string } }
 
 export default function AdminCategoriesPage() {
     const { data: session } = useSession();
@@ -47,6 +51,7 @@ export default function AdminCategoriesPage() {
     const [queueId, setQueueId] = useState('');
     const [templateId, setTemplateId] = useState('inherit');
     const [isActive, setIsActive] = useState(true);
+    const [suggestedArticleIds, setSuggestedArticleIds] = useState<string[]>([]);
 
     const categoriesQuery = useQuery<Category[]>({
         queryKey: ['categories', 'admin'],
@@ -79,6 +84,25 @@ export default function AdminCategoriesPage() {
         },
     });
     const systemTemplate = templatesQuery.data?.find((template) => template.isSystemDefault);
+    // Only published articles can be suggested; the default list is already published-only.
+    const articlesQuery = useQuery<PublishedArticle[]>({
+        queryKey: ['help-articles', 'published-for-suggestions'],
+        enabled: dialogOpen && Boolean(editing),
+        queryFn: async () => {
+            const response = await fetch('/api/help/articles');
+            if (!response.ok) throw new Error('Failed to load help articles');
+            return response.json();
+        },
+    });
+    const articleOptions = (articlesQuery.data ?? []).map((article) => ({ value: article.id, label: article.title, group: article.collectionId }));
+    const articleGroups = [...new Map((articlesQuery.data ?? []).map((article) => [article.collectionId, { id: article.collectionId, label: article.collection.title }])).values()];
+    const chooseSuggestions = (next: string[]) => {
+        if (next.length > MAX_SUGGESTED_ARTICLES) {
+            toast({ title: t('Choose up to {count} articles', { count: MAX_SUGGESTED_ARTICLES }) });
+            return;
+        }
+        setSuggestedArticleIds(next);
+    };
 
     const groups = useMemo(() => {
         const categories = (categoriesQuery.data ?? []).filter((category) => filterQueueId === 'all' || category.queueId === filterQueueId);
@@ -103,6 +127,7 @@ export default function AdminCategoriesPage() {
         setQueueId(category.queueId);
         setTemplateId(category.templateId ?? 'inherit');
         setIsActive(category.isActive);
+        setSuggestedArticleIds((category.suggestedArticles ?? []).map((link) => link.articleId));
         setDialogOpen(true);
     };
     const saveMutation = useMutation({
@@ -116,8 +141,9 @@ export default function AdminCategoriesPage() {
                     queueId,
                     templateId: selectedTemplateId,
                     isActive,
+                    ...(editing ? { suggestedArticleIds } : {}),
                 }
-                : { id: editing?.id, templateId: selectedTemplateId };
+                : { id: editing?.id, templateId: selectedTemplateId, suggestedArticleIds };
             const response = await fetch('/api/categories', {
                 method: editing ? 'PATCH' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -130,7 +156,7 @@ export default function AdminCategoriesPage() {
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ['categories'] });
             setDialogOpen(false);
-            toast({ title: isSuperAdmin ? (editing ? 'Category updated' : 'Category created') : 'Category template assigned' });
+            toast({ title: t(editing ? 'Category updated' : 'Category created') });
         },
         onError: (error: Error) => toast({ title: t("Category could not be saved"), description: error.message, variant: 'destructive' }),
     });
@@ -243,7 +269,7 @@ export default function AdminCategoriesPage() {
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent>
-                    <DialogHeader><DialogTitle>{isSuperAdmin ? (editing ? t("Edit category") : t("Create category")) : `Assign template · ${editing?.name ?? ''}`}</DialogTitle></DialogHeader>
+                    <DialogHeader><DialogTitle>{isSuperAdmin ? (editing ? t("Edit category") : t("Create category")) : `${t('Category settings')} · ${editing?.name ?? ''}`}</DialogTitle></DialogHeader>
                     <div className="space-y-4">
                         {isSuperAdmin ? (
                             <>
@@ -269,6 +295,22 @@ export default function AdminCategoriesPage() {
                                 </SelectContent>
                             </Select>
                         </div>
+                        {editing ? (
+                            <div className="space-y-2">
+                                <Label htmlFor="category-suggested-articles">{t('Suggested help articles')}</Label>
+                                <MultiSelect
+                                    id="category-suggested-articles"
+                                    options={articleOptions}
+                                    groups={articleGroups}
+                                    selected={suggestedArticleIds}
+                                    onChange={chooseSuggestions}
+                                    placeholder={t('No suggestions')}
+                                    searchPlaceholder={t('Search articles…')}
+                                    emptyText={articlesQuery.isLoading ? t('Loading...') : t('No published help articles')}
+                                />
+                                <p className="text-xs text-muted-foreground">{t('Shown, in this order, to people who choose this category when creating a ticket. Up to {count}; unpublished articles are not shown.', { count: MAX_SUGGESTED_ARTICLES })}</p>
+                            </div>
+                        ) : null}
                         {isSuperAdmin ? (
                             <div className="flex items-center justify-between rounded-md border p-3">
                                 <div><Label>{t("Active")}</Label><p className="text-xs text-muted-foreground">{t("Archived categories remain on historical tickets.")}</p></div>
@@ -279,7 +321,7 @@ export default function AdminCategoriesPage() {
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("Cancel")}</Button>
                         <Button onClick={() => saveMutation.mutate()} disabled={(isSuperAdmin && (!name.trim() || !queueId)) || !editing && !isSuperAdmin || saveMutation.isPending}>
-                            {isSuperAdmin ? t("Save category") : t("Assign template")}
+                            {isSuperAdmin ? t("Save category") : t("Save")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

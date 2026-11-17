@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { DynamicTicketForm } from '@/components/ticket-form/dynamic-ticket-form';
+import { HelpSuggestionsPanel } from '@/components/help/help-suggestions-panel';
 import { useLanguage } from '@/components/providers/language-provider';
 import { createBrowserUuid } from '@/lib/browser-uuid';
 import { missingRequiredTicketFields, ticketFormSubmissionValues } from '@/lib/ticket-form/client-submission';
@@ -164,6 +165,13 @@ export default function NewTicketPage() {
         setCategoryId(nextCategoryId); setErrors({});
     };
 
+    // "This solved it": leave without creating a ticket, confirming first if anything was entered.
+    const leaveSolved = () => {
+        if (hasMeaningfulValues(values, templateQuery.data?.fields) && !window.confirm(t('Discard this request? What you entered will not be saved.'))) return;
+        toast({ title: t('Glad that helped') });
+        router.push('/dashboard');
+    };
+
     const createTicket = useMutation({
         mutationFn: async () => {
             const resolved = templateQuery.data;
@@ -222,6 +230,8 @@ export default function NewTicketPage() {
                     </div>
                 </CardContent>
             </Card>
+
+            {routeComplete && categoryId ? <HelpSuggestionsPanel categoryId={categoryId} onSolved={leaveSolved} /> : null}
 
             {routeComplete ? (
                 <Card className="border shadow-sm">

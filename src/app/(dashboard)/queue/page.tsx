@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/layout/page-header';
 import { Inbox, Search, AlertTriangle, SlidersHorizontal, X } from 'lucide-react';
 import { AssigneeSummary } from '@/components/tickets/assignee-summary';
+import { PersonName } from '@/components/people/person-name';
 import { useLanguage } from '@/components/providers/language-provider';
 
 const DEFAULT_LIMIT = 20;
@@ -261,10 +262,10 @@ export default function QueueInboxPage() {
                                                 {ticket.queue?.name ?? '—'}
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
-                                                {ticket.requester?.name ?? '—'}
+                                                <PersonName person={ticket.requester} ticketId={ticket.id} />
                                             </td>
                                             <td className="px-4 py-3 hidden lg:table-cell">
-                                                <AssigneeSummary assignees={ticket.assignees} className="text-sm" />
+                                                <AssigneeSummary assignees={ticket.assignees} ticketId={ticket.id} className="text-sm" />
                                             </td>
                                             <td className="px-4 py-3">
                                                 <Badge className={`status-${ticket.status.toLowerCase()} text-xs`}>

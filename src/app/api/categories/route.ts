@@ -10,6 +10,7 @@ import {
 } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { createCategorySchema, updateCategorySchema } from '@/lib/validations';
+import { replaceCategorySuggestions, SuggestedArticleError } from '@/lib/help-suggestions';
 import logger from '@/lib/logger';
 
 async function validateTemplateAssignment(templateId: string | null | undefined) {
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
                 queue: { select: { id: true, name: true, defaultTemplateId: true } },
                 template: { select: { id: true, name: true, isActive: true, archivedAt: true } },
                 _count: { select: { tickets: true } },
+                suggestedArticles: { select: { articleId: true }, orderBy: { sortOrder: 'asc' } },
             },
             orderBy: [{ queue: { name: 'asc' } }, { name: 'asc' }],
         });
@@ -135,9 +137,10 @@ export async function PATCH(req: NextRequest) {
             if (!(await canAdministerQueue(session.user.id, session.user.role, existing.queueId))) {
                 return NextResponse.json({ error: 'You do not administer this category department' }, { status: 403 });
             }
-            const disallowedFields = Object.keys(changes).filter((key) => key !== 'templateId');
+            // Department admins may choose the form and the suggested help articles; nothing else.
+            const disallowedFields = Object.keys(changes).filter((key) => key !== 'templateId' && key !== 'suggestedArticleIds');
             if (disallowedFields.length > 0) {
-                return NextResponse.json({ error: 'Department administrators may only assign the category ticket form' }, { status: 403 });
+                return NextResponse.json({ error: 'Department administrators may only assign the category ticket form and suggested help articles' }, { status: 403 });
             }
         }
 
@@ -150,29 +153,35 @@ export async function PATCH(req: NextRequest) {
         if (Object.prototype.hasOwnProperty.call(changes, 'templateId') && !(await validateTemplateAssignment(changes.templateId))) {
             return NextResponse.json({ error: 'Category overrides must use an active template' }, { status: 400 });
         }
-        const category = await prisma.category.update({
-            where: { id },
-            data: {
-                ...changes,
-                ...(changes.isActive !== undefined ? { archivedAt: changes.isActive ? null : new Date() } : {}),
-            },
-            include: { queue: { select: { id: true, name: true } }, template: { select: { id: true, name: true } }, _count: { select: { tickets: true } } },
+        const { suggestedArticleIds, ...categoryChanges } = changes;
+        const category = await prisma.$transaction(async (tx) => {
+            if (suggestedArticleIds) await replaceCategorySuggestions(tx, id, suggestedArticleIds);
+            return tx.category.update({
+                where: { id },
+                data: {
+                    ...categoryChanges,
+                    ...(categoryChanges.isActive !== undefined ? { archivedAt: categoryChanges.isActive ? null : new Date() } : {}),
+                },
+                include: { queue: { select: { id: true, name: true } }, template: { select: { id: true, name: true } }, _count: { select: { tickets: true } }, suggestedArticles: { select: { articleId: true }, orderBy: { sortOrder: 'asc' } } },
+            });
         });
         const moved = changes.queueId && changes.queueId !== existing.queueId;
         const templateChanged = Object.prototype.hasOwnProperty.call(changes, 'templateId') && changes.templateId !== existing.templateId;
         const archived = changes.isActive === false;
+        const onlySuggestions = Object.keys(categoryChanges).length === 0 && suggestedArticleIds !== undefined;
         await auditLog({
             userId: session.user.id,
-            action: moved ? 'category.moved' : archived ? 'category.archived' : templateChanged ? 'category.template_override_assigned' : 'category.updated',
+            action: moved ? 'category.moved' : archived ? 'category.archived' : templateChanged ? 'category.template_override_assigned' : onlySuggestions ? 'category.help_suggestions_updated' : 'category.updated',
             entity: 'category',
             entityId: id,
-            metadata: { previousQueueId: existing.queueId, queueId: category.queueId, templateId: category.templateId },
+            metadata: { previousQueueId: existing.queueId, queueId: category.queueId, templateId: category.templateId, ...(suggestedArticleIds ? { suggestedArticleIds } : {}) },
         });
         return NextResponse.json(category);
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
             return NextResponse.json({ error: 'That category name already exists in this department' }, { status: 409 });
         }
+        if (error instanceof SuggestedArticleError) return NextResponse.json({ error: error.message }, { status: 400 });
         logger.error('Failed to update category', { error });
         return NextResponse.json({ error: 'Failed to update category' }, { status: 500 });
     }

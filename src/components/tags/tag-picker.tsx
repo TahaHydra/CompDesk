@@ -15,7 +15,7 @@ export interface TagPickerOption { id: string; name: string; color?: string | nu
  * Searchable, scrollable multi-select for tags. Selection is controlled by the caller; options are only
  * the tags that can be chosen in the current context (department, category).
  */
-export function TagPicker({ options, selected, onChange, onOpenChange, label, emptyText, disabled = false, align = 'start', id }: {
+export function TagPicker({ options, selected, onChange, onOpenChange, label, emptyText, disabled = false, align = 'start', id, className }: {
     options: TagPickerOption[];
     selected: string[];
     onChange: (next: string[]) => void;
@@ -26,6 +26,8 @@ export function TagPicker({ options, selected, onChange, onOpenChange, label, em
     disabled?: boolean;
     align?: 'start' | 'end';
     id?: string;
+    /** Extra trigger classes, e.g. `w-full` to line up with neighbouring form controls. */
+    className?: string;
 }) {
     const { t } = useLanguage();
     const [open, setOpen] = useState(false);
@@ -40,7 +42,7 @@ export function TagPicker({ options, selected, onChange, onOpenChange, label, em
     return (
         <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setSearch(''); onOpenChange?.(next); }}>
             <PopoverTrigger asChild>
-                <Button id={id} type="button" variant="outline" size="sm" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} className="h-9 justify-between gap-2 font-normal">
+                <Button id={id} type="button" variant="outline" size="sm" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} className={cn('h-9 justify-between gap-2 font-normal', className)}>
                     <span className="flex items-center gap-2"><TagIcon className="h-3.5 w-3.5 text-muted-foreground" />{label}</span>
                     {/* No count badge: the selected tags are always shown as chips next to this button. */}
                     <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />

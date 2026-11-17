@@ -53,7 +53,47 @@ Authenticated. Returns the current user's saved interface language.
 
 ### `PATCH /api/profile/preferences`
 
-Authenticated. Updates only the current user's preference. The strict request body is `{ "preferredLanguage": "en" }` or `{ "preferredLanguage": "fr" }`. The change is audited and takes effect across the application shell, dashboard, profile, ticket creation, and Help Center.
+Authenticated. Updates only the current user's preferences. The strict request body contains `preferredLanguage` (`"en"` or `"fr"`), `jobTitle` (up to 80 characters; an empty string clears it), or both. Changes are audited; a language change takes effect across the application shell, dashboard, profile, ticket creation, and Help Center.
+
+## People and privacy
+
+Contact details of other people (`email`, `preferredLanguage`, `jobTitle`) follow the policy in Admin → Settings → Privacy; see [People details and privacy](PERMISSIONS.md#people-details-and-privacy). When a field is hidden from the caller it is **omitted** from the response rather than returned empty. This applies to `GET /api/tickets`, `GET /api/tickets/[id]` and the ticket objects returned by create, update and escalate, `GET /api/users`, `GET /api/users/search` and department-admin views of `GET /api/queues`. Super Admin responses are unchanged.
+
+### `GET /api/users/[id]/card?ticketId=uuid`
+
+Authenticated. The person card. With `ticketId`, the caller must be able to open the ticket and the person must be on it; without it, staff can open cards of staff in a department they can reach. Anything else returns 404. Returns `id`, `name`, `image`, `role`, `isSelf`, `departments` (the department the person is reached through and, for staff, departments the caller also works in; all of them for Super Admins and for oneself), plus, when allowed, `email`, `preferredLanguage`, `jobTitle`; for staff `isActive`, `openRequests` and `requestsHref`; for Super Admins `manageHref`.
+
+### `GET` / `PUT /api/settings/people-privacy`
+
+The policy also has `requesterVisibleToHandlers` (boolean, default `true`): staff who can open a ticket always see its requester's details. It may be omitted from `PUT`, in which case it is set to `true`.
+
+Super Admin only. `GET` returns `{ policy, defaults }`. `PUT` replaces the policy with `{ "email": level, "language": level, "jobTitle": level }`, where `level` is `higher`, `same_or_higher`, `staff` or `everyone`. Changes are audited with the previous and new policy.
+
+`GET /api/tickets/[id]` also returns `peopleHints`: for people in the ticket who share a name with someone else in it, a short disambiguation hint keyed by user id. Timeline entries include the author's `role`.
+
+## Saved replies
+
+Personal reply snippets for staff (Agent, Department Admin, Super Admin). Requesters receive 403. Every query is scoped to the signed-in user, so another user's reply returns 404. Titles are unique per user (1–80 characters), content is 1–10,000 characters (the same limit as a reply), and each user can keep up to 200. Writes are rate-limited and audited without their content.
+
+### `GET /api/saved-replies`
+
+The caller's replies, most used first: `id`, `title`, `content`, `useCount`, `lastUsedAt`, `updatedAt`.
+
+### `POST /api/saved-replies`
+
+Body `{ "title": "...", "content": "..." }` (no other fields). Returns 201 with the reply, or 409 for a duplicate title or when the 200-reply limit is reached.
+
+### `PATCH /api/saved-replies/[id]`
+
+Body with `title` and/or `content`.
+
+### `DELETE /api/saved-replies/[id]`
+
+### `POST /api/saved-replies/[id]/use`
+
+Counts one insertion so the list stays ordered by use. Not audited.
+
+The shared `/api/canned-responses` endpoint is unchanged: its entries appear read-only under **Shared responses** in the reply box.
 
 ## Help Center
 
@@ -70,6 +110,10 @@ Admin only. Creates or replaces a collection definition containing `slug`, Engli
 ### `DELETE /api/help/collections?id=uuid`
 
 Admin only. Deletion is rejected with `409` while the collection still has articles.
+
+### `GET /api/help/suggestions?categoryId=uuid`
+
+Authenticated. The help articles linked to a category, for the ticket creation page: `id`, `slug`, localized `title` and `summary`, in the chosen order. Only published articles in published collections are returned, and only for an active category. The caller must be allowed to create a ticket in the category's department (the same rule as `/api/ticket-form/resolve`); otherwise 403.
 
 ### `GET /api/help/articles`
 
@@ -151,7 +195,7 @@ Names are unique within one department, so different departments may both use `N
 
 A Super Admin can rename, activate/archive, move an unused category, and set its template override. Moving is rejected when tickets already reference the category.
 
-A department admin can patch only `id` and `templateId`, and only for a category in an administered department. The override may use any active template in the shared library; `null` inherits the department default. The server rejects category edits and assignments outside that scope.
+Both roles can also send `suggestedArticleIds`: up to three distinct published Help Center article ids, in display order (an empty array removes the suggestions). Unpublished articles, or articles in an unpublished collection, are rejected with 400. A department admin can patch only `id`, `templateId` and `suggestedArticleIds`, and only for a category in an administered department. The override may use any active template in the shared library; `null` inherits the department default. The server rejects category edits and assignments outside that scope.
 
 ### `DELETE /api/categories?id=uuid`
 

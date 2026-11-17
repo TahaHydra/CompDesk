@@ -15,6 +15,9 @@ Publish `updates/manifest.json` on the public main branch before distributing
 the checker. Release maintainers update it **after** publishing and verifying
 the desired release/image and pinned Compose asset. The included manifest
 describes the existing beta release; it does not announce an unpublished version.
+`npm run release:announce -- <version>` writes both manifests (and the README's
+current release) from `package.json` and the release note, so run it only once
+the release is public; see the [release checklist](PUBLIC_RELEASE_CHECKLIST.md#version-handling).
 This deliberately uses explicit release metadata instead of querying GitHub's
 latest-release API (which can omit beta releases).
 

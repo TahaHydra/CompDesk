@@ -147,6 +147,7 @@ export async function seedDemoDataset(prisma, options = {}) {
             { id: '51000000-0000-0000-0000-000000000002', slug: 'tickets', titleEn: 'Tickets and requests', titleFr: 'Tickets et demandes', descriptionEn: 'Create, follow, and update support requests.', descriptionFr: 'Créez, suivez et mettez à jour vos demandes.', icon: 'ticket', sortOrder: 20 },
             { id: '51000000-0000-0000-0000-000000000003', slug: 'account', titleEn: 'Account and preferences', titleFr: 'Compte et préférences', descriptionEn: 'Manage your profile, language, and sign-in.', descriptionFr: 'Gérez votre profil, votre langue et votre connexion.', icon: 'user', sortOrder: 30 },
             { id: '51000000-0000-0000-0000-000000000004', slug: 'agents', titleEn: 'For agents', titleFr: 'Pour les agents', descriptionEn: 'Practical guidance for handling the support queue.', descriptionFr: 'Conseils pratiques pour traiter la file d’assistance.', icon: 'agent', sortOrder: 40 },
+            { id: '51000000-0000-0000-0000-000000000005', slug: 'common-requests', titleEn: 'Common requests', titleFr: 'Demandes courantes', descriptionEn: 'Answers to requests the support teams receive most often.', descriptionFr: 'Réponses aux demandes les plus fréquentes.', icon: 'book', sortOrder: 15 },
         ];
         for (const collection of collections)
             await prisma.helpCollection.upsert({ where: { id: collection.id }, update: { ...collection, isPublished: true }, create: { ...collection, isPublished: true } });
@@ -207,9 +208,24 @@ export async function seedDemoDataset(prisma, options = {}) {
                 contentEn: '## Before resolving\n\nConfirm that the requested action is complete or that a tested solution has been provided. Summarize what changed.\n\n## Set the status\n\nUse **Resolved** when work is complete but may need confirmation. Use **Closed** only when no further interaction is expected.\n\n## Preserve context\n\nRecord important reference numbers, affected systems, and the final action.',
                 contentFr: '## Avant de résoudre\n\nConfirmez que l’action est terminée ou qu’une solution testée a été fournie. Résumez les changements.\n\n## Définir le statut\n\nUtilisez **Résolu** lorsque le travail est terminé mais peut nécessiter une confirmation. Utilisez **Fermé** si aucun échange n’est attendu.\n\n## Conserver le contexte\n\nNotez les références, les systèmes concernés et l’action finale.',
             },
+            {
+                id: '52000000-0000-0000-0000-000000000009', collectionId: collections[4].id, slug: 'delegate-a-mailbox', sortOrder: 10,
+                titleEn: 'Give a colleague access to your mailbox', titleFr: 'Donner accès à votre boîte aux lettres à un collègue',
+                summaryEn: 'Share your Outlook mailbox or calendar yourself, without a ticket.', summaryFr: 'Partagez vous-même votre boîte Outlook ou votre calendrier, sans ticket.',
+                contentEn: '## Share your calendar\n\n1. In Outlook, open **Calendar**.\n2. Right-click your calendar and select **Sharing and permissions**.\n3. Add your colleague and choose what they can see or edit.\n\n## Delegate your mailbox\n\n1. In Outlook, select **File → Account settings → Delegate access**.\n2. Select **Add**, choose your colleague, then set their permissions for Inbox and Calendar.\n3. Your colleague can then open your mailbox from **File → Open & Export → Other user’s folder**.\n\n## When to create a ticket\n\nCreate an **IT Support → Email & collaboration** ticket if you need a shared or team mailbox, if the person has left the company, or if you cannot change permissions yourself.',
+                contentFr: '## Partager votre calendrier\n\n1. Dans Outlook, ouvrez **Calendrier**.\n2. Faites un clic droit sur votre calendrier et sélectionnez **Partage et autorisations**.\n3. Ajoutez votre collègue et choisissez ce qu’il peut voir ou modifier.\n\n## Déléguer votre boîte aux lettres\n\n1. Dans Outlook, sélectionnez **Fichier → Paramètres du compte → Accès délégué**.\n2. Sélectionnez **Ajouter**, choisissez votre collègue puis définissez ses autorisations pour la boîte de réception et le calendrier.\n3. Votre collègue peut ensuite ouvrir votre boîte depuis **Fichier → Ouvrir et exporter → Dossier d’un autre utilisateur**.\n\n## Quand créer un ticket\n\nCréez un ticket **Support informatique → Email & collaboration** pour une boîte partagée ou d’équipe, si la personne a quitté l’entreprise ou si vous ne pouvez pas modifier les autorisations vous-même.',
+            },
+            {
+                id: '52000000-0000-0000-0000-000000000010', collectionId: collections[4].id, slug: 'expense-report-deadlines', sortOrder: 20,
+                titleEn: 'Expense reports: deadlines and receipts', titleFr: 'Notes de frais : délais et justificatifs',
+                summaryEn: 'When reimbursements are paid and what to attach.', summaryFr: 'Quand les remboursements sont versés et quels justificatifs joindre.',
+                contentEn: '## Payment dates\n\nExpense reports approved by the 20th are reimbursed with that month’s salary. Reports approved later are paid the following month.\n\n## What to attach\n\n- An itemised receipt for each expense (a card statement is not enough).\n- The attendee list for meals with guests.\n- The approval email for purchases over 500 EUR.\n\n## Check the status\n\nYour manager approves the report first, then Finance. If a report has been approved for more than 10 working days without payment, create a **Finance → Expenses & reimbursements** ticket with its reference.',
+                contentFr: '## Dates de paiement\n\nLes notes de frais validées avant le 20 sont remboursées avec le salaire du mois. Celles validées après sont payées le mois suivant.\n\n## Justificatifs à joindre\n\n- Un reçu détaillé pour chaque dépense (un relevé de carte ne suffit pas).\n- La liste des participants pour les repas avec invités.\n- L’e-mail d’approbation pour les achats de plus de 500 EUR.\n\n## Vérifier le statut\n\nVotre responsable valide d’abord la note, puis la Finance. Si une note est validée depuis plus de 10 jours ouvrés sans paiement, créez un ticket **Finance → Notes de frais et remboursements** avec sa référence.',
+            },
         ];
         for (const article of articles)
             await prisma.helpArticle.upsert({ where: { id: article.id }, update: { ...article, isPublished: true }, create: { ...article, isPublished: true } });
+        return Object.fromEntries(articles.map((article) => [article.slug, article.id]));
     }
     async function main() {
         const suppliedPassword = options.password;
@@ -223,18 +239,18 @@ export async function seedDemoDataset(prisma, options = {}) {
         const passwordHash = await bcrypt.hash(password, 12);
         const domain = options.domain ?? 'example.com';
         const accountSpecs = [
-            { email: options.emails?.[0] || `admin@${domain}`, name: 'Admin User', role: Role.SUPER_ADMIN },
-            { email: options.emails?.[1] || `administrator@${domain}`, name: 'Department Admin', role: Role.ADMIN },
-            { email: options.emails?.[2] || `agent1@${domain}`, name: 'Martin Bernard', role: Role.AGENT },
-            { email: options.emails?.[3] || `agent2@${domain}`, name: 'Sophie Laurent', role: Role.AGENT },
-            { email: options.emails?.[4] || `user1@${domain}`, name: 'Jean Dupont', role: Role.USER },
-            { email: options.emails?.[5] || `user2@${domain}`, name: 'Marie Curie', role: Role.USER },
+            { email: options.emails?.[0] || `admin@${domain}`, name: 'Admin User', role: Role.SUPER_ADMIN, jobTitle: 'IT Director' },
+            { email: options.emails?.[1] || `administrator@${domain}`, name: 'Department Admin', role: Role.ADMIN, jobTitle: 'Service Desk Manager' },
+            { email: options.emails?.[2] || `agent1@${domain}`, name: 'Martin Bernard', role: Role.AGENT, jobTitle: 'IT Support Technician' },
+            { email: options.emails?.[3] || `agent2@${domain}`, name: 'Sophie Laurent', role: Role.AGENT, jobTitle: 'HR & Finance Specialist' },
+            { email: options.emails?.[4] || `user1@${domain}`, name: 'Jean Dupont', role: Role.USER, jobTitle: 'Project Manager' },
+            { email: options.emails?.[5] || `user2@${domain}`, name: 'Marie Curie', role: Role.USER, jobTitle: 'Financial Analyst' },
         ];
         const users = new Map();
         for (const spec of accountSpecs) {
             const user = await prisma.user.upsert({
                 where: { normalizedEmail: normalizeEmail(spec.email) },
-                update: { name: spec.name, role: spec.role, passwordHash, isActive: true, isDemo: true },
+                update: { name: spec.name, role: spec.role, jobTitle: spec.jobTitle, passwordHash, isActive: true, isDemo: true },
                 create: { ...spec, email: normalizeEmail(spec.email), normalizedEmail: normalizeEmail(spec.email), passwordHash, isDemo: true, preferredLanguage: 'en' },
             });
             users.set(normalizeEmail(spec.email), user);
@@ -491,11 +507,17 @@ export async function seedDemoDataset(prisma, options = {}) {
                 values: { title: 'Teams meeting room microphone not detected', description: 'The microphone in meeting room Atlas is not available in Teams.', priority: 'HIGH', device_type: 'Other', work_location: 'Paris office - Atlas', business_impact: 'Several people', error_message: 'USB conference device was not listed in Teams.' },
             },
         ];
+        // Tickets with a conversation are opened a little in the past so their messages are not
+        // dated in the future; the conversation itself is added below, only on first install.
+        const openedMinutesAgo = { 'TCK-2026-DEMO01': 180, 'TCK-2026-DEMO02': 40, 'TCK-2026-DEMO04': 120, 'TCK-2026-DEMO05': 240 };
+        const createdTickets = new Map();
         for (const item of tickets) {
             const existing = await prisma.ticket.findUnique({ where: { key: item.key } });
+            const openedAt = new Date(Date.now() - (openedMinutesAgo[item.key] ?? 0) * 60_000);
             const ticket = await prisma.ticket.upsert({
                 where: { key: item.key }, update: {},
                 create: {
+                    createdAt: openedAt,
                     key: item.key, title: item.title, description: item.description, status: item.status,
                     priority: item.priority, queueId: item.queueId, categoryId: item.categoryId,
                     requesterId: item.requesterId,
@@ -520,10 +542,50 @@ export async function seedDemoDataset(prisma, options = {}) {
                 where: { ticketId_userId: { ticketId: ticket.id, userId: item.requesterId } },
                 update: {}, create: { ticketId: ticket.id, userId: item.requesterId },
             });
-            if (!existing)
+            if (!existing) {
                 await prisma.timelineEvent.create({
-                    data: { ticketId: ticket.id, userId: item.requesterId, type: 'CREATED', content: `Ticket created: ${item.title}` },
+                    data: { ticketId: ticket.id, userId: item.requesterId, type: 'CREATED', content: `Ticket created: ${item.title}`, createdAt: openedAt },
                 });
+                createdTickets.set(item.key, ticket);
+            }
+        }
+        // Conversations that show role labels, person cards, internal notes, a saved reply in use,
+        // a message its author deleted (staff see who deleted it; Super Admins still see the text)
+        // and a reply pointing to a Help Center article.
+        const conversations = {
+            'TCK-2026-DEMO01': [
+                { by: agent1, type: 'COMMENT', after: 20, content: 'Please uninstall the VPN client, restart your computer, then install the latest version from the Software Center. Reply here if the connection still drops after signing in.' },
+                { by: agent1, type: 'INTERNAL_NOTE', after: 24, content: 'Gateway logs show error 812 for this account only: the device certificate on the laptop expired yesterday. Reissue it if the reinstall does not help.' },
+                { by: user1, type: 'COMMENT', after: 70, content: 'Sorry, this was meant for my other ticket.', deletedAfter: 72 },
+                { by: user1, type: 'COMMENT', after: 95, content: 'I reinstalled the client and restarted. It still disconnects about ten seconds after signing in.' },
+            ],
+            'TCK-2026-DEMO02': [
+                { by: applicationAdmin, type: 'INTERNAL_NOTE', after: 25, content: 'Access approved by the Finance reporting owner. Grant read-only access once someone picks this up.' },
+            ],
+            'TCK-2026-DEMO04': [
+                { by: agent2, type: 'COMMENT', after: 35, content: 'Reports approved after the 20th are paid with the following month’s salary, so ER-1048 is scheduled for next month. The Help Center article “Expense reports: deadlines and receipts” has the details.' },
+                { by: user2, type: 'COMMENT', after: 60, content: 'Thanks, that explains it: I approved it on the 22nd.' },
+            ],
+            'TCK-2026-DEMO05': [
+                { by: agent1, type: 'COMMENT', after: 30, content: 'The USB cable of the conference unit was faulty. I replaced it and Teams now detects the microphone in Atlas.' },
+                { by: user1, type: 'COMMENT', after: 200, content: 'Confirmed in this morning’s meeting, it works. Thank you!' },
+            ],
+        };
+        for (const [key, messages] of Object.entries(conversations)) {
+            const ticket = createdTickets.get(key);
+            if (!ticket) continue;
+            const at = (minutes) => new Date(ticket.createdAt.getTime() + minutes * 60_000);
+            for (const message of messages) {
+                const deletedAt = message.deletedAfter ? at(message.deletedAfter) : null;
+                await prisma.timelineEvent.create({
+                    data: {
+                        ticketId: ticket.id, userId: message.by.id, type: message.type, content: message.content, createdAt: at(message.after),
+                        ...(deletedAt ? { deletedAt, deletedById: message.by.id, deleteReason: 'user_requested', metadata: { deleted: true, deletedAt: deletedAt.toISOString() } } : {}),
+                    },
+                });
+            }
+            const firstStaffReply = messages.find((message) => message.type === 'COMMENT' && message.by.role !== Role.USER);
+            if (firstStaffReply) await prisma.ticket.update({ where: { id: ticket.id }, data: { firstPublicResponseAt: at(firstStaffReply.after) } });
         }
         const cannedResponses = [
             { title: 'Request received', content: 'Thank you. Your request has been received and is being reviewed. We will update this ticket if we need more information.', category: 'General' },
@@ -535,7 +597,36 @@ export async function seedDemoDataset(prisma, options = {}) {
             if (!existing)
                 await prisma.cannedResponse.create({ data: response });
         }
-        await seedHelpCenter();
+        // Personal saved replies for the IT agent. They belong to the demo account, so they are
+        // removed with it (cascade) or cleared when the account is retained.
+        const agentSavedReplies = [
+            { title: 'VPN: reinstall client', content: 'Please uninstall the VPN client, restart your computer, then install the latest version from the Software Center. Reply here if the connection still drops after signing in.' },
+            { title: 'Remote session request', content: 'Could you share a convenient time for a short remote session? I will call you on Teams and we can look at the issue together.' },
+        ];
+        for (const reply of agentSavedReplies) {
+            await prisma.savedReply.upsert({
+                where: { ownerId_title: { ownerId: agent1.id, title: reply.title } },
+                update: {},
+                create: { ownerId: agent1.id, ...reply },
+            });
+        }
+        const helpArticleIds = await seedHelpCenter();
+        // Suggested while creating a ticket in these categories (Admin → Categories → Suggested help articles).
+        const suggestions = [
+            [categories.get(`${itQueue.id}:Email & collaboration`), ['delegate-a-mailbox']],
+            [categories.get(`${financeQueue.id}:Expenses & reimbursements`), ['expense-report-deadlines']],
+            [categories.get(`${itQueue.id}:Access & permissions`), ['sign-in-troubleshooting']],
+        ];
+        for (const [category, slugs] of suggestions) {
+            if (!category) continue;
+            for (const [sortOrder, slug] of slugs.entries()) {
+                await prisma.categoryHelpArticle.upsert({
+                    where: { categoryId_articleId: { categoryId: category.id, articleId: helpArticleIds[slug] } },
+                    update: { sortOrder },
+                    create: { categoryId: category.id, articleId: helpArticleIds[slug], sortOrder },
+                });
+            }
+        }
         const brandingConfig = {
             applicationName: 'CompDesk', shortApplicationName: 'CompDesk', subtitle: 'Helpdesk',
             description: 'CompDesk is a lightweight, privacy-first, self-hosted ticketing and help desk platform built by xHydra.',

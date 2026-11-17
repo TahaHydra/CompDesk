@@ -14,10 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { ConfirmDestructiveAction } from '@/components/ui/confirm-destructive-action';
 import { PageHeader } from '@/components/layout/page-header';
-import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook, RefreshCw } from 'lucide-react';
+import { Settings, Mail, Shield, Send, Save, AlertTriangle, CheckCircle2, Link as LinkIcon, Plus, X, Lock, Palette, Upload, Loader2, Webhook, RefreshCw, Users } from 'lucide-react';
 import { BrandingSettings } from '@/components/admin/branding-settings';
 import { UpdateSettings } from '@/components/admin/update-settings';
 import { DemoSettings } from '@/components/admin/demo-settings';
+import { PeoplePrivacySettings } from '@/components/admin/people-privacy-settings';
 import { useLanguage } from '@/components/providers/language-provider';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
@@ -740,6 +741,7 @@ export default function AdminSettingsPage() {
                     <TabsTrigger value="sso" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> {t('Single sign-on')}</TabsTrigger>
                     <TabsTrigger value="links" className="gap-1 min-w-max"><LinkIcon className="h-3.5 w-3.5" /> Quick Links</TabsTrigger>
                     <TabsTrigger value="security" className="gap-1 min-w-max"><Lock className="h-3.5 w-3.5" /> Security</TabsTrigger>
+                    <TabsTrigger value="privacy" className="gap-1 min-w-max"><Users className="h-3.5 w-3.5" /> {t('Privacy')}</TabsTrigger>
                     <TabsTrigger value="features" className="gap-1 min-w-max"><Settings className="h-3.5 w-3.5" /> Features</TabsTrigger>
                     <TabsTrigger value="api" className="gap-1 min-w-max"><Shield className="h-3.5 w-3.5" /> API Clients</TabsTrigger>
                     <TabsTrigger value="webhooks" className="gap-1 min-w-max"><Webhook className="h-3.5 w-3.5" /> Webhooks</TabsTrigger>
@@ -752,6 +754,7 @@ export default function AdminSettingsPage() {
                 <TabsContent value="sso"><SsoSettings /></TabsContent>
                 <TabsContent value="links"><DashboardLinksTab /></TabsContent>
                 <TabsContent value="security"><SecuritySettingsTab /></TabsContent>
+                <TabsContent value="privacy"><PeoplePrivacySettings /></TabsContent>
                 <TabsContent value="features"><FeatureFlagsTab /></TabsContent>
                 <TabsContent value="api"><ApiClientsTab /></TabsContent>
                 <TabsContent value="webhooks"><WebhooksTab /></TabsContent>

@@ -150,6 +150,8 @@ export async function removeDemoData(client, { protectedUserId, confirmation } =
                 await tx.user.update({ where: { id }, data: { isActive: false, passwordHash: null, sessionVersion: { increment: 1 } } });
                 await tx.session.deleteMany({ where: { userId: id } });
                 await tx.account.deleteMany({ where: { userId: id } });
+                // A retained demo account keeps its history, not its personal tools.
+                await tx.savedReply.deleteMany({ where: { ownerId: id } });
                 retained.user.push(id);
                 deactivated += 1;
             } else removed += (await tx.user.deleteMany({ where: { id, isDemo: true } })).count;

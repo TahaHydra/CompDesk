@@ -55,6 +55,7 @@ export default function AdminUsersPage() {
 
     // Edit form state
     const [editName, setEditName] = useState('');
+    const [editJobTitle, setEditJobTitle] = useState('');
     const [editEmail, setEditEmail] = useState('');
     const [editRole, setEditRole] = useState('');
     const [editActive, setEditActive] = useState(true);
@@ -164,6 +165,7 @@ export default function AdminUsersPage() {
     const openEditDialog = (u: any) => {
         setEditUser(u);
         setEditName(u.name);
+        setEditJobTitle(u.jobTitle ?? '');
         setEditEmail(u.email);
         setEditRole(u.role);
         setEditActive(u.isActive);
@@ -349,6 +351,10 @@ export default function AdminUsersPage() {
                             <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
                         </div>
                         <div className="space-y-2">
+                            <Label>{t("Job title")}</Label>
+                            <Input value={editJobTitle} maxLength={80} placeholder={t("Optional")} onChange={(e) => setEditJobTitle(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
                             <Label>{t("Email")}</Label>
                             <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
                         </div>
@@ -374,7 +380,7 @@ export default function AdminUsersPage() {
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setEditUser(null)}>{t("Cancel")}</Button>
                         <Button onClick={() => updateUser.mutate({
-                            userId: editUser?.id, name: editName, email: editEmail, role: editRole, isActive: editActive,
+                            userId: editUser?.id, name: editName, jobTitle: editJobTitle, email: editEmail, role: editRole, isActive: editActive,
                         })} disabled={updateUser.isPending}> {t("Save Changes")} </Button>
                     </DialogFooter>
                 </DialogContent>

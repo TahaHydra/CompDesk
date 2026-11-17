@@ -30,6 +30,9 @@ import { TagChip } from '@/components/tags/tag-chip';
 import { TagPicker, type TagPickerOption } from '@/components/tags/tag-picker';
 import { describeTagScope, isTagAvailable, type NamedTagScope } from '@/lib/tag-scope';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
+import { SavedRepliesMenu } from '@/components/tickets/saved-replies-menu';
+import { PersonName, roleLabel } from '@/components/people/person-name';
+import { insertAtSelection } from '@/lib/saved-replies';
 import { useLanguage } from '@/components/providers/language-provider';
 import { parseTicketContent } from '@/lib/ticket-content';
 
@@ -89,10 +92,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     const [editContent, setEditContent] = useState('');
     const [timelineOpen, setTimelineOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const commentInputRef = useRef<HTMLTextAreaElement>(null);
     const assignmentRequestLock = useRef(false);
 
     const isAgent = session?.user?.role === 'AGENT' || session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
-    const isAdministrator = session?.user?.role === 'ADMIN' || session?.user?.role === 'SUPER_ADMIN';
 
     useEffect(() => {
         if (!isAgent) return;
@@ -359,25 +362,25 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         }
     }, [uploadToTicket]);
 
+    // Saved replies are inserted where the caret was, never replacing the draft or sending it.
+    const insertIntoComment = useCallback((text: string) => {
+        const input = commentInputRef.current;
+        const next = insertAtSelection(comment, text, input?.selectionStart ?? null, input?.selectionEnd ?? null);
+        setComment(next.value);
+        requestAnimationFrame(() => {
+            input?.focus();
+            input?.setSelectionRange(next.caret, next.caret);
+        });
+    }, [comment]);
+
     const isConversationEvent = (event: any) => CONVERSATION_EVENT_TYPES.includes(event.type);
+    // Tells same-named people apart in the conversation: who asked, and in what role others answer.
+    const authorTag = (event: any): string | null => event.userId === ticket?.requesterId ? 'Requester' : roleLabel(event.user?.role);
 
-    // Administrators can moderate conversation history. Agents and users can
-    // modify only their own entries; users can never modify internal notes.
-    const canEditTimelineEvent = (event: any) => {
-        if (event.deletedAt || !event.content || !isConversationEvent(event)) return false;
-        if (isAdministrator) return true;
-        if (event.userId !== session?.user?.id) return false;
-        if (session?.user?.role === 'USER' && event.type !== 'COMMENT') return false;
-        const hours = (Date.now() - new Date(event.createdAt).getTime()) / 3600000;
-        return hours <= 24;
-    };
-
-    const canDeleteTimelineEvent = (event: any) => {
-        if (event.deletedAt || !isConversationEvent(event)) return false;
-        if (isAdministrator) return true;
-        return event.userId === session?.user?.id
-            && !(session?.user?.role === 'USER' && event.type === 'INTERNAL_NOTE');
-    };
+    // The server decides who may edit or delete each entry (own entries, or
+    // moderation by an administrator of this ticket's department); see src/lib/ticket-moderation.ts.
+    const canEditTimelineEvent = (event: any) => Boolean(event.permissions?.canEdit && event.content && isConversationEvent(event));
+    const canDeleteTimelineEvent = (event: any) => Boolean(event.permissions?.canDelete && isConversationEvent(event));
 
     if (isLoading) {
         return (
@@ -449,7 +452,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </Avatar>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{event.user?.name}</span>{!compact && event.userId === session?.user?.id ? <Badge variant="outline" className="text-xs">{t('You')}</Badge> : null}
+                        <PersonName person={event.user} ticketId={ticket.id} hint={ticket.peopleHints?.[event.userId]} className="text-sm font-medium" />
+                        {!compact && event.userId === session?.user?.id ? <Badge variant="outline" className="text-xs">{t('You')}</Badge> : null}
+                        {!compact && event.userId !== session?.user?.id && authorTag(event) ? <Badge variant="secondary" className="text-[11px] font-normal">{t(authorTag(event)!)}</Badge> : null}
                         {event.type === 'INTERNAL_NOTE' && (
                             <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
                                 <Eye className="h-3 w-3 mr-1" /> {t("Internal")}
@@ -473,7 +478,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <span className="text-xs text-muted-foreground italic">{t("(edited)")}</span>
                         )}
                         {isDeleted && (
-                            <Badge variant="outline" className="text-xs text-muted-foreground">{t("Deleted · history retained")}</Badge>
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                                {event.deletedBy?.name
+                                    ? t('Deleted by {name} · {time}', { name: event.deletedBy.name, time: new Date(event.deletedAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB') })
+                                    : t('Deleted')}
+                            </Badge>
+                        )}
+                        {isDeleted && session?.user?.role === 'SUPER_ADMIN' && (
+                            <span className="text-xs text-muted-foreground italic">{t('Original text visible to Super Admins only')}</span>
                         )}
                         <span className="text-xs text-muted-foreground">
                             {new Date(event.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}
@@ -490,7 +502,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 {showDeleteBtn && (
                                     <ConfirmDestructiveAction
                                         title={t("Remove timeline entry?")}
-                                        description={t("The entry will be hidden from normal conversation views, while its content and deletion evidence remain available to authorized administrators.")}
+                                        description={t("Everyone will see a \"Deleted\" placeholder instead of this message. Super Admins can still read the original text for audit purposes.")}
                                         pending={deleteComment.isPending}
                                         onConfirm={() => deleteComment.mutate(event.id)}
                                         trigger={
@@ -593,7 +605,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     <Card className="overflow-hidden border border-primary/15 shadow-sm">
                         <CardHeader className="flex flex-row items-center gap-3 bg-primary/5 pb-4">
                             <Avatar className="h-10 w-10 shrink-0"><AvatarFallback className="bg-primary text-primary-foreground">{ticket.requester?.name?.split(' ').map((name: string) => name[0]).join('') || '?'}</AvatarFallback></Avatar>
-                            <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Requested by')}</p><p className="break-words font-semibold text-primary">{ticket.requester?.name}</p><time className="text-xs text-muted-foreground" dateTime={ticket.createdAt}>{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</time></div>
+                            <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Requested by')}</p><p className="break-words font-semibold text-primary"><PersonName person={ticket.requester} ticketId={ticket.id} hint={ticket.peopleHints?.[ticket.requesterId]} /></p><time className="text-xs text-muted-foreground" dateTime={ticket.createdAt}>{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</time></div>
                         </CardHeader>
                         <CardContent className="space-y-2 p-5"><h2 className="text-sm font-semibold">{t('Description')}</h2>{ticket.description ? <RenderDescription text={ticket.description} /> : <p className="text-sm text-muted-foreground">{t('No description provided')}</p>}</CardContent>
                     </Card>
@@ -641,12 +653,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             <p className="text-xs text-muted-foreground">{formatFileSize(att.size)} · {t(att.scanStatus === 'CLEAN' ? 'Malware scan passed' : 'Malware scanner not configured')}</p>
                                         </div>
                                         <Button asChild size="icon" variant="ghost" className="h-8 w-8"><a href={att.path} download={att.filename} aria-label={t("Download {name}", { name: att.filename })}><Download className="h-3.5 w-3.5" /></a></Button>
-                                        <ConfirmDestructiveAction
-                                            title={t("Remove attachment?")}
-                                            description={<>{t("The stored file")} <strong>{att.filename}</strong> {t("will be removed, while its history record and audit evidence are retained.")}</>}
-                                            onConfirm={() => void deleteAttachment(att.id)}
-                                            trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={t("Remove {name}", { name: att.filename })}><Trash2 className="h-3.5 w-3.5" /></Button>}
-                                        />
+                                        {att.canDelete ? (
+                                            <ConfirmDestructiveAction
+                                                title={t("Remove attachment?")}
+                                                description={<>{t("The file")} <strong>{att.filename}</strong> {t("will be deleted from CompDesk. Only its name, size and who removed it are kept; copies may remain in your backups.")}</>}
+                                                onConfirm={() => void deleteAttachment(att.id)}
+                                                trigger={<Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label={t("Remove {name}", { name: att.filename })}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                            />
+                                        ) : null}
                                     </div>
                                 ))}
                                 {removedAttachments.map((att: any) => (
@@ -654,7 +668,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                         <FileIcon className="h-8 w-8 p-1 shrink-0" />
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium truncate">{att.filename}</p>
-                                            <p className="text-xs">{t("Removed · history retained")}</p>
+                                            <p className="text-xs">{t("File removed")}</p>
                                         </div>
                                     </div>
                                 ))}                            </CardContent>
@@ -692,9 +706,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             <Eye className="h-3.5 w-3.5 mr-1" />
                                             {t(isInternal ? 'Internal Note' : 'Public Reply')}
                                         </Button>
+                                        <SavedRepliesMenu draft={comment} onInsert={insertIntoComment} disabled={addComment.isPending} />
                                     </div>
                                 )}
                                 <Textarea
+                                    ref={commentInputRef}
                                     placeholder={t(isInternal ? 'Write an internal note... (Paste screenshots with Ctrl+V)' : 'Write a reply... (Paste screenshots with Ctrl+V)')}
                                     value={comment}
                                     disabled={addComment.isPending}
@@ -745,13 +761,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <CardTitle className="text-base">{t("Details")}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">{t("Department")}</span>
-                                <span className="font-medium">{ticket.queue?.name}</span>
+                            <div className="flex justify-between gap-4 text-sm">
+                                <span className="shrink-0 text-muted-foreground">{t("Department")}</span>
+                                <span className="text-right font-medium">{ticket.queue?.name}</span>
                             </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">{t("Category")}</span>
-                                <span className="font-medium">{ticket.category?.name ?? '—'}</span>
+                            <div className="flex justify-between gap-4 text-sm">
+                                <span className="shrink-0 text-muted-foreground">{t("Category")}</span>
+                                <span className="text-right font-medium">{ticket.category?.name ?? '—'}</span>
                             </div>
                             {ticket.tagPermissions?.visible ? (
                                 <div className="flex justify-between gap-4 text-sm">
@@ -763,13 +779,15 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                     ) : <span className="font-medium">—</span>}
                                 </div>
                             ) : null}
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Requester")}</span>
-                                <span className="font-semibold text-primary">{ticket.requester?.name}</span>
+                                <span className="min-w-0 text-right font-semibold text-primary"><PersonName person={ticket.requester} ticketId={ticket.id} hint={ticket.peopleHints?.[ticket.requesterId]} /></span>
                             </div>
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Assignees")}</span>
-                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : t('Unassigned')}</span>
+                                <span className="min-w-0 text-right font-medium">{assignments.length ? assignments.map((assignment: any, index: number) => (
+                                    <span key={assignment.userId}>{index > 0 ? ', ' : null}<PersonName person={assignment.user} ticketId={ticket.id} hint={ticket.peopleHints?.[assignment.userId]} /></span>
+                                )) : t('Unassigned')}</span>
                             </div>
                             {ticket.historicalForm ? (
                                 <div className="flex justify-between gap-4 text-sm">
@@ -778,16 +796,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
                             ) : null}
                             <Separator />
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Created")}</span>
                                 <span className="text-xs">{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</span>
                             </div>
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Updated")}</span>
                                 <span className="text-xs">{new Date(ticket.updatedAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</span>
                             </div>
                             {ticket.dueAt && (
-                                <div className="flex justify-between text-sm">
+                                <div className="flex justify-between gap-4 text-sm">
                                     <span className="text-muted-foreground">{t("Due")}</span>
                                     <span className={`text-xs ${ticket.slaInfo?.resolutionBreached ? 'text-destructive font-bold' : ''}`}>
                                         {new Date(ticket.dueAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}
@@ -832,8 +850,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             {assignments.map((assignment: any) => (
                                                 <div key={assignment.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
                                                     <div className="min-w-0">
-                                                        <p className="truncate text-sm font-medium">{assignment.user.name}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">{assignment.user.email} · {assignment.user.role}</p>
+                                                        <p className="truncate text-sm font-medium"><PersonName person={assignment.user} ticketId={ticket.id} hint={ticket.peopleHints?.[assignment.userId]} /></p>
+                                                        <p className="truncate text-xs text-muted-foreground">{[assignment.user.email, roleLabel(assignment.user.role) ? t(roleLabel(assignment.user.role)!) : null].filter(Boolean).join(' · ')}</p>
                                                     </div>
                                                     <Button type="button" size="icon" variant="ghost" aria-label={t("Remove {name}", { name: assignment.user.name })} disabled={assignmentMutation.isPending} onClick={() => runAssignment('remove', assignment.userId)}>
                                                         <X className="h-4 w-4" />
@@ -895,7 +913,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                 {/* Tags: applied after triage; only tags that fit the current department and category can be added */}
                                 {ticket.tagPermissions?.editable ? (
                                     <div className="space-y-2">
-                                        <label htmlFor="ticket-tags" className="text-xs font-medium text-muted-foreground">{t("Tags")}</label>
+                                        <label htmlFor="ticket-tags" className="block text-xs font-medium text-muted-foreground">{t("Tags")}</label>
                                         {ticketTags.length ? (
                                             <div className="flex flex-wrap gap-1.5">
                                                 {ticketTags.map((tag) => (
@@ -905,7 +923,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                                 ))}
                                             </div>
                                         ) : null}
-                                        <TagPicker id="ticket-tags" options={tagOptions} selected={tagDraft ?? currentTagIds} onChange={setTagDraft} onOpenChange={commitTagDraft}
+                                        <TagPicker id="ticket-tags" className="w-full" options={tagOptions} selected={tagDraft ?? currentTagIds} onChange={setTagDraft} onOpenChange={commitTagDraft}
                                             label={t(ticketTags.length ? 'Edit tags' : 'Add tags')} emptyText={t('No tags are available for this department or category')} disabled={updateTicket.isPending} />
                                         {unavailableTagCount > 0 ? <p className="text-[11px] text-muted-foreground">{t('Dashed tags do not apply to this department or category any more. They stay until you remove them.')}</p> : null}
                                     </div>
@@ -1008,7 +1026,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <div className="flex flex-wrap gap-2">
                                 {ticket.watchers?.map((w: any) => (
                                     <Badge key={w.user.id} variant="secondary" className="text-xs">
-                                        {w.user.name}
+                                        <PersonName person={w.user} ticketId={ticket.id} hint={ticket.peopleHints?.[w.user.id]} />
                                     </Badge>
                                 ))}
                                 {(!ticket.watchers || ticket.watchers.length === 0) && (

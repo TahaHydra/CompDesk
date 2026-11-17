@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { suggestedArticleIdsSchema } from '@/lib/help-suggestions';
 import { Priority, Severity, TicketStatus } from '@prisma/client';
 import { attachmentLimits } from '@/lib/attachment-security';
 
@@ -84,6 +85,8 @@ export const updateCategorySchema = z.object({
     description: z.string().trim().max(500).nullable().optional(),
     templateId: z.guid().nullable().optional(),
     isActive: z.boolean().optional(),
+    /** Help articles suggested to requesters choosing this category, in display order. */
+    suggestedArticleIds: suggestedArticleIdsSchema.optional(),
 }).refine((value) => Object.keys(value).some((key) => key !== 'id'), 'At least one category field is required');
 
 const tagScopeSchema = z.object({ queueId: z.guid(), categoryId: z.guid().nullable().optional() });

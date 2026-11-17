@@ -4,6 +4,8 @@ const mockAuth = jest.fn();
 const mockAdministered = jest.fn();
 const mockCanAccessTicket = jest.fn();
 const mockPrisma = {
+    // The people privacy policy is read on every ticket response; no stored policy means defaults.
+    appSetting: { findUnique: jest.fn().mockResolvedValue(null) },
     tag: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), count: jest.fn() },
     tagScope: { deleteMany: jest.fn(), createMany: jest.fn() },
     ticketTag: { count: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },

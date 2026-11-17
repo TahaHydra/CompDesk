@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { PUBLIC_REQUESTER_SELECT, STAFF_USER_SELECT, assertApiResponseSafe, projectTicketFormForRole } from '@/lib/api-dto';
+import { loadPrivacyContext, redactTicketPeople } from '@/lib/people-privacy-server';
 import { ticketBuiltInAllowed, ticketPublicTitle } from '@/lib/ticket-form/privacy';
 import { isAgentOrAbove } from '@/lib/utils';
 import { sendTicketUpdatedEmail } from '@/lib/email';
@@ -132,7 +133,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             entityId: ticketId,
             metadata: { level: newLevel, escalateToId, reason, assignmentBehavior: 'additive', assignmentAdded, previousAssignmentIds, resultingAssignmentIds, expectedVersion, resultingVersion: expectedVersion + 1 },
         });
-        return NextResponse.json(assertApiResponseSafe({ success: true, escalationLevel: newLevel, ticket: projectTicketFormForRole(updated, session.user.role) }));
+        const privacy = await loadPrivacyContext(session.user);
+        return NextResponse.json(assertApiResponseSafe({ success: true, escalationLevel: newLevel, ticket: redactTicketPeople(projectTicketFormForRole(updated, session.user.role), privacy) }));
     } catch (error) {
         logger.error('Failed to escalate ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

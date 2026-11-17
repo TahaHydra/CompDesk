@@ -3,17 +3,19 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { auditLog } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
+import { jobTitleSchema } from '@/lib/user-validation';
 
 const preferenceSchema = z.object({
-    preferredLanguage: z.enum(['en', 'fr']),
-}).strict();
+    preferredLanguage: z.enum(['en', 'fr']).optional(),
+    jobTitle: jobTitleSchema.optional(),
+}).strict().refine((value) => value.preferredLanguage !== undefined || value.jobTitle !== undefined, { message: 'Nothing to update' });
 
 export async function GET() {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const user = await prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { preferredLanguage: true },
+        select: { preferredLanguage: true, jobTitle: true },
     });
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
     return NextResponse.json(user);
@@ -30,21 +32,27 @@ export async function PATCH(request: Request) {
 
     const previous = await prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { preferredLanguage: true },
+        select: { preferredLanguage: true, jobTitle: true },
     });
     if (!previous) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
+    const { preferredLanguage, jobTitle } = parsed.data;
     const user = await prisma.user.update({
         where: { id: session.user.id },
-        data: { preferredLanguage: parsed.data.preferredLanguage },
-        select: { preferredLanguage: true },
+        data: { ...(preferredLanguage ? { preferredLanguage } : {}), ...(jobTitle !== undefined ? { jobTitle } : {}) },
+        select: { preferredLanguage: true, jobTitle: true },
     });
-    await auditLog({
-        userId: session.user.id,
-        action: 'profile.language_updated',
-        entity: 'user',
-        entityId: session.user.id,
-        metadata: { previousLanguage: previous.preferredLanguage, preferredLanguage: user.preferredLanguage },
-    });
+    if (preferredLanguage) {
+        await auditLog({
+            userId: session.user.id,
+            action: 'profile.language_updated',
+            entity: 'user',
+            entityId: session.user.id,
+            metadata: { previousLanguage: previous.preferredLanguage, preferredLanguage: user.preferredLanguage },
+        });
+    }
+    if (jobTitle !== undefined && jobTitle !== previous.jobTitle) {
+        await auditLog({ userId: session.user.id, action: 'profile.job_title_updated', entity: 'user', entityId: session.user.id });
+    }
     return NextResponse.json(user);
 }
