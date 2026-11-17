@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getQueueInboxQueueIds } from '@/lib/permissions';
+import { redactPerson } from '@/lib/people-privacy';
+import { loadPrivacyContext } from '@/lib/people-privacy-server';
 import logger from '@/lib/logger';
 
 const EMPTY_SCOPE = ['__none__'];
@@ -81,16 +83,27 @@ export async function GET(request: NextRequest) {
             orderBy: [{ name: 'asc' }, { email: 'asc' }],
             take: limit,
         });
-        return NextResponse.json(users.map((user) => ({
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            departmentNames: [...new Set([
-                ...user.queueMemberships.map((membership) => membership.queue.name),
-                ...user.groupMemberships.flatMap((membership) => membership.group.queueAssignments.map((assignment) => assignment.queue.name)),
-            ])].sort(),
-        })));
+        // Contact details follow the people privacy policy. A person who matched the search only
+        // through an email the viewer may not see is dropped, so hidden addresses cannot be probed.
+        const privacy = await loadPrivacyContext(session.user);
+        const needle = query.toLocaleLowerCase();
+        return NextResponse.json(users.flatMap((user) => {
+            const queueIds = [...new Set([
+                ...user.queueMemberships.map((membership) => membership.queueId),
+                ...user.groupMemberships.flatMap((membership) => membership.group.queueAssignments.map((assignment) => assignment.queueId)),
+            ])];
+            const context = kind === 'requester' ? (scopeQueueIds ?? queueIds) : queueIds;
+            const visible = redactPerson({ id: user.id, name: user.name, email: user.email, role: user.role }, privacy.policy, privacy.viewer, context);
+            const matchedOnlyByEmail = Boolean(needle) && user.id !== query && !user.name.toLocaleLowerCase().includes(needle);
+            if (matchedOnlyByEmail && !('email' in visible)) return [];
+            return [{
+                ...visible,
+                departmentNames: [...new Set([
+                    ...user.queueMemberships.map((membership) => membership.queue.name),
+                    ...user.groupMemberships.flatMap((membership) => membership.group.queueAssignments.map((assignment) => assignment.queue.name)),
+                ])].sort(),
+            }];
+        }));
     } catch (error) {
         logger.error('Failed to search scoped users', { error });
         return NextResponse.json({ error: 'Failed to search users' }, { status: 500 });

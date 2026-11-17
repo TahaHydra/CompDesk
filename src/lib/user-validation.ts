@@ -19,12 +19,16 @@ export const createUserSchema = z.object({
     password: strongPasswordSchema.optional(),
 }).strict();
 
+/** Free text, optional. An empty value clears it. */
+export const jobTitleSchema = z.string().trim().max(80).transform((value) => value || null).nullable();
+
 export const updateUserSchema = z.object({
     userId: z.guid(),
     role: z.nativeEnum(Role).optional(),
     name: userNameSchema.optional(),
     email: userEmailSchema.optional(),
     isActive: z.boolean().optional(),
+    jobTitle: jobTitleSchema.optional(),
     queueIds: z.array(z.guid()).max(100).optional(),
     resetPassword: z.boolean().optional(),
     password: strongPasswordSchema.optional(),

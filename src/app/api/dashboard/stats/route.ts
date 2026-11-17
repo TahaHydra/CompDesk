@@ -41,7 +41,7 @@ export async function GET() {
                 where: activeWhereClause,
                 include: {
                     queue: { select: { name: true } },
-                    requester: { select: { name: true } },
+                    requester: { select: { id: true, name: true } },
                     assignments: {
                         select: { user: { select: { id: true, name: true } } },
                         orderBy: { assignedAt: 'asc' },

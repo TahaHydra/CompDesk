@@ -13,6 +13,7 @@ import { getEffectiveLoginPolicy, getSsoState, isRuntimeProviderConfigured, isUs
 import { targetProviderId, type RuntimeSsoProviderId, type SsoProviderOption } from '@/lib/sso-presets';
 import { SsoAccountLink } from '@/components/sso-account-link';
 import { SavedRepliesManager } from '@/components/profile/saved-replies-manager';
+import { ProfileJobTitle } from '@/components/profile/profile-job-title';
 
 export default async function ProfilePage() {
     const session = await auth();
@@ -75,6 +76,7 @@ export default async function ProfilePage() {
                     </Avatar>
                     <div>
                         <h2 className="text-xl font-bold text-foreground">{user.name || user.email}</h2>
+                        {user.jobTitle ? <p className="text-sm text-muted-foreground">{user.jobTitle}</p> : null}
                         <div className="mt-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
                             <Mail className="h-3.5 w-3.5" />{user.email}
                         </div>
@@ -93,6 +95,7 @@ export default async function ProfilePage() {
 
                 <div className="space-y-6 md:col-span-2">
                     <LanguagePreference initialLanguage={language} />
+                    <ProfileJobTitle initialJobTitle={user.jobTitle} />
                     {ssoLinks.map((link) => <Card key={link.providerId}><CardContent className="pt-6"><SsoAccountLink {...link} /></CardContent></Card>)}
 
                     <Card className="border shadow-sm">

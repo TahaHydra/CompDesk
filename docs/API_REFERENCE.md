@@ -53,7 +53,21 @@ Authenticated. Returns the current user's saved interface language.
 
 ### `PATCH /api/profile/preferences`
 
-Authenticated. Updates only the current user's preference. The strict request body is `{ "preferredLanguage": "en" }` or `{ "preferredLanguage": "fr" }`. The change is audited and takes effect across the application shell, dashboard, profile, ticket creation, and Help Center.
+Authenticated. Updates only the current user's preferences. The strict request body contains `preferredLanguage` (`"en"` or `"fr"`), `jobTitle` (up to 80 characters; an empty string clears it), or both. Changes are audited; a language change takes effect across the application shell, dashboard, profile, ticket creation, and Help Center.
+
+## People and privacy
+
+Contact details of other people (`email`, `preferredLanguage`, `jobTitle`) follow the policy in Admin → Settings → Privacy; see [People details and privacy](PERMISSIONS.md#people-details-and-privacy). When a field is hidden from the caller it is **omitted** from the response rather than returned empty. This applies to `GET /api/tickets`, `GET /api/tickets/[id]` and the ticket objects returned by create, update and escalate, `GET /api/users`, `GET /api/users/search` and department-admin views of `GET /api/queues`. Super Admin responses are unchanged.
+
+### `GET /api/users/[id]/card?ticketId=uuid`
+
+Authenticated. The person card. With `ticketId`, the caller must be able to open the ticket and the person must be on it; without it, staff can open cards of staff in a department they can reach. Anything else returns 404. Returns `id`, `name`, `image`, `role`, `isSelf`, `departments` (only the ticket's department for requesters), plus, when allowed, `email`, `preferredLanguage`, `jobTitle`; for staff `isActive`, `openRequests` and `requestsHref`; for Super Admins `manageHref`.
+
+### `GET` / `PUT /api/settings/people-privacy`
+
+Super Admin only. `GET` returns `{ policy, defaults }`. `PUT` replaces the policy with `{ "email": level, "language": level, "jobTitle": level }`, where `level` is `higher`, `same_or_higher`, `staff` or `everyone`. Changes are audited with the previous and new policy.
+
+`GET /api/tickets/[id]` also returns `peopleHints`: for people in the ticket who share a name with someone else in it, a short disambiguation hint keyed by user id. Timeline entries include the author's `role`.
 
 ## Saved replies
 

@@ -100,6 +100,8 @@ model User {
   normalizedEmail      String           @unique @default(dbgenerated()) @map("normalized_email")
   emailVerified        DateTime?        @map("email_verified")
   name                 String
+  /// Optional job title shown on person cards; visibility follows the people privacy policy.
+  jobTitle             String?          @map("job_title")
   image                String?
   passwordHash         String?          @map("password_hash")
   role                 Role             @default(USER)

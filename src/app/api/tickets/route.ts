@@ -16,6 +16,7 @@ import {
     ticketBuiltInVisibilityWhere,
 } from '@/lib/ticket-search';
 import { createTicketFromResolvedTemplate } from '@/lib/tickets/create-ticket';
+import { loadPrivacyContext, redactTicketPeople } from '@/lib/people-privacy-server';
 import { TemplateResolutionError } from '@/lib/ticket-form/service';
 import { TicketFormValidationError } from '@/lib/ticket-form/validation';
 import logger from '@/lib/logger';
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
                 include: {
                     queue: { select: { id: true, name: true } },
                     category: { select: { id: true, name: true } },
-                    requester: { select: { id: true, name: true, email: true } },
+                    requester: { select: { id: true, name: true, email: true, role: true } },
                     assignments: {
                         select: { user: { select: { id: true, name: true, email: true, role: true } } },
                         orderBy: { assignedAt: 'asc' },
@@ -139,14 +140,14 @@ export async function GET(req: NextRequest) {
             : [];
         const slaMap = new Map(slaPolicies.map((sla) => [`${sla.queueId}:${sla.priority}`, sla.resolutionMinutes] as const));
         const now = Date.now();
+        const privacy = await loadPrivacyContext(session.user);
         const enrichedTickets = tickets.map((ticket) => {
             const slaBreached = resolutionSlaBreached(ticket, slaMap.get(`${ticket.queueId}:${ticket.priority}`), now);
             const projected = projectTicketFormForRole(ticket, role);
             // List chips need the tag and, for staff, whether it still fits the ticket's department and category.
             const tags = (projected.tags ?? []).map(({ tag }) => ({ id: tag.id, name: tag.name, color: tag.color, ...(role === 'USER' ? {} : { available: isTagAvailable(tag, ticket.queueId, ticket.categoryId) }) }));
-            // Requesters get assignee names only; staff contact details are not theirs to list.
-            const assignees = ticket.assignments.map(({ user }) => role === 'USER' ? { id: user.id, name: user.name } : user);
-            return { ...projected, tags, assignees, assignments: undefined, slaBreached };
+            // Contact details follow the people privacy policy, evaluated in this ticket's department.
+            return redactTicketPeople({ ...projected, tags, assignees: ticket.assignments.map(({ user }) => user), assignments: undefined, slaBreached }, privacy);
         });
 
         return NextResponse.json(assertApiResponseSafe({
@@ -178,7 +179,8 @@ export async function POST(req: NextRequest) {
             requester: { id: session.user.id, email: session.user.email, role: session.user.role },
             input: parsed.data,
         });
-        return NextResponse.json(assertApiResponseSafe(result.ticket), { status: result.replayed ? 200 : 201 });
+        const privacy = await loadPrivacyContext(session.user);
+        return NextResponse.json(assertApiResponseSafe(redactTicketPeople(result.ticket, privacy)), { status: result.replayed ? 200 : 201 });
     } catch (error) {
         if (error instanceof TemplateResolutionError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });

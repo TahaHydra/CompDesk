@@ -51,6 +51,7 @@ describe('application route and access contracts', () => {
             'settings/route.ts',
             'settings/test-email/route.ts',
             'settings/quick-link-icons/route.ts',
+            'settings/people-privacy/route.ts',
             'branding/admin/route.ts',
             'branding/assets/route.ts',
             'api-clients/route.ts',

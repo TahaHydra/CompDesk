@@ -31,6 +31,7 @@ import { TagPicker, type TagPickerOption } from '@/components/tags/tag-picker';
 import { describeTagScope, isTagAvailable, type NamedTagScope } from '@/lib/tag-scope';
 import { UserSearchCombobox } from '@/components/tickets/user-search-combobox';
 import { SavedRepliesMenu } from '@/components/tickets/saved-replies-menu';
+import { PersonName, roleLabel } from '@/components/people/person-name';
 import { insertAtSelection } from '@/lib/saved-replies';
 import { useLanguage } from '@/components/providers/language-provider';
 import { parseTicketContent } from '@/lib/ticket-content';
@@ -373,6 +374,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }, [comment]);
 
     const isConversationEvent = (event: any) => CONVERSATION_EVENT_TYPES.includes(event.type);
+    // Tells same-named people apart in the conversation: who asked, and in what role others answer.
+    const authorTag = (event: any): string | null => event.userId === ticket?.requesterId ? 'Requester' : roleLabel(event.user?.role);
 
     // The server decides who may edit or delete each entry (own entries, or
     // moderation by an administrator of this ticket's department); see src/lib/ticket-moderation.ts.
@@ -449,7 +452,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </Avatar>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{event.user?.name}</span>{!compact && event.userId === session?.user?.id ? <Badge variant="outline" className="text-xs">{t('You')}</Badge> : null}
+                        <PersonName person={event.user} ticketId={ticket.id} hint={ticket.peopleHints?.[event.userId]} className="text-sm font-medium" />
+                        {!compact && event.userId === session?.user?.id ? <Badge variant="outline" className="text-xs">{t('You')}</Badge> : null}
+                        {!compact && event.userId !== session?.user?.id && authorTag(event) ? <Badge variant="secondary" className="text-[11px] font-normal">{t(authorTag(event)!)}</Badge> : null}
                         {event.type === 'INTERNAL_NOTE' && (
                             <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
                                 <Eye className="h-3 w-3 mr-1" /> {t("Internal")}
@@ -600,7 +605,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     <Card className="overflow-hidden border border-primary/15 shadow-sm">
                         <CardHeader className="flex flex-row items-center gap-3 bg-primary/5 pb-4">
                             <Avatar className="h-10 w-10 shrink-0"><AvatarFallback className="bg-primary text-primary-foreground">{ticket.requester?.name?.split(' ').map((name: string) => name[0]).join('') || '?'}</AvatarFallback></Avatar>
-                            <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Requested by')}</p><p className="break-words font-semibold text-primary">{ticket.requester?.name}</p><time className="text-xs text-muted-foreground" dateTime={ticket.createdAt}>{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</time></div>
+                            <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Requested by')}</p><p className="break-words font-semibold text-primary"><PersonName person={ticket.requester} ticketId={ticket.id} hint={ticket.peopleHints?.[ticket.requesterId]} /></p><time className="text-xs text-muted-foreground" dateTime={ticket.createdAt}>{new Date(ticket.createdAt).toLocaleString(language === 'fr' ? 'fr-FR' : 'en-GB')}</time></div>
                         </CardHeader>
                         <CardContent className="space-y-2 p-5"><h2 className="text-sm font-semibold">{t('Description')}</h2>{ticket.description ? <RenderDescription text={ticket.description} /> : <p className="text-sm text-muted-foreground">{t('No description provided')}</p>}</CardContent>
                     </Card>
@@ -776,11 +781,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             ) : null}
                             <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Requester")}</span>
-                                <span className="font-semibold text-primary">{ticket.requester?.name}</span>
+                                <span className="min-w-0 text-right font-semibold text-primary"><PersonName person={ticket.requester} ticketId={ticket.id} hint={ticket.peopleHints?.[ticket.requesterId]} /></span>
                             </div>
                             <div className="flex justify-between gap-4 text-sm">
                                 <span className="text-muted-foreground">{t("Assignees")}</span>
-                                <span className="text-right font-medium">{assignments.length ? assignments.map((assignment: any) => assignment.user.name).join(', ') : t('Unassigned')}</span>
+                                <span className="min-w-0 text-right font-medium">{assignments.length ? assignments.map((assignment: any, index: number) => (
+                                    <span key={assignment.userId}>{index > 0 ? ', ' : null}<PersonName person={assignment.user} ticketId={ticket.id} hint={ticket.peopleHints?.[assignment.userId]} /></span>
+                                )) : t('Unassigned')}</span>
                             </div>
                             {ticket.historicalForm ? (
                                 <div className="flex justify-between gap-4 text-sm">
@@ -843,8 +850,8 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                                             {assignments.map((assignment: any) => (
                                                 <div key={assignment.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
                                                     <div className="min-w-0">
-                                                        <p className="truncate text-sm font-medium">{assignment.user.name}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">{assignment.user.email} · {assignment.user.role}</p>
+                                                        <p className="truncate text-sm font-medium"><PersonName person={assignment.user} ticketId={ticket.id} hint={ticket.peopleHints?.[assignment.userId]} /></p>
+                                                        <p className="truncate text-xs text-muted-foreground">{[assignment.user.email, roleLabel(assignment.user.role) ? t(roleLabel(assignment.user.role)!) : null].filter(Boolean).join(' · ')}</p>
                                                     </div>
                                                     <Button type="button" size="icon" variant="ghost" aria-label={t("Remove {name}", { name: assignment.user.name })} disabled={assignmentMutation.isPending} onClick={() => runAssignment('remove', assignment.userId)}>
                                                         <X className="h-4 w-4" />
@@ -1019,7 +1026,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                             <div className="flex flex-wrap gap-2">
                                 {ticket.watchers?.map((w: any) => (
                                     <Badge key={w.user.id} variant="secondary" className="text-xs">
-                                        {w.user.name}
+                                        <PersonName person={w.user} ticketId={ticket.id} hint={ticket.peopleHints?.[w.user.id]} />
                                     </Badge>
                                 ))}
                                 {(!ticket.watchers || ticket.watchers.length === 0) && (

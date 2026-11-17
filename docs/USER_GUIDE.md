@@ -44,6 +44,8 @@ Visible required fields and configured rules are shown in the browser, then inde
 
 You can add public comments and view notifications. Internal notes are never shown to end users.
 
+**Who am I talking to?** Hover or click any name (requester, assignee, message author, watcher, or a name in a ticket list) to open the person's card: their name, photo, role and department. Each message also shows the author's role (Requester, Agent, Department admin) and your own messages say **You**. If two people in the same ticket share a name, a short hint (part of their email, or their department) appears next to it. Whether the card also shows an email address, preferred language or job title depends on your organisation's privacy setting. Set your own job title in **My Profile**.
+
 ## Agents
 
 Agents see **Department Inbox** for departments assigned directly or through a group. They can claim/assign tickets, change permitted status/priority values, add internal notes, use saved replies, and escalate tickets.
@@ -136,7 +138,11 @@ Template precedence is always:
 **Admin → Help Content** manages the shared bilingual documentation library. Administrators can create, reorder, publish, draft, edit, and delete articles and collections. Each article requires meaningful English and French content so changing a profile language never produces an empty document. Article content supports headings, paragraphs, lists, links, emphasis, inline code, code blocks, and blockquotes. Preview both languages before publishing. A collection must be emptied before it can be deleted.
 ### Canned responses
 
-Canned responses remain reusable comment text for agents. They do not define ticket fields and are not managed on the Ticket Templates page.
+Canned responses remain reusable comment text for agents. They do not define ticket fields and are not managed on the Ticket Templates page. They appear read-only under **Shared responses** in each agent's Saved replies menu.
+
+### Privacy: Super Admin → Settings → Privacy
+
+Choose who can see each person's email address, preferred language and job title: **Higher roles only** (default), **Same role and higher**, **All staff**, or **Everyone**. A preview shows what, for example, a requester sees on an agent's card before you save. Name, photo, role and the relevant department are always visible. Details are only ever shown for people someone already works with, a department admin counts as an administrator only in the departments they administer, and Super Admins always see everything. A small internal team can simply set **Email address → Everyone**. Super Admins can also set anyone's job title in **Admin → Users**.
 
 ### Other settings
 
@@ -145,6 +151,7 @@ Canned responses remain reusable comment text for agents. They do not define tic
 - **Entra ID**: Microsoft OIDC credentials; restart after environment changes.
 - **Quick Links**: up to 16 validated HTTP/HTTPS dashboard links with optional PNG, JPEG, WebP, GIF, or ICO images. Source files may be up to 5 MB and must have sensible icon proportions. CompDesk preserves the aspect ratio, resizes inside 128×128 without stretching or enlarging small images, stores a compact WebP, and renders it at 32 px on the dashboard.
 - **Security**: local login control (also reflected in Branding).
+- **Privacy**: who sees email addresses, preferred language and job titles (see above).
 - **Features**: attachments, quick links, external API, and webhooks.
 - **API Clients**: scoped API keys and optional department restrictions.
 

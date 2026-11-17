@@ -10,6 +10,8 @@ import {
     isAdminRole,
 } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { redactPerson } from '@/lib/people-privacy';
+import { loadPrivacyContext } from '@/lib/people-privacy-server';
 import { createQueueSchema, updateQueueSchema } from '@/lib/validations';
 import logger from '@/lib/logger';
 
@@ -59,7 +61,15 @@ export async function GET(req: NextRequest) {
         const queues = await prisma.queue.findMany({ where, include: queueInclude, orderBy: { name: 'asc' } });
         const administrativeView = session.user.role === 'SUPER_ADMIN'
             || (session.user.role === 'ADMIN' && !accessible);
-        if (administrativeView) return NextResponse.json(queues);
+        if (administrativeView) {
+            if (session.user.role === 'SUPER_ADMIN') return NextResponse.json(queues);
+            // Department admins see their co-administrators through the people privacy policy.
+            const privacy = await loadPrivacyContext(session.user);
+            return NextResponse.json(queues.map((queue) => ({
+                ...queue,
+                members: queue.members.map((member) => ({ ...member, user: redactPerson(member.user, privacy.policy, privacy.viewer, [queue.id]) })),
+            })));
+        }
         return NextResponse.json(queues.map((queue) => ({
             id: queue.id,
             name: queue.name,

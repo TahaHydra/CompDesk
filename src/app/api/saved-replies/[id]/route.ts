@@ -12,7 +12,7 @@ type Params = { params: Promise<{ id: string }> };
 const NOT_FOUND = () => NextResponse.json({ error: 'Saved reply not found' }, { status: 404 });
 
 /** Resolves the caller. Every query below is scoped to ownerId, so another user's reply is simply "not found". */
-async function owner(params: Params['params']) {
+async function owner(params: Params['params']): Promise<{ response: NextResponse } | { ownerId: string; id: string }> {
     const session = await auth();
     if (!session?.user) return { response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
     if (!canUseSavedReplies(session.user.role)) return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };

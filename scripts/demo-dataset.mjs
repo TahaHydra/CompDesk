@@ -223,18 +223,18 @@ export async function seedDemoDataset(prisma, options = {}) {
         const passwordHash = await bcrypt.hash(password, 12);
         const domain = options.domain ?? 'example.com';
         const accountSpecs = [
-            { email: options.emails?.[0] || `admin@${domain}`, name: 'Admin User', role: Role.SUPER_ADMIN },
-            { email: options.emails?.[1] || `administrator@${domain}`, name: 'Department Admin', role: Role.ADMIN },
-            { email: options.emails?.[2] || `agent1@${domain}`, name: 'Martin Bernard', role: Role.AGENT },
-            { email: options.emails?.[3] || `agent2@${domain}`, name: 'Sophie Laurent', role: Role.AGENT },
-            { email: options.emails?.[4] || `user1@${domain}`, name: 'Jean Dupont', role: Role.USER },
-            { email: options.emails?.[5] || `user2@${domain}`, name: 'Marie Curie', role: Role.USER },
+            { email: options.emails?.[0] || `admin@${domain}`, name: 'Admin User', role: Role.SUPER_ADMIN, jobTitle: 'IT Director' },
+            { email: options.emails?.[1] || `administrator@${domain}`, name: 'Department Admin', role: Role.ADMIN, jobTitle: 'Service Desk Manager' },
+            { email: options.emails?.[2] || `agent1@${domain}`, name: 'Martin Bernard', role: Role.AGENT, jobTitle: 'IT Support Technician' },
+            { email: options.emails?.[3] || `agent2@${domain}`, name: 'Sophie Laurent', role: Role.AGENT, jobTitle: 'HR & Finance Specialist' },
+            { email: options.emails?.[4] || `user1@${domain}`, name: 'Jean Dupont', role: Role.USER, jobTitle: 'Project Manager' },
+            { email: options.emails?.[5] || `user2@${domain}`, name: 'Marie Curie', role: Role.USER, jobTitle: 'Financial Analyst' },
         ];
         const users = new Map();
         for (const spec of accountSpecs) {
             const user = await prisma.user.upsert({
                 where: { normalizedEmail: normalizeEmail(spec.email) },
-                update: { name: spec.name, role: spec.role, passwordHash, isActive: true, isDemo: true },
+                update: { name: spec.name, role: spec.role, jobTitle: spec.jobTitle, passwordHash, isActive: true, isDemo: true },
                 create: { ...spec, email: normalizeEmail(spec.email), normalizedEmail: normalizeEmail(spec.email), passwordHash, isDemo: true, preferredLanguage: 'en' },
             });
             users.set(normalizeEmail(spec.email), user);

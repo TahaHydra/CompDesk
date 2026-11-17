@@ -12,6 +12,8 @@ import { clearLoginFailures } from '@/lib/login-throttle';
 import { createUserSchema, deactivateUserSchema, updateUserSchema } from '@/lib/user-validation';
 import { requestSourceIp } from '@/lib/request-ip';
 import { getAgentAccessibleQueueIds, getQueueInboxQueueIds, isAgentRole } from '@/lib/permissions';
+import { redactPerson } from '@/lib/people-privacy';
+import { loadPrivacyContext, staffDepartmentsByUser } from '@/lib/people-privacy-server';
 
 function generatePassword(length = 20): string {
     const charset = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -40,6 +42,7 @@ export async function GET() {
             id: true,
             name: true,
             email: true,
+            jobTitle: true,
             role: true,
             isActive: true,
             createdAt: true,
@@ -80,11 +83,22 @@ export async function GET() {
                 select: userSelect,
                 orderBy: { name: 'asc' },
             });
-        }        return NextResponse.json(assertApiResponseSafe(users.map(({ passwordHash, ...user }) => ({
-            ...user,
-            loginMethod: user.entraObjectId ? 'SSO' : 'Local',
-            hasPassword: Boolean(passwordHash),
-        }))));
+        }
+        // Super Admins manage accounts and see everything. For other staff this is a scoped
+        // directory, so contact details follow the people privacy policy, evaluated through
+        // the departments each person works in.
+        const privacy = session.user.role === 'SUPER_ADMIN' ? null : await loadPrivacyContext(session.user);
+        const departments = privacy ? await staffDepartmentsByUser(users.map((user) => user.id)) : null;
+        return NextResponse.json(assertApiResponseSafe(users.map(({ passwordHash, ...user }) => {
+            const listed = {
+                ...user,
+                loginMethod: user.entraObjectId ? 'SSO' : 'Local',
+                hasPassword: Boolean(passwordHash),
+            };
+            if (!privacy) return listed;
+            const context = (departments?.get(user.id) ?? []).map((department) => department.id);
+            return redactPerson(listed, privacy.policy, privacy.viewer, context);
+        })));
     } catch (error) {
         logger.error('Failed to fetch users', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -144,7 +158,7 @@ export async function PATCH(req: NextRequest) {
         }
         const parsed = updateUserSchema.safeParse(await req.json());
         if (!parsed.success) return NextResponse.json({ error: 'User validation failed', details: parsed.error.flatten() }, { status: 400 });
-        const { userId, role, name, email: rawEmail, isActive, queueIds, resetPassword, password } = parsed.data;
+        const { userId, role, name, email: rawEmail, isActive, jobTitle, queueIds, resetPassword, password } = parsed.data;
         const normalizedEmail = rawEmail === undefined ? undefined : normalizeEmail(rawEmail);
         const generatedPassword = resetPassword ? generatePassword() : undefined;
         const nextPassword = password ?? generatedPassword;
@@ -190,6 +204,7 @@ export async function PATCH(req: NextRequest) {
             const updateData: Prisma.UserUpdateInput = {
                 ...(role ? { role } : {}),
                 ...(name !== undefined ? { name } : {}),
+                ...(jobTitle !== undefined ? { jobTitle } : {}),
                 ...(normalizedEmail !== undefined ? { email: normalizedEmail, normalizedEmail } : {}),
                 ...(isActive !== undefined ? { isActive } : {}),
                 ...(passwordHash ? { passwordHash } : {}),

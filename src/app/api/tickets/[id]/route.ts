@@ -19,6 +19,7 @@ import { projectFormFileValues, projectPublicTicketTimelineEvent, projectTicketB
 import { BuiltInTicketField } from '@prisma/client';
 import { tagAvailabilityWhere } from '@/lib/tag-scope';
 import { canDeleteTicketAttachment, canDeleteTimelineEntry, canEditTimelineEntry, canModerateTicketConversation } from '@/lib/ticket-moderation';
+import { loadPrivacyContext, redactTicketPeople, sameNameHints } from '@/lib/people-privacy-server';
 
 // GET /api/tickets/[id]
 export async function GET(
@@ -38,7 +39,7 @@ export async function GET(
             include: {
                 queue: true,
                 category: true,
-                requester: { select: { id: true, name: true, email: true, image: true } },
+                requester: { select: PUBLIC_REQUESTER_SELECT },
                 assignments: {
                     include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } },
                     orderBy: { assignedAt: 'asc' },
@@ -46,7 +47,7 @@ export async function GET(
                 tags: { include: { tag: { include: { scopes: { select: { queueId: true, categoryId: true, queue: { select: { name: true } }, category: { select: { name: true } } } } } } } },
                 watchers: { include: { user: { select: { id: true, name: true, email: true } } } },
                 timeline: {
-                    // The author role is read only to evaluate moderation rights; it is stripped from the response.
+                    // The author role decides moderation rights and is shown as an identity label ("Agent", "Admin").
                     include: { user: { select: { id: true, name: true, image: true, role: true } } },
                     orderBy: { createdAt: 'asc' },
                 },
@@ -174,7 +175,8 @@ export async function GET(
         };
 
         const projectedTicket = projectTicketBuiltIns(ticket, session.user.role);
-        const safeTicket = {
+        const privacy = await loadPrivacyContext(actor);
+        const unredactedTicket = {
             ...projectedTicket,
             // Staff see where each tag applies; requesters only see the tag itself.
             tags: (projectedTicket.tags ?? []).map(({ tag, ...ticketTag }) => ({
@@ -186,10 +188,11 @@ export async function GET(
             ...(session.user.role === 'USER' ? {
                 queue: { id: ticket.queue.id, name: ticket.queue.name, description: ticket.queue.description },
                 category: ticket.category ? { id: ticket.category.id, name: ticket.category.name, description: ticket.category.description } : null,
+                // Contact details are then filtered by the people privacy policy below.
                 assignments: ticket.assignments.map((assignment) => ({
                     id: assignment.id,
                     userId: assignment.userId,
-                    user: { id: assignment.user.id, name: assignment.user.name, image: assignment.user.image },
+                    user: { id: assignment.user.id, name: assignment.user.name, image: assignment.user.image, role: assignment.user.role, email: assignment.user.email },
                 })),
             } : {}),
             watchers: session.user.role === 'USER' ? [] : ticket.watchers.map((watcher) => ({
@@ -198,7 +201,7 @@ export async function GET(
             })),
             timeline: (projectedTicket.timeline ?? []).map((event) => ({
                 ...event,
-                user: event.user ? { id: event.user.id, name: event.user.name, image: event.user.image } : null,
+                user: event.user ? { id: event.user.id, name: event.user.name, image: event.user.image, role: event.user.role } : null,
                 deletedById: isStaffViewer ? event.deletedById : null,
                 ...timelineExtras.get(event.id),
             })),
@@ -220,8 +223,17 @@ export async function GET(
             formSchemaSnapshot: undefined,
             submittedFormValues: undefined,
         };
+        // Contact details follow the organisation's people privacy policy (Admin → Settings → Privacy).
+        const safeTicket = redactTicketPeople(unredactedTicket, privacy);
+        const peopleHints = await sameNameHints([
+            safeTicket.requester,
+            ...safeTicket.assignments.map((assignment) => assignment.user),
+            ...safeTicket.watchers.map((watcher) => watcher.user),
+            ...safeTicket.timeline.flatMap((event) => event.user ? [event.user] : []),
+        ], privacy, [ticket.queueId]);
         return NextResponse.json(assertApiResponseSafe({
             ...safeTicket,
+            peopleHints,
             slaInfo,
             presenceInfo,
             // Same checks the PATCH handler enforces, so the page never offers an edit the server refuses.
@@ -365,7 +377,8 @@ export async function PATCH(
         }
         if (changes.status === 'RESOLVED') fireWebhook('ticket.resolved', { ticketId: id, key: updatedTicket.key, title: updatedTicket.title });
         void auditLog({ userId: session.user.id, action: 'ticket.updated', entity: 'ticket', entityId: id, metadata: { changes, tagIds: uniqueTagIds, expectedVersion, resultingVersion: updatedTicket.version, sla: slaAudit } });
-        return NextResponse.json(assertApiResponseSafe(projectTicketFormForRole(updatedTicket, session.user.role)));
+        const privacy = await loadPrivacyContext(session.user);
+        return NextResponse.json(assertApiResponseSafe(redactTicketPeople(projectTicketFormForRole(updatedTicket, session.user.role), privacy)));
     } catch (error) {
         logger.error('Failed to update ticket', { error });
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

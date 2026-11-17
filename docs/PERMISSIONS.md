@@ -24,6 +24,19 @@ Authorization is enforced server-side by route guards and centralized department
 
 Deleting a reply or note replaces it with a "Deleted" placeholder for everyone; staff also see who deleted it and when. The original text stays in the database for audit and only Super Admins can read it. Removing an attachment permanently deletes the stored file; only its name, size, hash and who removed it are kept. Attachments recorded without an uploader (older rows) cannot be removed by requesters.
 
+## People details and privacy
+
+Clicking or hovering any person's name opens their card. **Identity** is always shown to anyone who can see the person: name, photo, role (Requester, Agent, Department admin, Super Admin) and the relevant department. Requesters see only the department of their own ticket, never a staff member's full list. **Contact and profile details** (email address, preferred language, job title) follow the policy a Super Admin sets in **Admin → Settings → Privacy**, one level per field:
+
+| Level | Who sees the field |
+|---|---|
+| Higher roles only (default) | People with a higher role than the person: Department admin > Agent > Requester |
+| Same role and higher | Also colleagues with the same role |
+| All staff | Every agent and administrator |
+| Everyone | Also requesters, for the staff on their own tickets |
+
+Every level applies on top of a **working relationship**: the person is on a ticket the viewer can open (requester, assignee, author of a message the viewer can see, or watcher for staff), or, for staff only, works in a department the viewer belongs to. A department admin counts as an administrator only toward people in the departments it administers; elsewhere it counts as an agent. Super Admins always see everything, and everyone sees their own details. The same rule applies to ticket pages and lists, assignee pickers, user search (a search cannot match on an email the viewer may not see) and the staff directory. The external API (`/api/v1`) is unchanged: its clients are integrations with explicit scopes, not people.
+
 “ADMIN” never means global access. It is a department-scoped administrator. `SUPER_ADMIN` is the only global administrative role. Group membership and direct membership are combined; no accessible department means no department ticket scope.
 
 External API clients are separate principals. Their scopes and departments are explicit and default deny; an empty department list is not global access.
