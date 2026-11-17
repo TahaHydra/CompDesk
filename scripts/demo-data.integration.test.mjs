@@ -70,6 +70,11 @@ async function checkSetup(databaseUrl) {
     }
 }
 
+// Local runs skip without a database; CI must never skip it silently.
+test('demo lifecycle database is configured in CI', { skip: !process.env.CI }, () => {
+    assert.ok(process.env.DEMO_TEST_DATABASE_URL, 'Set DEMO_TEST_DATABASE_URL so the demo lifecycle test runs in CI.');
+});
+
 test('complete demo lifecycle on an isolated PostgreSQL database', { skip: !process.env.DEMO_TEST_DATABASE_URL }, async (t) => {
     const sourceUrl = process.env.DEMO_TEST_DATABASE_URL;
     const name = `compdesk_demo_test_${crypto.randomBytes(6).toString('hex')}`;

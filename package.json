@@ -57,7 +57,8 @@
     "test:migration:upgrade": "node scripts/validate-migration-upgrade.mjs",
     "release:prepare": "node scripts/release-version.mjs prepare",
     "release:announce": "node scripts/release-version.mjs announce",
-    "test:integration:entra": "node --test scripts/entra-account-link.integration.test.mjs"
+    "test:integration:entra": "node --test scripts/entra-account-link.integration.test.mjs",
+    "test:integration:demo": "node --test scripts/demo-data.integration.test.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.11.3",
